@@ -1,0 +1,20 @@
+FastAPI application server
+fastapi
+uvicorn[standard]
+
+Database: PostgreSQL + ORM
+sqlmodel
+psycopg[binary]
+
+Configuration and environment variables
+pydantic-settings
+python-dotenv
+
+Authentication and password security
+PyJWT
+pwdlib[argon2]
+python-multipart
+
+Testing
+pytest
+httpx
