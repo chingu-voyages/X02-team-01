@@ -37,6 +37,7 @@ coding!
 - Yangchen Dema (Scrum Master): [GitHub](https://github.com/dema66) / [LinkedIn](https://www.linkedin.com/in/yangchendema/?isSelfProfile=true)
 - Lilla Tóth: [GitHub](https://github.com/Lilla-ctrl) / [LinkedIn](https://www.linkedin.com/in/lillatoth216/)
 - John Ezekiel: [GitHub](https://github.com/Sirius1616) / [LinkedIn](https://www.linkedin.com/in/john-ezekiel-dev/)
+- Juan Guzman: [GitHub](https://github.com/Pi-face) / [LinkedIn](https://www.linkedin.com/in/juan-guzman-24536643b/)
 
    ...
 - Teammate name #n: [GitHub](https://github.com/ghaccountname) / [LinkedIn](https://linkedin.com/in/liaccountname)
