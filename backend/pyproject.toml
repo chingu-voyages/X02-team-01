@@ -1,0 +1,19 @@
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E4",   # Import-related errors
+    "E7",   # Statement formatting errors
+    "E9",   # Syntax errors
+    "F",    # Pyflakes: unused imports, variables, etc.
+    "I",    # Import sorting
+    "N",    # PEP 8 naming conventions
+    "B",    # Bugbear: common bugs and bad practices
+    "UP",   # Modern Python syntax recommendations
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
