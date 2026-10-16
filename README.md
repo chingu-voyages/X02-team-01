@@ -13,6 +13,19 @@ in your `readme` feel free to replace the text we've provided here.
 
 > Own it & Make it your Own!
 
+## Getting Started: Configuration
+
+Copy the env templates and fill in local values — `.env` is gitignored, never
+commit it:
+
+```bash
+cp .env.example .env
+cp frontend/.env.example frontend/.env.local
+```
+
+See [docs/configuration.md](./docs/configuration.md) for the full variable
+reference, container notes, and secrets rules.
+
 ## Team Documents
 
 You may find these helpful as you work together to organize your project.
