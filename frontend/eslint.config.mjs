@@ -34,22 +34,16 @@ const eslintConfig = defineConfig([
       // Agreed upon naming conventions
       "@typescript-eslint/naming-convention": [
         "error",
-        // camelCase for regular variables, functions, and parameters
+        // camelCase or PascalCase for regular variables, functions, and parameters
         {
-          selector: "default",
-          format: ["camelCase"],
+          selector: ["variable", "function", "parameter"],
+          format: ["camelCase", "PascalCase"],
           leadingUnderscore: "allow",
         },
-        // PascalCase for React components, classes, types, interfaces and enums
+        // PascalCase or camelCase for types, interfaces, enums and imports
         {
-          selector: ["typeLike"],
-          format: ["PascalCase"],
-        },
-        // UPPER_CASE for global constants
-        {
-          selector: "variable",
-          modifiers: ["const", "global"],
-          format: ["UPPER_CASE"],
+          selector: ["typeLike", "import"],
+          format: ["PascalCase", "camelCase"],
         },
         // PascalCase allowed for React functional components assigned to variables
         {
