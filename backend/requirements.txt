@@ -1,20 +1,25 @@
-FastAPI application server
+
+# FastAPI application server
 fastapi
 uvicorn[standard]
 
-Database: PostgreSQL + ORM
+# Database: PostgreSQL + ORM
 sqlmodel
 psycopg[binary]
+alembic
 
-Configuration and environment variables
+# Configuration and environment variables
 pydantic-settings
 python-dotenv
 
-Authentication and password security
+# Authentication and password security
 PyJWT
 pwdlib[argon2]
 python-multipart
 
-Testing
+# Testing
 pytest
 httpx
+
+# Code quality and linting
+ruff
