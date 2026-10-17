@@ -18,33 +18,33 @@ gitignored — **never commit them**.
 
 | Variable | Used by | Local value | Notes |
 |---|---|---|---|
-| `ENVIRONMENT` | backend | `local` | Free-form name: `local` / `ci` / `staging` / `production`. Has a default. |
-| `BACKEND_CORS_ORIGINS` | backend | `http://localhost:3000` | Comma-separated browser origins allowed to call the API, e.g. `http://localhost:3000,http://127.0.0.1:3000`. Has a default (empty). |
-| `POSTGRES_HOST` | backend | `127.0.0.1` | `127.0.0.1` on your machine; the compose service name `postgres` inside the compose network. Default: `127.0.0.1`. |
-| `POSTGRES_PORT` | backend, compose | `5432` | Default: `5432`. |
 | `POSTGRES_DB` | backend, compose | `jhep_db` | **Required** — no default. |
 | `POSTGRES_USER` | backend, compose | `jhep` | **Required** — no default. |
 | `POSTGRES_PASSWORD` | backend, compose | your local password | **Required** — no default. Keep the real value out of git. |
+| `JWT_SECRET_KEY` | backend | a long random string | **Required** — no default. Signs and verifies access tokens. |
+| `JWT_ALGORITHM` | backend | `HS256` | Default: `HS256`. |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | backend | `30` | Default: `30`. Access-token lifetime. |
 | `NEXT_PUBLIC_API_URL` | frontend | `http://localhost:8000/api/v1` | Base URL of the API as seen from the browser. Set in `frontend/.env.local`, not the root file — Next.js only loads env files from its own directory. |
 
-Authentication settings (`JWT_SECRET_KEY`, `JWT_ALGORITHM`,
-`ACCESS_TOKEN_EXPIRE_MINUTES`) are **commented out** in `.env.example` on
-purpose. They become required when the auth ticket lands.
+`POSTGRES_HOST` and `POSTGRES_PORT` are also read by the backend, but they have
+code defaults (`127.0.0.1` / `5432`) and so are **not** listed in `.env.example`.
+Override `POSTGRES_HOST=postgres` only when the backend runs inside the compose
+network.
 
 ## Rules of thumb
 
 - **`.env` never enters a Docker image.** The Dockerfiles deliberately copy
   only source code. Containers receive config at runtime via `compose.yaml`
   or `docker run --env-file .env`.
-- **`POSTGRES_HOST` is per-environment.** Your machine: `127.0.0.1`. Inside the
-  compose network: `postgres`. This is the classic "works locally, fails in a
-  container" bug.
+- **`POSTGRES_HOST` is per-environment.** Your machine: `127.0.0.1` (default).
+  Inside the compose network: `postgres`. This is the classic "works locally,
+  fails in a container" bug.
 - **`NEXT_PUBLIC_*` is public and baked in at build time.** Any value is
   embedded in the JavaScript bundle and readable by anyone. Never put secrets
   there.
 - **The backend fails fast on missing config.** Required settings have no
-  default, so `Settings()` raises at import if `POSTGRES_DB/USER/PASSWORD`
-  are unset — that's intentional.
+  default, so `Settings()` raises at import if `POSTGRES_DB/USER/PASSWORD` or
+  `JWT_SECRET_KEY` are unset — that's intentional.
 - **Env vars win over the `.env` file.** pydantic-settings reads the process
   environment first, then `.env`.
 - **Settings load from the repo root.** `config.py` resolves the `.env` file
@@ -63,5 +63,7 @@ purpose. They become required when the auth ticket lands.
 
 1. Add it to `.env.example` with a placeholder and a comment saying who reads it.
 2. Add it to `backend/app/core/config.py` (`Settings`) if the backend needs it.
+   Coordinate first — `config.py` is shared, and parallel edits there cause
+   merge conflicts.
 3. Document it in the table above.
 4. If it's a secret, give it **no default** so missing values fail loudly.
