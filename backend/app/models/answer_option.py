@@ -1,6 +1,6 @@
 from uuid import UUID, uuid4
 
-from sqlalchemy import Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Text, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -12,6 +12,14 @@ class AnswerOption(SQLModel, table=True):
             "question_version_id",
             "position",
             name="uq_answer_options_version_position",
+        ),
+        CheckConstraint(
+            "position > 0",
+            name="ck_answer_options_positive_position",
+        ),
+        CheckConstraint(
+            "length(trim(option_text)) > 0",
+            name="ck_answer_options_nonempty_text",
         ),
     )
 
