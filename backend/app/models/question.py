@@ -1,12 +1,25 @@
+
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime
+from sqlalchemy import CheckConstraint, DateTime, ForeignKeyConstraint
 from sqlmodel import Field, SQLModel
 
 
 class Question(SQLModel, table=True):
     __tablename__ = "questions"
+
+    __table_args__ = (
+        CheckConstraint(
+            "difficulty IN ('easy', 'medium', 'hard')",
+            name="ck_questions_difficulty",
+        ),
+        ForeignKeyConstraint(
+            ["certification_id", "category_id"],
+            ["categories.certification_id", "categories.id"],
+            name="fk_questions_category_certification",
+        ),
+    )
 
     id: UUID = Field(
         default_factory=uuid4,
@@ -20,7 +33,7 @@ class Question(SQLModel, table=True):
 
     category_id: UUID | None = Field(
         default=None,
-        foreign_key="categories.id",
+        nullable=True,
     )
 
     difficulty: str = Field(

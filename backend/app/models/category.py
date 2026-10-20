@@ -13,11 +13,24 @@ class Category(SQLModel, table=True):
             "name",
             name="uq_categories_certification_name",
         ),
+        UniqueConstraint(
+            "certification_id",
+            "id",
+            name="uq_categories_certification_id",
+        ),
     )
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    id: UUID = Field(
+        default_factory=uuid4,
+        primary_key=True,
+    )
+
     certification_id: UUID = Field(
         foreign_key="certifications.id",
         nullable=False,
     )
-    name: str = Field(max_length=255, nullable=False)
+
+    name: str = Field(
+        max_length=255,
+        nullable=False,
+    )
