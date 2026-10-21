@@ -9,7 +9,7 @@ export default function Badge({ questionNumber, questionType }: BadgeProps) {
 
   return (
     <div>
-      <p className="uppercase text-gray-700 font-bold text-sm">
+      <p className="uppercase text-gray-700 font-bold text-xs">
         Question {formattedNumber} / {questionType}
       </p>
     </div>

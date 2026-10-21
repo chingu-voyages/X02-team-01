@@ -15,7 +15,7 @@ export default function OptionItem({
     <label onClick={onSelect}>
       <div
         className={`
-          flex gap-2 items-center  border  p-2 m-2 rounded-sm ${
+          flex gap-2 items-center  border  p-3 rounded-sm ${
             isSelected
               ? `border-black bg-gray-300`
               : `border-gray-300 bg-white hover:cursor-pointer hover:bg-gray-200 hover:border-gray-500 transition-colors duration-300`

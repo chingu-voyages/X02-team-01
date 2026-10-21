@@ -15,23 +15,23 @@ export default function ExamCard() {
     <div>
       <Card>
         <Badge questionNumber={3} questionType="multiple choice" />
-        <h1>
+        <h2 className="text-xl font-semibold my-3">
           Which statement best describes how an Agile team response to changing
           requirements?
-        </h1>
-        <div>
+        </h2>
+        <div className="flex flex-col gap-2">
           {opt.map((option) => (
             <OptionItem
               key={option}
               option={option}
               isSelected={false}
-              onSelect={() => console.log("clicked")}
+              onSelect={() => alert("clicked")}
             />
           ))}
         </div>
-        <div>
-          <Button>Previous</Button>
-          <Button>Submit answer</Button>
+        <div className="flex gap-2 mt-2">
+          <Button variant="outline" className="hover:cursor-pointer py-5 px-3 text-base border border-gray-300 rounded-sm">Previous</Button>
+          <Button className="hover:cursor-pointer py-5 px-3 text-base border border-gray-300 rounded-sm">Submit answer</Button>
         </div>
       </Card>
     </div>
