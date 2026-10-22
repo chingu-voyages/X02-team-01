@@ -15,6 +15,9 @@ export default function ExamCard() {
     Record<string, string[]>
   >({});
 
+  // Track which question have been submitted
+  const [submittedMap, setSubmittedMap] = useState<Record<string, boolean>>({});
+
   // Grab the question from the array that matches the current index
   const currentQuestion = practiceData.questions[currentQuestionIndex];
 
@@ -34,7 +37,12 @@ export default function ExamCard() {
   // Get the selected options for this specific question or default to an empty array
   const currentSelected = selectedValuesMap[questionId] || [];
 
+  // Check if the questions is already submitted
+  const isSubmitted = submittedMap[questionId] || false;
+
   const handleSelect = (optionId: string) => {
+    if (isSubmitted) return; // Prevent changing answers after submission
+
     if (!isMultiple) {
       // Single choice: set this question's array to just the clicked option ID
       setSelectedValuesMap((prev) => ({
@@ -108,13 +116,17 @@ export default function ExamCard() {
           <Button
             disabled={currentSelected.length === 0}
             onClick={() => {
+              setSubmittedMap((prev) => ({
+                ...prev,
+                [questionId]: true,
+              }));
               setCurrentQuestionIndex((prev) =>
                 Math.min(prev + 1, practiceData.questions.length - 1),
               );
             }}
             className="hover:cursor-pointer py-5 px-3 text-base border border-gray-300 rounded-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Submit answer
+            {isSubmitted ? "Submitted" : "Submit answer"}
           </Button>
         </div>
       </Card>
