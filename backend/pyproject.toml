@@ -1,4 +1,9 @@
 
+[tool.pytest.ini_options]
+# Make the `app` package importable when pytest is run from `backend/`
+pythonpath = ["."]
+testpaths = ["tests"]
+
 [tool.ruff]
 line-length = 88
 
