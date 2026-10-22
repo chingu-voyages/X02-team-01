@@ -1,13 +1,13 @@
-import Card from "@/components/ui/Card";
+"use client";
+
+import ExamCard from "@/features/exams/ExamCard";
 
 export default function Home() {
   return (
     <div>
       <main>
         <div>
-          <Card>
-            test
-          </Card>
+          <ExamCard></ExamCard>
         </div>
       </main>
     </div>
