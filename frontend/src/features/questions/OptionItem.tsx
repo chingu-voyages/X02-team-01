@@ -4,12 +4,14 @@ import { RadioGroupItem } from "@/components/ui/radio-group";
 interface OptionItemProps {
   questionType: "single" | "multiple";
   option: string;
+  id: string;
   isSelected: boolean;
   onSelect: () => void;
 }
 
 export default function OptionItem({
   questionType,
+  id,
   option,
   isSelected,
   onSelect,
@@ -25,7 +27,7 @@ export default function OptionItem({
           }`}
       >
         {questionType === "single" ? (
-          <RadioGroupItem value={option} />
+          <RadioGroupItem value={id} />
         ) : (
           <Checkbox />
         )}

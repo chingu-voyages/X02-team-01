@@ -85,6 +85,7 @@ export default function ExamCard() {
             currentQuestionOptions.map((option) => (
               <OptionItem
                 key={option.id}
+                id={option.id}
                 option={option.option_text}
                 questionType={isMultiple ? "multiple" : "single"}
                 isSelected={currentSelected.includes(option.id)} // Checking against this question's saved state
@@ -100,6 +101,7 @@ export default function ExamCard() {
               {currentQuestionOptions.map((option) => (
                 <OptionItem
                   key={option.id}
+                  id={option.id}
                   option={option.option_text}
                   questionType="single"
                   isSelected={currentSelected.includes(option.id)}
