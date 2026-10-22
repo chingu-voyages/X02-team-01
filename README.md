@@ -83,6 +83,6 @@ coding!
 - Lilla Tóth: [GitHub](https://github.com/Lilla-ctrl) / [LinkedIn](https://www.linkedin.com/in/lillatoth216/)
 - John Ezekiel: [GitHub](https://github.com/Sirius1616) / [LinkedIn](https://www.linkedin.com/in/john-ezekiel-dev/)
 - Juan Guzman: [GitHub](https://github.com/Pi-face) / [LinkedIn](https://www.linkedin.com/in/juan-guzman-24536643b/)
-
+- Elizabeth Aferi (Product Owner & Product Designer): [GitHub](https://github.com/eaferi) / [LinkedIn](https://linkedin.com/in/elizabeth-aferi)
    ...
 - Teammate name #n: [GitHub](https://github.com/ghaccountname) / [LinkedIn](https://linkedin.com/in/liaccountname)
