@@ -2,7 +2,7 @@ name: CI - Backend
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - "backend/**"
       - "compose.yaml"
@@ -45,9 +45,7 @@ jobs:
         run: ruff format --check .
 
       - name: Test
-        # pytest exits 5 when no tests are collected, which is tolerated
-        # until the team adds a test suite
-        run: pytest -q || [ $? -eq 5 ]
+        run: pytest -q
 
   compose:
     name: Compose config & Postgres healthcheck
