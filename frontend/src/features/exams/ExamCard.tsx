@@ -106,12 +106,13 @@ export default function ExamCard() {
             Previous
           </Button>
           <Button
+            disabled={currentSelected.length === 0}
             onClick={() => {
               setCurrentQuestionIndex((prev) =>
                 Math.min(prev + 1, practiceData.questions.length - 1),
               );
             }}
-            className="hover:cursor-pointer py-5 px-3 text-base border border-gray-300 rounded-sm"
+            className="hover:cursor-pointer py-5 px-3 text-base border border-gray-300 rounded-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Submit answer
           </Button>
