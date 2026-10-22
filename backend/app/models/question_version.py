@@ -22,51 +22,41 @@ class QuestionVersion(SQLModel, table=True):
             "version_number",
             name="uq_question_versions_question_version",
         ),
-
         # Positive version numbers
         CheckConstraint(
             "version_number > 0",
             name="ck_question_versions_positive_version",
         ),
-
         # Supported MVP question formats
         CheckConstraint(
             "question_type IN ('multiple_choice', 'short_answer')",
             name="ck_question_versions_type",
         ),
-
         # Multi-select applies only to multiple-choice
         CheckConstraint(
-            "NOT allows_multiple_answers OR "
-            "question_type = 'multiple_choice'",
+            "NOT allows_multiple_answers OR question_type = 'multiple_choice'",
             name="ck_question_versions_multiple_answers",
         ),
-
         # Valid review statuses
         CheckConstraint(
             "review_status IN ('pending', 'approved', 'rejected')",
             name="ck_question_versions_review_status",
         ),
-
         # Valid publication statuses
         CheckConstraint(
             "publication_status IN ('draft', 'active', 'retired')",
             name="ck_question_versions_publication_status",
         ),
-
         # Only approved versions may be active
         CheckConstraint(
-            "publication_status != 'active' OR "
-            "review_status = 'approved'",
+            "publication_status != 'active' OR review_status = 'approved'",
             name="ck_question_versions_publication",
         ),
-
         # Prevent blank questions
         CheckConstraint(
             "length(trim(question_text)) > 0",
             name="ck_question_versions_nonempty_text",
         ),
-
         # Reviewed questions need review information
         CheckConstraint(
             "review_status = 'pending' OR "
@@ -74,15 +64,12 @@ class QuestionVersion(SQLModel, table=True):
             "reviewed_at IS NOT NULL)",
             name="ck_question_versions_review_information",
         ),
-
         # Only one active version per question
         Index(
             "uq_question_versions_active_question",
             "question_id",
             unique=True,
-            postgresql_where=text(
-                "publication_status = 'active'"
-            ),
+            postgresql_where=text("publication_status = 'active'"),
         ),
     )
 
