@@ -1,6 +1,6 @@
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Text, UniqueConstraint, text
 from sqlmodel import Field, SQLModel
 
 
@@ -41,6 +41,7 @@ class AnswerOption(SQLModel, table=True):
     is_correct: bool = Field(
         default=False,
         nullable=False,
+        sa_column_kwargs={"server_default": text("false")},
     )
 
     position: int = Field(

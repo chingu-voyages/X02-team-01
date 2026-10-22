@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKeyConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKeyConstraint, func
 from sqlmodel import Field, SQLModel
 
 
@@ -49,4 +49,5 @@ class Question(SQLModel, table=True):
         default_factory=lambda: datetime.now(UTC),
         sa_type=DateTime(timezone=True),
         nullable=False,
+        sa_column_kwargs={"server_default": func.now()},
     )

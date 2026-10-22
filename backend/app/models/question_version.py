@@ -7,6 +7,7 @@ from sqlalchemy import (
     Index,
     Text,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlmodel import Field, SQLModel
@@ -102,6 +103,7 @@ class QuestionVersion(SQLModel, table=True):
     allows_multiple_answers: bool = Field(
         default=False,
         nullable=False,
+        sa_column_kwargs={"server_default": text("false")},
     )
 
     # Optional post-submission explanation
@@ -116,6 +118,7 @@ class QuestionVersion(SQLModel, table=True):
         default="pending",
         max_length=20,
         nullable=False,
+        sa_column_kwargs={"server_default": text("'pending'")},
     )
 
     # Publication state
@@ -123,12 +126,14 @@ class QuestionVersion(SQLModel, table=True):
         default="draft",
         max_length=20,
         nullable=False,
+        sa_column_kwargs={"server_default": text("'draft'")},
     )
 
     # Editorial flag
     is_flagged: bool = Field(
         default=False,
         nullable=False,
+        sa_column_kwargs={"server_default": text("false")},
     )
 
     # Submission information
@@ -141,6 +146,7 @@ class QuestionVersion(SQLModel, table=True):
         default_factory=lambda: datetime.now(UTC),
         sa_type=DateTime(timezone=True),
         nullable=False,
+        sa_column_kwargs={"server_default": func.now()},
     )
 
     # Review information
