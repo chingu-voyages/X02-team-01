@@ -7,6 +7,7 @@ interface OptionItemProps {
   id: string;
   isSelected: boolean;
   onSelect: () => void;
+  isSubmitted: boolean;
 }
 
 export default function OptionItem({
@@ -15,9 +16,13 @@ export default function OptionItem({
   option,
   isSelected,
   onSelect,
+  isSubmitted,
 }: OptionItemProps) {
   return (
-    <label onClick={onSelect}>
+    <label
+      onClick={!isSubmitted ? onSelect : undefined}
+      className={isSubmitted ? "cursor-not-allowed" : ""}
+    >
       <div
         className={`
           flex gap-2 items-center  border  p-3 rounded-sm ${
@@ -27,9 +32,9 @@ export default function OptionItem({
           }`}
       >
         {questionType === "single" ? (
-          <RadioGroupItem value={id} />
+          <RadioGroupItem value={id} disabled={isSubmitted} />
         ) : (
-          <Checkbox />
+          <Checkbox disabled={isSubmitted} />
         )}
         {option}
       </div>

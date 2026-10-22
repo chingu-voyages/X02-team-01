@@ -90,6 +90,7 @@ export default function ExamCard() {
                 questionType={isMultiple ? "multiple" : "single"}
                 isSelected={currentSelected.includes(option.id)} // Checking against this question's saved state
                 onSelect={() => handleSelect(option.id)} // ID is passed on click
+                isSubmitted={isSubmitted}
               />
             ))
           ) : (
@@ -106,6 +107,7 @@ export default function ExamCard() {
                   questionType="single"
                   isSelected={currentSelected.includes(option.id)}
                   onSelect={() => handleSelect(option.id)}
+                  isSubmitted={isSubmitted}
                 />
               ))}
             </RadioGroup>
