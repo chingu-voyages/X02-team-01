@@ -2,16 +2,14 @@ name: CI - Docker
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - "frontend/**"
       - "backend/**"
       - ".github/workflows/ci-docker.yml"
+  # No path filter on pull_request: this workflow provides required status
+  # checks, so it must report on every PR or merges would stay blocked.
   pull_request:
-    paths:
-      - "frontend/**"
-      - "backend/**"
-      - ".github/workflows/ci-docker.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
