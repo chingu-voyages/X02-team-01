@@ -3,9 +3,9 @@ from app.repositories.question_repository import (
     QuestionOption,
 )
 
-# Fixed sample data used until the store ticket's tables are available.
-# Every review/publication/flag combination is represented so that the
-# delivery filter can be tested from both sides.
+# Fixed sample data for unit tests; default app wiring uses
+# SQLModelQuestionRepository. Every review/publication/flag combination is
+# represented so that the delivery filter can be tested from both sides.
 _QUESTION_BANK: list[Question] = [
     # Eligible: approved, active and not flagged
     Question(
@@ -41,6 +41,35 @@ _QUESTION_BANK: list[Question] = [
         publication_status="active",
         is_flagged=False,
         expected_answer="Sprint Backlog",
+    ),
+    # Eligible: multi-select variant, also approved/active/unflagged
+    Question(
+        id="v-1011",
+        question_id="q-1011",
+        question_text="Which of these are Scrum values?",
+        question_type="multiple_choice",
+        difficulty="medium",
+        review_status="approved",
+        publication_status="active",
+        is_flagged=False,
+        allows_multiple_answers=True,
+        options=[
+            QuestionOption(
+                position=1,
+                option_text="Focus",
+                is_correct=True,
+            ),
+            QuestionOption(
+                position=2,
+                option_text="Synergy",
+                is_correct=False,
+            ),
+            QuestionOption(
+                position=3,
+                option_text="Respect",
+                is_correct=True,
+            ),
+        ],
     ),
     # Excluded: approved but not yet published
     Question(

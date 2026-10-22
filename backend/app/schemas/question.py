@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict
 #       "id": "v-1004",
 #       "question_text": "Which Scrum event is timeboxed to 15 minutes?",
 #       "question_type": "multiple_choice",
+#       "allows_multiple_answers": false,
 #       "difficulty": "easy",
 #       "options": [
 #         { "position": 1, "option_text": "Daily Scrum" },
@@ -63,6 +64,7 @@ class QuestionOut(BaseModel):
     id: str
     question_text: str
     question_type: Literal["multiple_choice", "short_answer"]
+    allows_multiple_answers: bool = False
     difficulty: Literal["easy", "medium", "hard"]
     options: list[QuestionOptionOut]
 

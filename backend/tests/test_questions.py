@@ -17,6 +17,21 @@ def auth_header() -> dict[str, str]:
 
 
 @pytest.fixture
+def stub_client() -> Iterator[TestClient]:
+    """A client backed by the fixed in-memory question bank."""
+
+    def _stub() -> InMemoryQuestionRepository:
+        return InMemoryQuestionRepository()
+
+    app.dependency_overrides[get_question_repository] = _stub
+
+    with TestClient(app) as test_client:
+        yield test_client
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
 def empty_client() -> Iterator[TestClient]:
     """A client whose repository holds no questions at all."""
 
@@ -46,59 +61,59 @@ def test_rejects_invalid_token(client: TestClient) -> None:
     assert response.status_code == 401
 
 
-def test_only_eligible_questions_are_returned(client: TestClient) -> None:
-    response = client.get(QUESTIONS_URL, headers=auth_header())
+def test_only_eligible_questions_are_returned(stub_client: TestClient) -> None:
+    response = stub_client.get(QUESTIONS_URL, headers=auth_header())
 
     assert response.status_code == 200
 
     returned = {item["id"] for item in response.json()["items"]}
 
-    # approved + active + unflagged, one of each question type
-    assert returned == {"v-1004", "v-1005"}
+    # approved + active + unflagged, covering each question type
+    assert returned == {"v-1004", "v-1005", "v-1011"}
 
 
-def test_pending_question_is_excluded(client: TestClient) -> None:
-    response = client.get(QUESTIONS_URL, headers=auth_header())
+def test_pending_question_is_excluded(stub_client: TestClient) -> None:
+    response = stub_client.get(QUESTIONS_URL, headers=auth_header())
 
     returned = {item["id"] for item in response.json()["items"]}
 
     assert "v-1008" not in returned  # pending
 
 
-def test_rejected_question_is_excluded(client: TestClient) -> None:
-    response = client.get(QUESTIONS_URL, headers=auth_header())
+def test_rejected_question_is_excluded(stub_client: TestClient) -> None:
+    response = stub_client.get(QUESTIONS_URL, headers=auth_header())
 
     returned = {item["id"] for item in response.json()["items"]}
 
     assert "v-1009" not in returned  # rejected
 
 
-def test_retired_question_is_excluded(client: TestClient) -> None:
-    response = client.get(QUESTIONS_URL, headers=auth_header())
+def test_retired_question_is_excluded(stub_client: TestClient) -> None:
+    response = stub_client.get(QUESTIONS_URL, headers=auth_header())
 
     returned = {item["id"] for item in response.json()["items"]}
 
     assert "v-1007" not in returned  # retired
 
 
-def test_draft_question_is_excluded(client: TestClient) -> None:
-    response = client.get(QUESTIONS_URL, headers=auth_header())
+def test_draft_question_is_excluded(stub_client: TestClient) -> None:
+    response = stub_client.get(QUESTIONS_URL, headers=auth_header())
 
     returned = {item["id"] for item in response.json()["items"]}
 
     assert "v-1006" not in returned  # approved but unpublished
 
 
-def test_flagged_question_is_excluded(client: TestClient) -> None:
-    response = client.get(QUESTIONS_URL, headers=auth_header())
+def test_flagged_question_is_excluded(stub_client: TestClient) -> None:
+    response = stub_client.get(QUESTIONS_URL, headers=auth_header())
 
     returned = {item["id"] for item in response.json()["items"]}
 
     assert "v-1010" not in returned  # approved + active but flagged
 
 
-def test_response_never_leaks_answer_keys(client: TestClient) -> None:
-    response = client.get(QUESTIONS_URL, headers=auth_header())
+def test_response_never_leaks_answer_keys(stub_client: TestClient) -> None:
+    response = stub_client.get(QUESTIONS_URL, headers=auth_header())
 
     body = response.text
 
@@ -111,6 +126,7 @@ def test_response_never_leaks_answer_keys(client: TestClient) -> None:
             "id",
             "question_text",
             "question_type",
+            "allows_multiple_answers",
             "difficulty",
             "options",
         }
@@ -118,10 +134,23 @@ def test_response_never_leaks_answer_keys(client: TestClient) -> None:
             assert set(option) == {"position", "option_text"}
 
 
-def test_count_matches_items(client: TestClient) -> None:
-    payload = client.get(QUESTIONS_URL, headers=auth_header()).json()
+def test_count_matches_items(stub_client: TestClient) -> None:
+    payload = stub_client.get(QUESTIONS_URL, headers=auth_header()).json()
 
     assert payload["count"] == len(payload["items"])
+
+
+def test_multi_select_flag_is_exposed(stub_client: TestClient) -> None:
+    items = stub_client.get(QUESTIONS_URL, headers=auth_header()).json()["items"]
+
+    multi_select = next(item for item in items if item["id"] == "v-1011")
+    single_select = next(item for item in items if item["id"] == "v-1004")
+
+    assert multi_select["allows_multiple_answers"] is True
+    assert single_select["allows_multiple_answers"] is False
+    assert all(
+        set(option) == {"position", "option_text"} for option in multi_select["options"]
+    )
 
 
 def test_empty_state_returns_clear_payload(empty_client: TestClient) -> None:
@@ -131,8 +160,8 @@ def test_empty_state_returns_clear_payload(empty_client: TestClient) -> None:
     assert response.json() == {"items": [], "count": 0}
 
 
-def test_short_answer_has_no_options(client: TestClient) -> None:
-    items = client.get(QUESTIONS_URL, headers=auth_header()).json()["items"]
+def test_short_answer_has_no_options(stub_client: TestClient) -> None:
+    items = stub_client.get(QUESTIONS_URL, headers=auth_header()).json()["items"]
 
     short_answer = next(i for i in items if i["question_type"] == "short_answer")
 

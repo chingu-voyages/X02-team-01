@@ -33,6 +33,7 @@ def _to_out(question: Question) -> QuestionOut:
         id=question.id,
         question_text=question.question_text,
         question_type=question.question_type,
+        allows_multiple_answers=question.allows_multiple_answers,
         difficulty=question.difficulty,
         options=[_option_to_out(option) for option in question.options],
     )

@@ -1,23 +1,23 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from sqlmodel import Session
 
 from app.api.deps import get_current_subject
-from app.repositories.in_memory import InMemoryQuestionRepository
+from app.db.session import get_session
 from app.repositories.question_repository import QuestionRepository
+from app.repositories.sqlmodel_repository import SQLModelQuestionRepository
 from app.schemas.question import QuestionList
 from app.services.question_service import get_eligible_questions
 
 router = APIRouter()
 
-# Swap this for the SQLModel-backed implementation once the store ticket's
-# tables are available. The endpoint and service do not change.
-_repository = InMemoryQuestionRepository()
 
-
-def get_question_repository() -> QuestionRepository:
-    """Provide the active question repository."""
-    return _repository
+def get_question_repository(
+    session: Annotated[Session, Depends(get_session)],
+) -> QuestionRepository:
+    """Provide the PostgreSQL-backed question repository."""
+    return SQLModelQuestionRepository(session)
 
 
 @router.get("", response_model=QuestionList)

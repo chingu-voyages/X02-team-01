@@ -16,7 +16,7 @@ class Question:
     """A question version as the delivery layer sees it.
 
     Deliberately a plain data object: it carries no database metadata so that
-    both the in-memory stub and a future SQLModel repository can produce it.
+    both the in-memory stub and the SQLModel repository can produce it.
     """
 
     id: str
@@ -27,6 +27,7 @@ class Question:
     review_status: str
     publication_status: str
     is_flagged: bool
+    allows_multiple_answers: bool = False
     options: list[QuestionOption] = field(default_factory=list)
     expected_answer: str | None = None
 
