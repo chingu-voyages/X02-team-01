@@ -1,12 +1,15 @@
+import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroupItem } from "@/components/ui/radio-group";
 
 interface OptionItemProps {
+  questionType: "single" | "multiple";
   option: string;
   isSelected: boolean;
   onSelect: () => void;
 }
 
 export default function OptionItem({
+  questionType,
   option,
   isSelected,
   onSelect,
@@ -21,7 +24,11 @@ export default function OptionItem({
               : `border-gray-300 bg-white hover:cursor-pointer hover:bg-gray-200 hover:border-gray-500 transition-colors duration-300`
           }`}
       >
-        <RadioGroupItem value={option} />
+        {questionType === "single" ? (
+          <RadioGroupItem value={option} />
+        ) : (
+          <Checkbox />
+        )}
         {option}
       </div>
     </label>
