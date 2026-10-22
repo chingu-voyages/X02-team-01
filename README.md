@@ -26,6 +26,38 @@ cp frontend/.env.example frontend/.env.local
 See [docs/configuration.md](./docs/configuration.md) for the full variable
 reference, container notes, and secrets rules.
 
+## Branching and releases
+
+Two long-lived branches:
+
+- `dev` — integration branch. All feature PRs target this branch.
+- `main` — production. Only receives release PRs from `dev`.
+
+```text
+feature/*  --PR-->  dev  --release PR-->  main  --CD--> production
+```
+
+- Open feature PRs against `dev`, never `main`.
+- Before opening or updating a PR, merge `dev` into your branch and re-run tests.
+- Release by opening a PR from `dev` to `main` and merging with a squash merge.
+- Hotfix from `main`: branch from `main`, PR back to `main`, then merge `main`
+  into `dev` so the fix is not lost.
+- Do not push directly to `dev` or `main`; both are protected and require a PR.
+- `cd-publish.yml` builds production images only from `main`.
+
+CI runs on every pull request. The new-branch PR checks intentionally have no
+path filters so required status checks always report. Run the backend suite
+from `backend/`:
+
+```bash
+cd backend
+pip install -r requirements.txt
+pytest -q
+```
+
+PostgreSQL-backed constraint tests are opt-in with `RUN_DB_INTEGRATION=1`; wiring
+that (and `alembic upgrade head` / `alembic check`) into CI is a follow-up.
+
 ## Team Documents
 
 You may find these helpful as you work together to organize your project.
