@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { RadioGroup } from "@/components/ui/radio-group";
 import { useState } from "react";
 import practiceData from "../../../src/data/practiceQuestions.json";
+import ExamCardHeader from "./ExamCardHeader";
 
 export default function ExamCard() {
   // Track which question should be displayed
@@ -68,6 +69,12 @@ export default function ExamCard() {
   return (
     <div>
       <Card>
+        <ExamCardHeader
+          currentQuestionIndex={currentQuestionIndex}
+          totalQuestions={practiceData.questions.length}
+          isMultiple={isMultiple}
+          category={currentQuestion.category}
+        />
         <Badge
           questionNumber={currentQuestionIndex + 1}
           questionType="multiple choice"
