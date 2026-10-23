@@ -2,14 +2,13 @@ name: CI - Frontend
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - "frontend/**"
       - ".github/workflows/ci-frontend.yml"
+  # No path filter on pull_request: this workflow provides required status
+  # checks, so it must report on every PR or merges would stay blocked.
   pull_request:
-    paths:
-      - "frontend/**"
-      - ".github/workflows/ci-frontend.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

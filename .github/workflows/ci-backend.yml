@@ -2,18 +2,15 @@ name: CI - Backend
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - "backend/**"
       - "compose.yaml"
       - ".env.example"
       - ".github/workflows/ci-backend.yml"
+  # No path filter on pull_request: this workflow provides required status
+  # checks, so it must report on every PR or merges would stay blocked.
   pull_request:
-    paths:
-      - "backend/**"
-      - "compose.yaml"
-      - ".env.example"
-      - ".github/workflows/ci-backend.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -45,9 +42,7 @@ jobs:
         run: ruff format --check .
 
       - name: Test
-        # pytest exits 5 when no tests are collected, which is tolerated
-        # until the team adds a test suite
-        run: pytest -q || [ $? -eq 5 ]
+        run: pytest -q
 
   compose:
     name: Compose config & Postgres healthcheck
