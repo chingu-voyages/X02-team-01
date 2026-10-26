@@ -23,6 +23,11 @@ class QuestionVersion(SQLModel, table=True):
             "version_number",
             name="uq_question_versions_question_version",
         ),
+        UniqueConstraint(
+            "question_id",
+            "id",
+            name="uq_question_versions_question_id",
+        ),
         # Positive version numbers
         CheckConstraint(
             "version_number > 0",

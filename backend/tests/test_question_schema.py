@@ -21,12 +21,24 @@ def test_question_bank_tables_registered():
 
 
 def test_foreign_keys_resolve():
-    """Every foreign key resolves to a registered table."""
+    """Every foreign key resolves to a registered SQLModel table."""
+    registered_tables = set(SQLModel.metadata.tables)
+
     for table in SQLModel.metadata.sorted_tables:
         for foreign_key in table.foreign_keys:
             referenced_table = foreign_key.column.table.name
 
-            assert referenced_table in EXPECTED_TABLES
+            assert referenced_table in registered_tables
+
+
+def test_exam_tables_registered():
+    """Exam generation tables are registered."""
+    expected = {
+        "exam_attempts",
+        "exam_attempt_questions",
+    }
+
+    assert expected.issubset(SQLModel.metadata.tables)
 
 
 def test_question_version_fields():
