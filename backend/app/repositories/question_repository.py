@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Protocol
+from uuid import UUID
 
 
 @dataclass(frozen=True)
@@ -41,4 +42,24 @@ class QuestionRepository(Protocol):
 
     def list_eligible(self) -> list[Question]:
         """Return only approved, active and unflagged questions."""
+        ...
+
+
+@dataclass(frozen=True)
+class ExamQuestionSelection:
+    """A question version selected for an exam attempt."""
+
+    question_id: UUID
+    question_version_id: UUID
+
+
+class ExamQuestionSelector(Protocol):
+    """Select eligible question versions for a certification."""
+
+    def select_random_eligible(
+        self,
+        certification_id: UUID,
+        question_count: int,
+    ) -> list[ExamQuestionSelection]:
+        """Return up to question_count randomized selections."""
         ...
