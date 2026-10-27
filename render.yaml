@@ -35,7 +35,7 @@ services:
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: 30
       - key: CORS_ORIGINS
-        value: "*"
+        value: "https://jhep-frontend.onrender.com"
       - key: PORT
         value: 8000
     buildFilter:
@@ -59,10 +59,10 @@ services:
     buildFilter:
       paths:
         - frontend/**
-    # If frontend needs API URL at build time, add build args
-    # dockerBuildArgs:
-    #   - key: NEXT_PUBLIC_API_BASE_URL
-    #     value: https://jhep-backend.onrender.com
+    # NOTE: Render's docker runtime does not support Docker build args.
+    # When the frontend starts calling the API, prefer a runtime proxy
+    # (Next.js rewrites to the backend) or switch this service to
+    # runtime: node, where env vars ARE available at build time.
 
 databases:
   - name: jhep-db
