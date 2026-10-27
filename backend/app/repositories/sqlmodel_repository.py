@@ -1,6 +1,7 @@
 from collections import defaultdict
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.models import (
@@ -11,7 +12,11 @@ from app.models import (
 from app.models import (
     Question as QuestionModel,
 )
-from app.repositories.question_repository import Question, QuestionOption
+from app.repositories.question_repository import (
+    ExamQuestionSelection,
+    Question,
+    QuestionOption,
+)
 
 
 class SQLModelQuestionRepository:
@@ -87,4 +92,43 @@ class SQLModelQuestionRepository:
                 expected_answer=expected_answers.get(version.id),
             )
             for version in versions
+        ]
+
+    def select_random_eligible(
+        self,
+        certification_id: UUID,
+        question_count: int,
+    ) -> list[ExamQuestionSelection]:
+        """Select random eligible question versions for one certification.
+
+        Return fewer than requested when the pool is insufficient. The exam
+        service validates sufficiency before persisting an attempt.
+        """
+        if question_count < 1:
+            raise ValueError("question_count must be positive")
+
+        statement = (
+            select(QuestionModel.id, QuestionVersion.id)
+            .join(
+                QuestionVersion,
+                QuestionVersion.question_id == QuestionModel.id,
+            )
+            .where(
+                QuestionModel.certification_id == certification_id,
+                QuestionVersion.review_status == "approved",
+                QuestionVersion.publication_status == "active",
+                QuestionVersion.is_flagged.is_(False),
+            )
+            .order_by(func.random())
+            .limit(question_count)
+        )
+
+        rows = self._session.exec(statement).all()
+
+        return [
+            ExamQuestionSelection(
+                question_id=question_id,
+                question_version_id=version_id,
+            )
+            for question_id, version_id in rows
         ]

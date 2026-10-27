@@ -222,6 +222,8 @@ def bank(db):
     )
 
     return {
+        "user_id": user_id,
+        "certification_id": certification_id,
         "eligible_multiple_choice_version": eligible_multiple_choice[1],
         "eligible_short_answer_version": eligible_short_answer[1],
         "eligible_multi_select_version": eligible_multi_select[1],
@@ -347,3 +349,159 @@ def test_endpoint_serves_database_rows_without_answer_keys(db, bank):
 
     finally:
         app.dependency_overrides.clear()
+
+
+def test_random_selection_only_returns_eligible(db, bank):
+    """Only approved, active, unflagged versions are selected."""
+    repository = SQLModelQuestionRepository(Session(bind=db))
+
+    selected = repository.select_random_eligible(
+        certification_id=bank["certification_id"],
+        question_count=20,
+    )
+
+    returned_versions = {question.question_version_id for question in selected}
+    expected_versions = {
+        bank["eligible_multiple_choice_version"],
+        bank["eligible_short_answer_version"],
+        bank["eligible_multi_select_version"],
+    }
+
+    assert returned_versions == expected_versions
+    assert bank["flagged_version"] not in returned_versions
+
+
+def test_random_selection_respects_requested_count(db, bank):
+    """The result never exceeds the requested size."""
+    repository = SQLModelQuestionRepository(Session(bind=db))
+
+    selected = repository.select_random_eligible(
+        certification_id=bank["certification_id"],
+        question_count=2,
+    )
+
+    assert len(selected) == 2
+
+
+def test_random_selection_has_no_duplicates(db, bank):
+    """Each parent question appears at most once."""
+    repository = SQLModelQuestionRepository(Session(bind=db))
+
+    selected = repository.select_random_eligible(
+        certification_id=bank["certification_id"],
+        question_count=20,
+    )
+
+    question_ids = [question.question_id for question in selected]
+
+    assert len(question_ids) == len(set(question_ids))
+
+
+def test_random_selection_unknown_certification(db):
+    """An unknown certification has no eligible questions."""
+    repository = SQLModelQuestionRepository(Session(bind=db))
+
+    selected = repository.select_random_eligible(
+        certification_id=uuid4(),
+        question_count=10,
+    )
+
+    assert selected == []
+
+
+@pytest.mark.parametrize("question_count", [0, -1, -100])
+def test_random_selection_rejects_invalid_count(db, question_count):
+    """Nonpositive question counts are rejected."""
+    repository = SQLModelQuestionRepository(Session(bind=db))
+
+    with pytest.raises(ValueError, match="must be positive"):
+        repository.select_random_eligible(
+            certification_id=uuid4(),
+            question_count=question_count,
+        )
+
+
+def test_random_selection_exposes_only_identifiers(db, bank):
+    """Selection data must not include answer keys."""
+    repository = SQLModelQuestionRepository(Session(bind=db))
+
+    selected = repository.select_random_eligible(
+        certification_id=bank["certification_id"],
+        question_count=3,
+    )
+
+    assert selected
+
+    for question in selected:
+        assert set(vars(question)) == {
+            "question_id",
+            "question_version_id",
+        }
+
+
+def test_random_selection_is_certification_scoped(db, bank):
+    """Questions from another certification are excluded."""
+    tables = SQLModel.metadata.tables
+    other_certification_id = uuid4()
+    other_question_id = uuid4()
+    other_version_id = uuid4()
+    user_id = bank["user_id"]
+
+    db.execute(
+        insert(tables["certifications"]).values(
+            id=other_certification_id,
+            name="Other Certification",
+            code="OTHER",
+        )
+    )
+
+    db.execute(
+        insert(tables["questions"]).values(
+            id=other_question_id,
+            certification_id=other_certification_id,
+            difficulty="easy",
+            created_by_id=user_id,
+        )
+    )
+
+    db.execute(
+        insert(tables["question_versions"]).values(
+            id=other_version_id,
+            question_id=other_question_id,
+            version_number=1,
+            question_text="What is the other certification?",
+            question_type="short_answer",
+            review_status="approved",
+            publication_status="active",
+            submitted_by_id=user_id,
+            reviewed_by_id=user_id,
+            reviewed_at=datetime.now(UTC),
+        )
+    )
+
+    db.execute(
+        insert(tables["text_answer_keys"]).values(
+            id=uuid4(),
+            question_version_id=other_version_id,
+            expected_answer="Other Certification",
+        )
+    )
+
+    repository = SQLModelQuestionRepository(Session(bind=db))
+
+    original = repository.select_random_eligible(
+        certification_id=bank["certification_id"],
+        question_count=20,
+    )
+
+    other = repository.select_random_eligible(
+        certification_id=other_certification_id,
+        question_count=20,
+    )
+
+    assert len(original) == 3
+    assert other_version_id not in {
+        question.question_version_id for question in original
+    }
+    assert len(other) == 1
+    assert other[0].question_version_id == other_version_id
