@@ -4,12 +4,21 @@ The service owns the database transaction. Supply a dedicated request-scoped
 Session: a successful call commits, and a failed call rolls back.
 """
 
+from collections import defaultdict
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from app.models import Certification, ExamAttempt, ExamAttemptQuestion, User
+from app.models import (
+    AnswerOption,
+    Certification,
+    ExamAttempt,
+    ExamAttemptQuestion,
+    Question,
+    QuestionVersion,
+    User,
+)
 from app.repositories.question_repository import ExamQuestionSelector
 from app.repositories.sqlmodel_repository import SQLModelQuestionRepository
 
@@ -21,6 +30,28 @@ class CreatedExam:
     attempt_id: UUID
     certification_id: UUID
     question_count: int
+
+
+@dataclass(frozen=True)
+class ExamOptionContent:
+    """Learner-visible answer option; deliberately excludes correctness."""
+
+    id: UUID
+    position: int
+    option_text: str
+
+
+@dataclass(frozen=True)
+class ExamQuestionContent:
+    """Stored exam assignment with safe question content."""
+
+    id: UUID  # Question-version ID
+    position: int
+    question_text: str
+    question_type: str
+    allows_multiple_answers: bool
+    difficulty: str
+    options: list[ExamOptionContent]
 
 
 class InvalidQuestionCountError(ValueError):
@@ -144,3 +175,75 @@ class ExamService:
             certification_id=certification_id,
             question_count=question_count,
         )
+
+    def get_exam_questions(self, attempt_id: UUID) -> list[ExamQuestionContent]:
+        """Read assigned questions in fixed order, without loading answer keys.
+
+        Only call after the learner has been authenticated and ownership checked.
+        This milestone calls it exclusively for an exam that was just created
+        by the same authenticated learner. A future GET-by-ID endpoint must
+        perform its own owner check before using this method.
+        """
+        rows = self._session.exec(
+            select(
+                ExamAttemptQuestion.position,
+                QuestionVersion.id,
+                QuestionVersion.question_text,
+                QuestionVersion.question_type,
+                QuestionVersion.allows_multiple_answers,
+                Question.difficulty,
+            )
+            .select_from(ExamAttemptQuestion)
+            .join(
+                QuestionVersion,
+                ExamAttemptQuestion.question_version_id == QuestionVersion.id,
+            )
+            .join(Question, Question.id == QuestionVersion.question_id)
+            .where(ExamAttemptQuestion.attempt_id == attempt_id)
+            .order_by(ExamAttemptQuestion.position)
+        ).all()
+
+        if not rows:
+            return []
+
+        version_ids = [version_id for _, version_id, *_ in rows]
+        option_rows = self._session.exec(
+            select(
+                AnswerOption.question_version_id,
+                AnswerOption.id,
+                AnswerOption.position,
+                AnswerOption.option_text,
+            )
+            .where(AnswerOption.question_version_id.in_(version_ids))
+            .order_by(AnswerOption.question_version_id, AnswerOption.position)
+        ).all()
+
+        options_by_version: dict[UUID, list[ExamOptionContent]] = defaultdict(list)
+        for version_id, option_id, position, option_text in option_rows:
+            options_by_version[version_id].append(
+                ExamOptionContent(
+                    id=option_id,
+                    position=position,
+                    option_text=option_text,
+                )
+            )
+
+        return [
+            ExamQuestionContent(
+                id=version_id,
+                position=position,
+                question_text=question_text,
+                question_type=question_type,
+                allows_multiple_answers=allows_multiple_answers,
+                difficulty=difficulty,
+                options=options_by_version[version_id],
+            )
+            for (
+                position,
+                version_id,
+                question_text,
+                question_type,
+                allows_multiple_answers,
+                difficulty,
+            ) in rows
+        ]
