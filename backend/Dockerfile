@@ -18,4 +18,6 @@ COPY alembic ./alembic
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run database migrations, then start the API.
+# PORT is injected by the hosting platform (falls back to 8000 locally).
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port \"${PORT:-8000}\""]

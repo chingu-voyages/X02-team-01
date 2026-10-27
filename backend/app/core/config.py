@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     jwt_algorithm: Literal["HS256"] = "HS256"
     access_token_expire_minutes: int = 30
 
+    # CORS
+    cors_origins: str = "http://localhost:3000"
+
     model_config = SettingsConfigDict(
         env_file=ROOT_DIR / ".env",
         env_file_encoding="utf-8",
@@ -36,6 +39,13 @@ class Settings(BaseSettings):
             port=self.postgres_port,
             database=self.postgres_db,
         )
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        if not self.cors_origins:
+            return ["http://localhost:3000"]
+        origins = [origin.strip() for origin in self.cors_origins.split(",")]
+        return [origin for origin in origins if origin]
 
 
 settings = Settings()
