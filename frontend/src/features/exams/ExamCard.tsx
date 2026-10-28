@@ -82,6 +82,38 @@ export default function ExamCard() {
     }
   };
 
+  const handleSubmit = () => {
+    setSubmittedMap((prev) => ({
+      ...prev,
+      [questionId]: true,
+    }));
+    setCurrentQuestionIndex((prev) =>
+      Math.min(prev + 1, practiceData.questions.length - 1),
+    );
+
+    // Find the matching feedback from the imported JSON
+    const feedbackEntry = sumbissionsFeedback.examples.find(
+      (ex) => ex.response.question_version_id === questionId,
+    );
+
+    if (!feedbackEntry) return;
+
+    const correctIds = feedbackEntry.response.correct_option_ids;
+    const isCorrect =
+      currentSelected.length === correctIds.length &&
+      currentSelected.every((id) => correctIds.includes(id));
+
+    // Save feedback to state map
+    setFeedbackMap((prev) => ({
+      ...prev,
+      [questionId]: {
+        is_correct: isCorrect,
+        correct_option_ids: correctIds,
+        explanation: feedbackEntry?.response.explanation,
+      },
+    }));
+  };
+
   return (
     <div>
       <Card>
@@ -125,11 +157,18 @@ export default function ExamCard() {
                   isSelected={currentSelected.includes(option.id)}
                   onSelect={() => handleSelect(option.id)}
                   isSubmitted={isSubmitted}
+                  correctOptionIds={currentFeedback?.correct_option_ids || []}
                 />
               ))}
             </RadioGroup>
           )}
         </div>
+
+        {currentFeedback?.explanation && (
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-sm text-sm text-blue-900">
+            <strong>Explanation:</strong> {currentFeedback.explanation}
+          </div>
+        )}
 
         <div className="flex gap-2 mt-2">
           <Button
@@ -143,15 +182,7 @@ export default function ExamCard() {
           </Button>
           <Button
             disabled={currentSelected.length === 0}
-            onClick={() => {
-              setSubmittedMap((prev) => ({
-                ...prev,
-                [questionId]: true,
-              }));
-              setCurrentQuestionIndex((prev) =>
-                Math.min(prev + 1, practiceData.questions.length - 1),
-              );
-            }}
+            onClick={handleSubmit}
             className="hover:cursor-pointer py-5 px-3 text-base border border-gray-300 rounded-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSubmitted ? "Submitted" : "Submit answer"}
