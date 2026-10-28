@@ -28,6 +28,16 @@ class ExamOptionOut(BaseModel):
     option_text: str
 
 
+class ExamImageOut(BaseModel):
+    """Version-associated image, with an optional CDN delivery URL."""
+
+    id: UUID
+    position: int
+    alt_text: str
+    media_type: Literal["image/png", "image/jpeg", "image/webp"]
+    url: str | None = None
+
+
 class ExamQuestionOut(BaseModel):
     """Question version as assigned to the learner's attempt."""
 
@@ -40,6 +50,7 @@ class ExamQuestionOut(BaseModel):
     allows_multiple_answers: bool
     difficulty: Literal["easy", "medium", "hard"]
     options: list[ExamOptionOut]
+    images: list[ExamImageOut] = Field(default_factory=list)
 
 
 class ExamCreatedOut(BaseModel):

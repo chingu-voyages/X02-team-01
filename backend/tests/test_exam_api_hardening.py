@@ -237,7 +237,9 @@ def test_question_content_is_preserved_and_response_is_allowlisted(
         "allows_multiple_answers",
         "difficulty",
         "options",
+        "images",
     }
+    assert question["images"] == []
     assert set(question["options"][0]) == {"id", "position", "option_text"}
     assert stub.calls == [(learner, cert, 1)]
     assert stub.deliveries == [stub.attempt_id]

@@ -5,7 +5,8 @@ Session: a successful call commits, and a failed call rolls back.
 """
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from urllib.parse import quote
 from uuid import UUID
 
 from sqlmodel import Session, select
@@ -17,6 +18,7 @@ from app.models import (
     ExamAttempt,
     ExamAttemptQuestion,
     Question,
+    QuestionImage,
     QuestionVersion,
     User,
 )
@@ -43,6 +45,17 @@ class ExamOptionContent:
 
 
 @dataclass(frozen=True)
+class ExamImageContent:
+    """Image metadata only; correct answers and raw storage keys are private."""
+
+    id: UUID
+    position: int
+    alt_text: str
+    media_type: str
+    url: str | None
+
+
+@dataclass(frozen=True)
 class ExamQuestionContent:
     """Stored exam assignment with safe question content."""
 
@@ -53,6 +66,7 @@ class ExamQuestionContent:
     allows_multiple_answers: bool
     difficulty: str
     options: list[ExamOptionContent]
+    images: list[ExamImageContent] = field(default_factory=list)
 
 
 class InvalidQuestionCountError(ValueError):
@@ -233,6 +247,27 @@ class ExamService:
                 )
             )
 
+        # A single batched query, never one query per question.
+        image_rows = self._session.exec(
+            select(QuestionImage)
+            .where(QuestionImage.question_version_id.in_(version_ids))
+            .order_by(QuestionImage.question_version_id, QuestionImage.position)
+        ).all()
+        images_by_version: dict[UUID, list[ExamImageContent]] = defaultdict(list)
+        for image in image_rows:
+            if image.media_type not in {"image/png", "image/jpeg", "image/webp"}:
+                # Defensive fallback for legacy/corrupted records.
+                continue
+            images_by_version[image.question_version_id].append(
+                ExamImageContent(
+                    id=image.id,
+                    position=image.position,
+                    alt_text=image.alt_text,
+                    media_type=image.media_type,
+                    url=self._image_url(image.storage_key),
+                )
+            )
+
         return [
             ExamQuestionContent(
                 id=version_id,
@@ -242,6 +277,7 @@ class ExamService:
                 allows_multiple_answers=allows_multiple_answers,
                 difficulty=difficulty,
                 options=options_by_version[version_id],
+                images=images_by_version[version_id],
             )
             for (
                 position,
@@ -252,3 +288,24 @@ class ExamService:
                 difficulty,
             ) in rows
         ]
+
+    @staticmethod
+    def _image_url(storage_key: str) -> str | None:
+        """Turn a safe object-storage key into a CDN URL, or use alt fallback.
+
+        Never fetch a remote URL server-side. Invalid or unconfigured keys
+        yield `None`, allowing the client to show alt text without crashing.
+        """
+        base = settings.media_base_url
+        parts = storage_key.split("/")
+        if (
+            not base
+            or not parts
+            or any(part in {"", ".", ".."} for part in parts)
+            or any(
+                "\\" in part or ":" in part or any(ord(c) < 32 for c in part)
+                for part in parts
+            )
+        ):
+            return None
+        return f"{base}/{'/'.join(quote(part, safe='') for part in parts)}"
