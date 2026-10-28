@@ -83,14 +83,6 @@ export default function ExamCard() {
   };
 
   const handleSubmit = () => {
-    setSubmittedMap((prev) => ({
-      ...prev,
-      [questionId]: true,
-    }));
-    setCurrentQuestionIndex((prev) =>
-      Math.min(prev + 1, practiceData.questions.length - 1),
-    );
-
     // Find the matching feedback from the imported JSON
     const feedbackEntry = sumbissionsFeedback.examples.find(
       (ex) => ex.response.question_version_id === questionId,
@@ -112,6 +104,19 @@ export default function ExamCard() {
         explanation: feedbackEntry?.response.explanation,
       },
     }));
+
+    // Mark question as submitted
+    setSubmittedMap((prev) => ({
+      ...prev,
+      [questionId]: true,
+    }));
+  };
+
+  // Move onto next question
+  const handleNext = () => {
+    setCurrentQuestionIndex((prev) =>
+      Math.min(prev + 1, practiceData.questions.length - 1),
+    );
   };
 
   return (
@@ -181,11 +186,11 @@ export default function ExamCard() {
             Previous
           </Button>
           <Button
-            disabled={currentSelected.length === 0}
-            onClick={handleSubmit}
+            disabled={!isSubmitted && currentSelected.length === 0}
+            onClick={isSubmitted ? handleNext : handleSubmit}
             className="hover:cursor-pointer py-5 px-3 text-base border border-gray-300 rounded-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSubmitted ? "Submitted" : "Submit answer"}
+            {isSubmitted ? "Next question" : "Submit answer"}
           </Button>
         </div>
       </Card>
