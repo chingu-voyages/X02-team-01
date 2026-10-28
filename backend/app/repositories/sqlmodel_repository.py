@@ -1,7 +1,7 @@
 from collections import defaultdict
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import and_, case, func, or_
 from sqlmodel import Session, select
 
 from app.models import (
@@ -107,17 +107,48 @@ class SQLModelQuestionRepository:
         if question_count < 1:
             raise ValueError("question_count must be positive")
 
+        # Count choices in ONE grouped subquery. Malformed MC questions must
+        # not be assigned to learners (missing options, missing answer key,
+        # or multiple correct answers for a single-select question).
+        option_counts = (
+            select(
+                AnswerOption.question_version_id.label("version_id"),
+                func.count(AnswerOption.id).label("option_count"),
+                func.sum(case((AnswerOption.is_correct.is_(True), 1), else_=0)).label(
+                    "correct_count"
+                ),
+            )
+            .group_by(AnswerOption.question_version_id)
+            .subquery()
+        )
+
         statement = (
             select(QuestionModel.id, QuestionVersion.id)
             .join(
                 QuestionVersion,
                 QuestionVersion.question_id == QuestionModel.id,
             )
+            .outerjoin(
+                option_counts,
+                option_counts.c.version_id == QuestionVersion.id,
+            )
             .where(
                 QuestionModel.certification_id == certification_id,
                 QuestionVersion.review_status == "approved",
                 QuestionVersion.publication_status == "active",
                 QuestionVersion.is_flagged.is_(False),
+                or_(
+                    QuestionVersion.question_type == "short_answer",
+                    and_(
+                        QuestionVersion.question_type == "multiple_choice",
+                        option_counts.c.option_count >= 2,
+                        option_counts.c.correct_count >= 1,
+                        or_(
+                            QuestionVersion.allows_multiple_answers.is_(True),
+                            option_counts.c.correct_count == 1,
+                        ),
+                    ),
+                ),
             )
             .order_by(func.random())
             .limit(question_count)

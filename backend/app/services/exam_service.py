@@ -10,6 +10,7 @@ from uuid import UUID
 
 from sqlmodel import Session, select
 
+from app.core.config import settings
 from app.models import (
     AnswerOption,
     Certification,
@@ -112,6 +113,10 @@ class ExamService:
             or question_count < 1
         ):
             raise InvalidQuestionCountError("question_count must be a positive integer")
+        if question_count > settings.max_exam_questions:
+            raise InvalidQuestionCountError(
+                f"question_count must not exceed {settings.max_exam_questions}"
+            )
 
         try:
             if self._session.get(User, learner_id) is None:
