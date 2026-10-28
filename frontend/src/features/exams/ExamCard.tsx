@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { RadioGroup } from "@/components/ui/radio-group";
 import { useState } from "react";
 import practiceData from "../../../src/data/practiceQuestions.json";
+import sumbissionsFeedback from "../../../src/data/submissionsFeedback.json";
 import ExamCardHeader from "./ExamCardHeader";
 
 export default function ExamCard() {
@@ -18,6 +19,18 @@ export default function ExamCard() {
 
   // Track which question have been submitted
   const [submittedMap, setSubmittedMap] = useState<Record<string, boolean>>({});
+
+  // Store feedback per question version ID
+  const [feedbackMap, setFeedbackMap] = useState<
+    Record<
+      string,
+      {
+        is_correct: boolean;
+        correct_option_ids: string[];
+        explanation?: string;
+      }
+    >
+  >({});
 
   // Grab the question from the array that matches the current index
   const currentQuestion = practiceData.questions[currentQuestionIndex];
@@ -40,6 +53,9 @@ export default function ExamCard() {
 
   // Check if the questions is already submitted
   const isSubmitted = submittedMap[questionId] || false;
+
+  // Check current feedback
+  const currentFeedback = feedbackMap[questionId];
 
   const handleSelect = (optionId: string) => {
     if (isSubmitted) return; // Prevent changing answers after submission
@@ -91,6 +107,7 @@ export default function ExamCard() {
                 isSelected={currentSelected.includes(option.id)} // Checking against this question's saved state
                 onSelect={() => handleSelect(option.id)} // ID is passed on click
                 isSubmitted={isSubmitted}
+                correctOptionIds={currentFeedback?.correct_option_ids || []}
               />
             ))
           ) : (
