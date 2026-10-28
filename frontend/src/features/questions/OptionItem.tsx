@@ -23,6 +23,32 @@ export default function OptionItem({
   const isCorrectOption = correctOptionIds.includes(id);
   const isIncorrectSelection = isSubmitted && isSelected && !isCorrectOption;
 
+  const getFeedbackBadge = () => {
+    if (!isSubmitted) return null;
+
+    // Option was selected and is correct
+    if (isSelected && isCorrectOption) {
+      return (
+        <span className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-green-800 bg-green-100 px-2 py-0.5 rounded">
+          <span aria-hidden="true">✓</span>
+          <span>Correct</span>
+        </span>
+      );
+    }
+
+    // Missed correct answer
+    if (!isSelected && isCorrectOption) {
+      return (
+        <span className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-blue-800 bg-blue-100 px-2 py-0.5 rounded">
+          <span aria-hidden="true">✓</span>
+          <span>Correct Answer</span>
+        </span>
+      );
+    }
+
+    return null;
+  };
+
   return (
     <label
       onClick={!isSubmitted ? onSelect : undefined}
@@ -49,7 +75,10 @@ export default function OptionItem({
         ) : (
           <Checkbox disabled={isSubmitted} />
         )}
-        {option}
+        <div className="flex items-center justify-between w-full">
+          <span>{option}</span>
+          {getFeedbackBadge()}
+        </div>
       </div>
     </label>
   );
