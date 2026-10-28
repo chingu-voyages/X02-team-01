@@ -1,0 +1,71 @@
+services:
+  # Backend API
+  - type: web
+    name: jhep-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: jhep-db
+          property: database
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: jhep-db
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: jhep-db
+          property: password
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: jhep-db
+          property: host
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: jhep-db
+          property: port
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 30
+      - key: CORS_ORIGINS
+        value: "https://jhep-frontend.onrender.com"
+      - key: PORT
+        value: 8000
+    buildFilter:
+      paths:
+        - backend/**
+    # Migrations run inside the image entrypoint (see backend/Dockerfile CMD);
+    # Render forbids startCommand for docker runtime.
+
+  # Frontend
+  - type: web
+    name: jhep-frontend
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production
+    buildFilter:
+      paths:
+        - frontend/**
+    # NOTE: Render's docker runtime does not support Docker build args.
+    # When the frontend starts calling the API, prefer a runtime proxy
+    # (Next.js rewrites to the backend) or switch this service to
+    # runtime: node, where env vars ARE available at build time.
+
+databases:
+  - name: jhep-db
+    plan: free
+    databaseName: jhep_db
+    user: jhep
