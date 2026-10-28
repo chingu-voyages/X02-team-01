@@ -61,3 +61,14 @@ class ExamCreatedOut(BaseModel):
     status: Literal["in_progress"]
     question_count: int
     questions: list[ExamQuestionOut]
+
+
+class ExamResumedOut(BaseModel):
+    """Existing attempt in its originally persisted question order."""
+
+    attempt_id: UUID
+    certification_id: UUID
+    status: Literal["in_progress", "submitted"]
+    question_count: int
+    current_position: int
+    questions: list[ExamQuestionOut]

@@ -69,6 +69,10 @@ class ExamQuestionContent:
     images: list[ExamImageContent] = field(default_factory=list)
 
 
+class ExamAttemptNotFoundError(LookupError):
+    """Attempt doesn't exist or doesn't belong to the current learner."""
+
+
 class InvalidQuestionCountError(ValueError):
     """The requested count is not a positive integer."""
 
@@ -194,6 +198,13 @@ class ExamService:
             certification_id=certification_id,
             question_count=question_count,
         )
+
+    def get_owned_attempt(self, *, attempt_id: UUID, learner_id: UUID) -> ExamAttempt:
+        """Authorize before retrieving any attempt data (no ID enumeration)."""
+        attempt = self._session.get(ExamAttempt, attempt_id)
+        if attempt is None or attempt.user_id != learner_id:
+            raise ExamAttemptNotFoundError("Exam attempt not found")
+        return attempt
 
     def get_exam_questions(self, attempt_id: UUID) -> list[ExamQuestionContent]:
         """Read assigned questions in fixed order, without loading answer keys.
