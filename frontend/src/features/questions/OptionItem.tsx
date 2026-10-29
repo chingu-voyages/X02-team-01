@@ -50,36 +50,44 @@ export default function OptionItem({
   };
 
   return (
-    <label
-      htmlFor={id}
-      className={isSubmitted ? "cursor-not-allowed" : "cursor-pointer"}
-    >
-      <div
-        className={`
-          flex gap-2 items-center  border  min-h-11 px-2 rounded-sm ${
-            isSubmitted
-              ? isCorrectOption
-                ? `border-green-500 bg-green-50 text-green-900`
-                : isIncorrectSelection
-                  ? `border-red-500 bg-red-50 text-red-900`
-                  : isSelected
-                    ? `border-black bg-gray-300`
-                    : `border-gray-300 bg-white`
+    <div
+      onClick={() => {
+        if (!isSubmitted) onSelect();
+      }}
+      className={`flex min-h-11 gap-3 items-center border p-3 rounded-sm ${
+        isSubmitted
+          ? isCorrectOption
+            ? "border-green-500 bg-green-50 text-green-900 cursor-not-allowed"
+            : isIncorrectSelection
+              ? "border-red-500 bg-red-50 text-red-900 cursor-not-allowed"
               : isSelected
-                ? `border-black bg-gray-300`
-                : `border-gray-300 bg-white hover:cursor-pointer hover:bg-gray-200 hover:border-gray-500 transition-colors duration-300`
-          }`}
-      >
-        {questionType === "single" ? (
-          <RadioGroupItem value={id} id={id} disabled={isSubmitted} />
-        ) : (
-          <Checkbox id={id} disabled={isSubmitted} checked={isSelected} onCheckedChange={!isSubmitted ? () => onSelect : undefined} />
-        )}
-        <div className="flex items-center justify-between w-full">
-          <span>{option}</span>
-          {getFeedbackBadge()}
-        </div>
+                ? "border-black bg-gray-300 cursor-not-allowed"
+                : "border-gray-300 bg-white cursor-not-allowed"
+          : isSelected
+            ? "border-black bg-gray-300 cursor-pointer"
+            : "border-gray-300 bg-white hover:bg-gray-200 hover:border-gray-500 transition-colors duration-300 cursor-pointer"
+      }`}
+    >
+      {questionType === "single" ? (
+        <RadioGroupItem
+          value={id}
+          id={id}
+          disabled={isSubmitted}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <Checkbox
+          id={id}
+          checked={isSelected}
+          onCheckedChange={!isSubmitted ? onSelect : undefined}
+          disabled={isSubmitted}
+          onClick={(e) => e.stopPropagation()}
+        />
+      )}
+      <div className="flex items-center justify-between w-full">
+        <span>{option}</span>
+        {getFeedbackBadge()}
       </div>
-    </label>
+    </div>
   );
 }
