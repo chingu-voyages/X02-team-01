@@ -1,0 +1,155 @@
+{
+  "attempt_id": "bc6223e2-e683-5b9c-9cf7-cf46717ce6eb",
+  "certification_id": "a6162b60-0704-5058-95d4-80a20f360fe1",
+  "status": "in_progress",
+  "question_count": 5,
+  "questions": [
+    {
+      "id": "7261c5b0-963a-574c-9202-24d4915bda98",
+      "position": 1,
+      "question_text": "Who is accountable for ordering the Product Backlog?",
+      "question_type": "multiple_choice",
+      "allows_multiple_answers": false,
+      "difficulty": "easy",
+      "category": "Scrum Roles & Responsibilities",
+      "options": [
+        {
+          "id": "3a51f36d-c93c-5425-9de2-2cf8240b649f",
+          "position": 1,
+          "option_text": "Scrum Master"
+        },
+        {
+          "id": "5460399a-7c3b-57fc-9bfb-61f00a7f17ac",
+          "position": 2,
+          "option_text": "Product Owner"
+        },
+        {
+          "id": "7a611dac-c76f-53fe-badf-d8654477cfda",
+          "position": 3,
+          "option_text": "Developers"
+        },
+        {
+          "id": "4f4d9a35-bf3c-5792-813e-9ab4792daa6e",
+          "position": 4,
+          "option_text": "Stakeholders"
+        }
+      ],
+      "images": []
+    },
+    {
+      "id": "8bda56c8-dd57-5f79-bda9-cfb19ff60ff0",
+      "position": 2,
+      "question_text": "Which three pillars support Scrum? Select all that apply.",
+      "question_type": "multiple_choice",
+      "allows_multiple_answers": true,
+      "difficulty": "medium",
+      "category": "Scrum Theory & Principles",
+      "options": [
+        {
+          "id": "bc438e16-65a9-5485-bffd-7168b8171150",
+          "position": 1,
+          "option_text": "Transparency"
+        },
+        {
+          "id": "e605e8a1-e58c-508d-80aa-f872752e4cad",
+          "position": 2,
+          "option_text": "Inspection"
+        },
+        {
+          "id": "9047ebff-289a-5044-8f0d-14632dffb669",
+          "position": 3,
+          "option_text": "Adaptation"
+        },
+        {
+          "id": "2df05435-4655-5db8-88c0-021955b77703",
+          "position": 4,
+          "option_text": "Prediction"
+        }
+      ],
+      "images": []
+    },
+    {
+      "id": "b92b2c52-8a12-52a6-9234-06a5cb239c7a",
+      "position": 3,
+      "question_text": "In your own words, explain how a Sprint Retrospective helps a Scrum Team improve. 📝",
+      "question_type": "short_answer",
+      "allows_multiple_answers": false,
+      "difficulty": "medium",
+      "category": "Scrum Events",
+      "options": [],
+      "images": []
+    },
+    {
+      "id": "d847fc25-fe92-5453-beb3-d1cdeaed485d",
+      "position": 4,
+      "question_text": "A team completed 20, 30, and 25 story points in its last three Sprints. Which formula calculates its average velocity? \\(\\frac{20 + 30 + 25}{3}\\)",
+      "question_type": "multiple_choice",
+      "allows_multiple_answers": false,
+      "difficulty": "medium",
+      "category": "Estimation & Velocity",
+      "options": [
+        {
+          "id": "558fb943-99ac-5b8b-a5b6-d2655f4ca519",
+          "position": 1,
+          "option_text": "(20 + 30 + 25) / 3"
+        },
+        {
+          "id": "facd9f99-f87d-5c73-9146-babd189c4fb9",
+          "position": 2,
+          "option_text": "20 + 30 + 25"
+        },
+        {
+          "id": "b863181d-26ce-5bd6-930a-15b4cd4c7998",
+          "position": 3,
+          "option_text": "(20 + 30 + 25) × 3"
+        },
+        {
+          "id": "f091f3a0-f3c7-556c-be6b-643467bcda33",
+          "position": 4,
+          "option_text": "30 − 20"
+        }
+      ],
+      "images": [
+        {
+          "id": "f4386bb5-6e75-5667-b31e-a0b526b5c7ff",
+          "position": 1,
+          "alt_text": "Example bar chart showing completed story points: Sprint 1 = 20, Sprint 2 = 30, Sprint 3 = 25.",
+          "media_type": "image/webp",
+          "url": null
+        }
+      ]
+    },
+    {
+      "id": "1b52e725-7f48-5d90-9113-6d36268a6120",
+      "position": 5,
+      "question_text": "En français : Quel est l’objectif principal de la Revue de Sprint ?",
+      "question_type": "multiple_choice",
+      "allows_multiple_answers": false,
+      "difficulty": "hard",
+      "category": "Scrum Events",
+      "options": [
+        {
+          "id": "603be886-bbab-5dd4-bf02-d3e976534055",
+          "position": 1,
+          "option_text": "Inspecter le résultat du Sprint et déterminer les adaptations futures"
+        },
+        {
+          "id": "f9fdcc34-d062-5819-a7d6-91aed182f17d",
+          "position": 2,
+          "option_text": "Évaluer individuellement les développeurs"
+        },
+        {
+          "id": "4a9e2567-de5a-535e-92a5-6f3c2772187a",
+          "position": 3,
+          "option_text": "Remplacer la Rétrospective de Sprint"
+        },
+        {
+          "id": "aef8a726-19f7-5019-9a84-f3b1a168f165",
+          "position": 4,
+          "option_text": "Approuver le budget annuel"
+        }
+      ],
+      "images": []
+    }
+  ]
+}

@@ -4,7 +4,7 @@ import OptionItem from "@/features/questions/OptionItem";
 import { Button } from "@/components/ui/button";
 import { RadioGroup } from "@/components/ui/radio-group";
 import { useState } from "react";
-import practiceData from "../../../src/data/practiceQuestions.json";
+import practiceData from "../../../src/data/mock-exam-response.json";
 import sumbissionsFeedback from "../../../src/data/submissionsFeedback.json";
 import ExamCardHeader from "./ExamCardHeader";
 
@@ -41,7 +41,7 @@ export default function ExamCard() {
   }
 
   // Extract the details and unique ID of the current question
-  const questionId = currentQuestion.question_version_id;
+  const questionId = currentQuestion.id;
   const currentQuestionText = currentQuestion.question_text;
   const currentQuestionOptions = currentQuestion.options;
 
