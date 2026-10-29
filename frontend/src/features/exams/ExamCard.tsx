@@ -4,7 +4,8 @@ import OptionItem from "@/features/questions/OptionItem";
 import { Button } from "@/components/ui/button";
 import { RadioGroup } from "@/components/ui/radio-group";
 import { useState } from "react";
-import practiceData from "../../../src/data/practiceQuestions.json";
+import practiceData from "../../../src/data/mock-exam-response.json";
+import sumbissionsFeedback from "../../../src/data/submissionsFeedback.json";
 import ExamCardHeader from "./ExamCardHeader";
 
 export default function ExamCard() {
@@ -19,6 +20,18 @@ export default function ExamCard() {
   // Track which question have been submitted
   const [submittedMap, setSubmittedMap] = useState<Record<string, boolean>>({});
 
+  // Store feedback per question version ID
+  const [feedbackMap, setFeedbackMap] = useState<
+    Record<
+      string,
+      {
+        is_correct: boolean;
+        correct_option_ids: string[];
+        explanation?: string;
+      }
+    >
+  >({});
+
   // Grab the question from the array that matches the current index
   const currentQuestion = practiceData.questions[currentQuestionIndex];
 
@@ -28,7 +41,7 @@ export default function ExamCard() {
   }
 
   // Extract the details and unique ID of the current question
-  const questionId = currentQuestion.question_version_id;
+  const questionId = currentQuestion.id;
   const currentQuestionText = currentQuestion.question_text;
   const currentQuestionOptions = currentQuestion.options;
 
@@ -40,6 +53,9 @@ export default function ExamCard() {
 
   // Check if the questions is already submitted
   const isSubmitted = submittedMap[questionId] || false;
+
+  // Check current feedback
+  const currentFeedback = feedbackMap[questionId];
 
   const handleSelect = (optionId: string) => {
     if (isSubmitted) return; // Prevent changing answers after submission
@@ -66,6 +82,56 @@ export default function ExamCard() {
     }
   };
 
+  const handleSubmit = () => {
+    // Find the matching feedback from the imported JSON
+    const feedbackEntry = sumbissionsFeedback.examples.find(
+      (ex) => ex.response.question_version_id === questionId,
+    );
+
+    if (!feedbackEntry) return;
+
+    const correctIds = feedbackEntry.response.correct_option_ids;
+    const isCorrect =
+      currentSelected.length === correctIds.length &&
+      currentSelected.every((id) => correctIds.includes(id));
+
+    // Save feedback to state map
+    setFeedbackMap((prev) => ({
+      ...prev,
+      [questionId]: {
+        is_correct: isCorrect,
+        correct_option_ids: correctIds,
+        explanation: feedbackEntry?.response.explanation,
+      },
+    }));
+
+    // Mark question as submitted
+    setSubmittedMap((prev) => ({
+      ...prev,
+      [questionId]: true,
+    }));
+  };
+
+  // Move onto next question
+  const handleNext = () => {
+    setCurrentQuestionIndex((prev) =>
+      Math.min(prev + 1, practiceData.questions.length - 1),
+    );
+  };
+
+  const optionsList = currentQuestionOptions.map((option) => (
+    <OptionItem
+      key={option.id}
+      id={option.id}
+      option={option.option_text}
+      questionType={isMultiple ? "multiple" : "single"}
+      isSelected={currentSelected.includes(option.id)} // Checking against this question's saved state
+      onSelect={() => handleSelect(option.id)} // ID is passed on click
+      isSubmitted={isSubmitted}
+      correctOptionIds={currentFeedback?.correct_option_ids || []}
+    />
+  ));
+
   return (
     <div>
       <Card>
@@ -79,40 +145,36 @@ export default function ExamCard() {
           questionNumber={currentQuestionIndex + 1}
           questionType="multiple choice"
         />
-        <h2 className="text-xl font-semibold my-3">{currentQuestionText}</h2>
-        <div className="flex flex-col gap-2">
-          {isMultiple ? (
-            currentQuestionOptions.map((option) => (
-              <OptionItem
-                key={option.id}
-                id={option.id}
-                option={option.option_text}
-                questionType={isMultiple ? "multiple" : "single"}
-                isSelected={currentSelected.includes(option.id)} // Checking against this question's saved state
-                onSelect={() => handleSelect(option.id)} // ID is passed on click
-                isSubmitted={isSubmitted}
-              />
-            ))
-          ) : (
-            <RadioGroup
-              value={currentSelected[0] || ""}
-              onValueChange={(val) => handleSelect(val)}
-              className="flex flex-col gap-2"
-            >
-              {currentQuestionOptions.map((option) => (
-                <OptionItem
-                  key={option.id}
-                  id={option.id}
-                  option={option.option_text}
-                  questionType="single"
-                  isSelected={currentSelected.includes(option.id)}
-                  onSelect={() => handleSelect(option.id)}
-                  isSubmitted={isSubmitted}
-                />
-              ))}
-            </RadioGroup>
-          )}
-        </div>
+        <h2
+          id="question-heading"
+          className="text-base sm:text-xl font-semibold my-3"
+        >
+          {currentQuestionText}
+        </h2>
+        {isMultiple ? (
+          <div
+            role="group"
+            aria-labelledby="question-heading"
+            className="flex flex-col gap-2"
+          >
+            {optionsList}
+          </div>
+        ) : (
+          <RadioGroup
+            value={currentSelected[0] || ""}
+            onValueChange={(val) => handleSelect(val)}
+            aria-labelledby="question-heading"
+            className="flex flex-col gap-2"
+          >
+            {optionsList}
+          </RadioGroup>
+        )}
+
+        {currentFeedback?.explanation && (
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-sm text-sm text-blue-900">
+            <strong>Explanation:</strong> {currentFeedback.explanation}
+          </div>
+        )}
 
         <div className="flex gap-2 mt-2">
           <Button
@@ -125,19 +187,11 @@ export default function ExamCard() {
             Previous
           </Button>
           <Button
-            disabled={currentSelected.length === 0}
-            onClick={() => {
-              setSubmittedMap((prev) => ({
-                ...prev,
-                [questionId]: true,
-              }));
-              setCurrentQuestionIndex((prev) =>
-                Math.min(prev + 1, practiceData.questions.length - 1),
-              );
-            }}
+            disabled={!isSubmitted && currentSelected.length === 0}
+            onClick={isSubmitted ? handleNext : handleSubmit}
             className="hover:cursor-pointer py-5 px-3 text-base border border-gray-300 rounded-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSubmitted ? "Submitted" : "Submit answer"}
+            {isSubmitted ? "Next question" : "Submit answer"}
           </Button>
         </div>
       </Card>
