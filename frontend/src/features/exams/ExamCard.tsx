@@ -132,10 +132,15 @@ export default function ExamCard() {
           questionNumber={currentQuestionIndex + 1}
           questionType="multiple choice"
         />
-        <h2 className="text-xl font-semibold my-3">{currentQuestionText}</h2>
-        <div className="flex flex-col gap-2">
-          {isMultiple ? (
-            currentQuestionOptions.map((option) => (
+        <h2
+          id="question-heading"
+          className="text-base sm:text-xl font-semibold my-3"
+        >
+          {currentQuestionText}
+        </h2>
+        {isMultiple ? (
+          <div role="group" aria-labelledby="question-heading" >
+            {currentQuestionOptions.map((option) => (
               <OptionItem
                 key={option.id}
                 id={option.id}
@@ -146,28 +151,28 @@ export default function ExamCard() {
                 isSubmitted={isSubmitted}
                 correctOptionIds={currentFeedback?.correct_option_ids || []}
               />
-            ))
-          ) : (
-            <RadioGroup
-              value={currentSelected[0] || ""}
-              onValueChange={(val) => handleSelect(val)}
-              className="flex flex-col gap-2"
-            >
-              {currentQuestionOptions.map((option) => (
-                <OptionItem
-                  key={option.id}
-                  id={option.id}
-                  option={option.option_text}
-                  questionType="single"
-                  isSelected={currentSelected.includes(option.id)}
-                  onSelect={() => handleSelect(option.id)}
-                  isSubmitted={isSubmitted}
-                  correctOptionIds={currentFeedback?.correct_option_ids || []}
-                />
-              ))}
-            </RadioGroup>
-          )}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <RadioGroup
+            value={currentSelected[0] || ""}
+            onValueChange={(val) => handleSelect(val)}
+            className="flex flex-col gap-2"
+          >
+            {currentQuestionOptions.map((option) => (
+              <OptionItem
+                key={option.id}
+                id={option.id}
+                option={option.option_text}
+                questionType="single"
+                isSelected={currentSelected.includes(option.id)}
+                onSelect={() => handleSelect(option.id)}
+                isSubmitted={isSubmitted}
+                correctOptionIds={currentFeedback?.correct_option_ids || []}
+              />
+            ))}
+          </RadioGroup>
+        )}
 
         {currentFeedback?.explanation && (
           <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-sm text-sm text-blue-900">
