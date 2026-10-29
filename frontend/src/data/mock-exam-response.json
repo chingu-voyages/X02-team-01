@@ -69,17 +69,6 @@
       "images": []
     },
     {
-      "id": "b92b2c52-8a12-52a6-9234-06a5cb239c7a",
-      "position": 3,
-      "question_text": "In your own words, explain how a Sprint Retrospective helps a Scrum Team improve. 📝",
-      "question_type": "short_answer",
-      "allows_multiple_answers": false,
-      "difficulty": "medium",
-      "category": "Scrum Events",
-      "options": [],
-      "images": []
-    },
-    {
       "id": "d847fc25-fe92-5453-beb3-d1cdeaed485d",
       "position": 4,
       "question_text": "A team completed 20, 30, and 25 story points in its last three Sprints. Which formula calculates its average velocity? \\(\\frac{20 + 30 + 25}{3}\\)",
