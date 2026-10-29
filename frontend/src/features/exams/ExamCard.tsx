@@ -119,6 +119,19 @@ export default function ExamCard() {
     );
   };
 
+  const optionsList = currentQuestionOptions.map((option) => (
+    <OptionItem
+      key={option.id}
+      id={option.id}
+      option={option.option_text}
+      questionType={isMultiple ? "multiple" : "single"}
+      isSelected={currentSelected.includes(option.id)} // Checking against this question's saved state
+      onSelect={() => handleSelect(option.id)} // ID is passed on click
+      isSubmitted={isSubmitted}
+      correctOptionIds={currentFeedback?.correct_option_ids || []}
+    />
+  ));
+
   return (
     <div>
       <Card>
@@ -139,38 +152,21 @@ export default function ExamCard() {
           {currentQuestionText}
         </h2>
         {isMultiple ? (
-          <div role="group" aria-labelledby="question-heading" >
-            {currentQuestionOptions.map((option) => (
-              <OptionItem
-                key={option.id}
-                id={option.id}
-                option={option.option_text}
-                questionType={isMultiple ? "multiple" : "single"}
-                isSelected={currentSelected.includes(option.id)} // Checking against this question's saved state
-                onSelect={() => handleSelect(option.id)} // ID is passed on click
-                isSubmitted={isSubmitted}
-                correctOptionIds={currentFeedback?.correct_option_ids || []}
-              />
-            ))}
+          <div
+            role="group"
+            aria-labelledby="question-heading"
+            className="flex flex-col gap-2"
+          >
+            {optionsList}
           </div>
         ) : (
           <RadioGroup
             value={currentSelected[0] || ""}
             onValueChange={(val) => handleSelect(val)}
+            aria-labelledby="question-heading"
             className="flex flex-col gap-2"
           >
-            {currentQuestionOptions.map((option) => (
-              <OptionItem
-                key={option.id}
-                id={option.id}
-                option={option.option_text}
-                questionType="single"
-                isSelected={currentSelected.includes(option.id)}
-                onSelect={() => handleSelect(option.id)}
-                isSubmitted={isSubmitted}
-                correctOptionIds={currentFeedback?.correct_option_ids || []}
-              />
-            ))}
+            {optionsList}
           </RadioGroup>
         )}
 

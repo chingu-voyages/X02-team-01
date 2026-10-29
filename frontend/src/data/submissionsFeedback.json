@@ -1,52 +1,82 @@
 {
-  "note": "DEVELOPMENT-ONLY: These response examples contain correct answers. Return only after the user submits; never include in GET questions.",
+  "note": "DEVELOPMENT-ONLY: Mock feedback data for exam development.",
   "examples": [
     {
-      "scenario": "single_select_correct",
+      "scenario": "question_1_roles",
       "response": {
-        "attempt_id": "d470a2a2-8c57-5a24-b0ae-611c4c566a28",
-        "question_version_id": "84abaf3f-b242-5c17-8982-687a44d39b3f",
-        "selected_option_ids": ["42cec141-8d9b-5e3e-b539-c7453cb388f8"],
+        "attempt_id": "bc6223e2-e683-5b9c-9cf7-cf46717ce6eb",
+        "question_version_id": "7261c5b0-963a-574c-9202-24d4915bda98",
+        "selected_option_ids": ["5460399a-7c3b-57fc-9bfb-61f00a7f17ac"],
         "is_correct": true,
-        "correct_option_ids": ["42cec141-8d9b-5e3e-b539-c7453cb388f8"],
+        "correct_option_ids": ["5460399a-7c3b-57fc-9bfb-61f00a7f17ac"],
         "feedback_message": "Correct answer.",
         "submitted": true,
         "can_edit": false,
-        "explanation": "The Product Owner is accountable for maximizing the value of the product resulting from the Scrum Team’s work."
+        "explanation": "The Product Owner is responsible for the Product Backlog, including its content, availability, and ordering."
       }
     },
     {
-      "scenario": "multi_select_incorrect",
+      "scenario": "question_2_pillars",
       "response": {
-        "attempt_id": "d470a2a2-8c57-5a24-b0ae-611c4c566a28",
-        "question_version_id": "020da2d8-7594-5aee-a021-a3dc13d48b5d",
+        "attempt_id": "bc6223e2-e683-5b9c-9cf7-cf46717ce6eb",
+        "question_version_id": "8bda56c8-dd57-5f79-bda9-cfb19ff60ff0",
         "selected_option_ids": [
-          "435737a8-e04a-5af3-a9d5-9b36c06d8eae",
-          "1f3edd12-8c62-5342-aef9-18be8ad1feb9"
+          "bc438e16-65a9-5485-bffd-7168b8171150",
+          "e605e8a1-e58c-508d-80aa-f872752e4cad",
+          "9047ebff-289a-5044-8f0d-14632dffb669"
         ],
-        "is_correct": false,
+        "is_correct": true,
         "correct_option_ids": [
-          "435737a8-e04a-5af3-a9d5-9b36c06d8eae",
-          "72eb9d13-18aa-5542-bfaa-2e9137469892",
-          "bfbd37a5-ac27-5a26-94ba-9d60c6891392"
+          "bc438e16-65a9-5485-bffd-7168b8171150",
+          "e605e8a1-e58c-508d-80aa-f872752e4cad",
+          "9047ebff-289a-5044-8f0d-14632dffb669"
         ],
-        "feedback_message": "Incorrect answer.",
+        "feedback_message": "Correct answer.",
         "submitted": true,
         "can_edit": false,
-        "explanation": "Sprint Planning, Sprint Review, and Sprint Retrospective are Scrum events. The Product Backlog is a Scrum artifact."
+        "explanation": "Scrum is founded on empirical process control, or empiricism. Transparency, inspection, and adaptation are the three formal pillars."
       }
     },
     {
-      "scenario": "no_explanation",
+      "scenario": "question_3_short_answer",
       "response": {
-        "attempt_id": "d470a2a2-8c57-5a24-b0ae-611c4c566a28",
-        "question_version_id": "98f3e43a-6452-5ee0-a9a0-34f32ede0432",
-        "selected_option_ids": ["2453c74f-e0ad-5393-a4c2-2e93a7d39852"],
+        "attempt_id": "bc6223e2-e683-5b9c-9cf7-cf46717ce6eb",
+        "question_version_id": "b92b2c52-8a12-52a6-9234-06a5cb239c7a",
+        "selected_option_ids": [],
         "is_correct": true,
-        "correct_option_ids": ["2453c74f-e0ad-5393-a4c2-2e93a7d39852"],
+        "correct_option_ids": [],
+        "feedback_message": "Answer recorded.",
+        "submitted": true,
+        "can_edit": false,
+        "explanation": "The purpose of the Sprint Retrospective is to plan ways to increase quality and effectiveness."
+      }
+    },
+    {
+      "scenario": "question_4_velocity",
+      "response": {
+        "attempt_id": "bc6223e2-e683-5b9c-9cf7-cf46717ce6eb",
+        "question_version_id": "d847fc25-fe92-5453-beb3-d1cdeaed485d",
+        "selected_option_ids": ["558fb943-99ac-5b8b-a5b6-d2655f4ca519"],
+        "is_correct": true,
+        "correct_option_ids": ["558fb943-99ac-5b8b-a5b6-d2655f4ca519"],
         "feedback_message": "Correct answer.",
         "submitted": true,
-        "can_edit": false
+        "can_edit": false,
+        "explanation": "Velocity is calculated by adding the completed story points across the sprints and dividing by the number of sprints."
+      }
+    },
+    {
+      "scenario": "question_5_french",
+      "response": {
+        "attempt_id": "bc6223e2-e683-5b9c-9cf7-cf46717ce6eb",
+        "question_version_id": "1b52e725-7f48-5d90-9113-6d36268a6120",
+        "selected_option_ids": ["603be886-bbab-5dd4-bf02-d3e976534055"],
+        "is_correct": true,
+        "correct_option_ids": ["603be886-bbab-5dd4-bf02-d3e976534055"],
+        "feedback_message": "Correct answer.",
+        "submitted": true,
+        "can_edit": false,
+        "explanation": "La Revue de Sprint a pour objectif d'inspecter le résultat du Sprint et de déterminer les adaptations futures."
       }
     }
   ]
