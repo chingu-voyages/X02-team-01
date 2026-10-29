@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
@@ -22,6 +24,30 @@ class Settings(BaseSettings):
 
     # CORS
     cors_origins: str = "http://localhost:3000"
+
+    # Site deployments can enforce a smaller exam; hard ceiling remains 100.
+    max_exam_questions: int = Field(default=100, ge=1, le=100)
+
+    # Public HTTPS R2/CDN asset base. A missing value means image URLs are
+    # unavailable, but the API still returns the image's alt text/metadata.
+    media_base_url: str | None = None
+
+    @field_validator("media_base_url")
+    @classmethod
+    def require_https_asset_base(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("MEDIA_BASE_URL must be a public HTTPS base URL")
+        return value.rstrip("/")
 
     model_config = SettingsConfigDict(
         env_file=ROOT_DIR / ".env",

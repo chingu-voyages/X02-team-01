@@ -311,6 +311,7 @@ def test_question_content_unicode_long_text_and_keys_are_safe(
             "allows_multiple_answers",
             "difficulty",
             "options",
+            "images",
         }
         for option in question.options:
             assert set(vars(option)) == {"id", "position", "option_text"}

@@ -4,6 +4,7 @@ from .certification import Certification as Certification
 from .exam_attempt import ExamAttempt as ExamAttempt
 from .exam_attempt_question import ExamAttemptQuestion as ExamAttemptQuestion
 from .question import Question as Question
+from .question_image import QuestionImage as QuestionImage
 from .question_version import QuestionVersion as QuestionVersion
 from .text_answer_key import TextAnswerKey as TextAnswerKey
 from .user import User as User
