@@ -51,12 +51,12 @@ export default function OptionItem({
 
   return (
     <label
-      onClick={!isSubmitted ? onSelect : undefined}
-      className={isSubmitted ? "cursor-not-allowed" : ""}
+      htmlFor={id}
+      className={isSubmitted ? "cursor-not-allowed" : "cursor-pointer"}
     >
       <div
         className={`
-          flex gap-2 items-center  border  p-3 rounded-sm ${
+          flex gap-2 items-center  border  min-h-11 px-2 rounded-sm ${
             isSubmitted
               ? isCorrectOption
                 ? `border-green-500 bg-green-50 text-green-900`
@@ -71,9 +71,9 @@ export default function OptionItem({
           }`}
       >
         {questionType === "single" ? (
-          <RadioGroupItem value={id} disabled={isSubmitted} />
+          <RadioGroupItem value={id} id={id} disabled={isSubmitted} />
         ) : (
-          <Checkbox disabled={isSubmitted} />
+          <Checkbox id={id} disabled={isSubmitted} checked={isSelected} onCheckedChange={!isSubmitted ? () => onSelect : undefined} />
         )}
         <div className="flex items-center justify-between w-full">
           <span>{option}</span>
