@@ -261,7 +261,9 @@ def test_postgres_endpoint_creates_and_delivers_exam(postgres_api_session):
 
     session = postgres_api_session
     learner = User(email=f"api-{uuid4().hex}@example.com")
-    cert = Certification(name="Practice Exam", code=uuid4().hex[:10])
+    cert = Certification(
+        name="Practice Exam", code=uuid4().hex[:10], passing_threshold_pct=70
+    )
     session.add_all([learner, cert])
     session.flush()
 

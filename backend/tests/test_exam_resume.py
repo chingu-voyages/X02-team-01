@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.v1.endpoints.exams import get_exam_service
+from app.api.v1.endpoints.exams import get_exam_attempt_service, get_exam_service
 from app.core.security import create_access_token
 from app.main import app
 from app.services.exam_service import (
@@ -61,11 +61,16 @@ def resume_api():
     learner_id, attempt_id, cert_id = uuid4(), uuid4(), uuid4()
     service = StubResumeService(learner_id, attempt_id, cert_id)
     app.dependency_overrides[get_exam_service] = lambda: service
+    app.dependency_overrides[get_exam_attempt_service] = lambda: SimpleNamespace(
+        response_blocks=lambda attempt: {},
+        answer_counts=lambda attempt: (0, 2),
+    )
     try:
         with TestClient(app) as client:
             yield client, service, learner_id, attempt_id
     finally:
         app.dependency_overrides.pop(get_exam_service, None)
+        app.dependency_overrides.pop(get_exam_attempt_service, None)
 
 
 def test_owner_can_resume_original_order(resume_api):
