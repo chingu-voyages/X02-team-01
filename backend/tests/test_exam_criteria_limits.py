@@ -77,7 +77,9 @@ def pg_session():
 
 def test_malformed_multiple_choice_question_is_not_selected(pg_session):
     user = User(email=f"qa-{uuid4().hex}@example.test")
-    cert = Certification(name="Integrity", code=uuid4().hex[:12])
+    cert = Certification(
+        name="Integrity", code=uuid4().hex[:12], passing_threshold_pct=70
+    )
     pg_session.add_all([user, cert])
     pg_session.flush()
 
