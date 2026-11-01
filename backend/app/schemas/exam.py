@@ -28,6 +28,16 @@ class ExamOptionOut(BaseModel):
     option_text: str
 
 
+class ExamImageOut(BaseModel):
+    """Version-associated image, with an optional CDN delivery URL."""
+
+    id: UUID
+    position: int
+    alt_text: str
+    media_type: Literal["image/png", "image/jpeg", "image/webp"]
+    url: str | None = None
+
+
 class ExamQuestionOut(BaseModel):
     """Question version as assigned to the learner's attempt."""
 
@@ -40,6 +50,7 @@ class ExamQuestionOut(BaseModel):
     allows_multiple_answers: bool
     difficulty: Literal["easy", "medium", "hard"]
     options: list[ExamOptionOut]
+    images: list[ExamImageOut] = Field(default_factory=list)
 
 
 class ExamCreatedOut(BaseModel):
@@ -49,4 +60,15 @@ class ExamCreatedOut(BaseModel):
     certification_id: UUID
     status: Literal["in_progress"]
     question_count: int
+    questions: list[ExamQuestionOut]
+
+
+class ExamResumedOut(BaseModel):
+    """Existing attempt in its originally persisted question order."""
+
+    attempt_id: UUID
+    certification_id: UUID
+    status: Literal["in_progress", "submitted"]
+    question_count: int
+    current_position: int
     questions: list[ExamQuestionOut]
