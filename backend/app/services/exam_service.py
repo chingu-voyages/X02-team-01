@@ -85,6 +85,11 @@ class CertificationNotFoundError(LookupError):
     """The requested certification does not exist."""
 
 
+class MissingThresholdError(Exception):
+    """The certification has no valid passing threshold (AC3: exams cannot
+    be made available to learners without one)."""
+
+
 class InsufficientQuestionsError(Exception):
     """There are not enough eligible questions to generate a complete exam."""
 
@@ -140,8 +145,17 @@ class ExamService:
             if self._session.get(User, learner_id) is None:
                 raise LearnerNotFoundError("Learner not found")
 
-            if self._session.get(Certification, certification_id) is None:
+            cert = self._session.get(Certification, certification_id)
+            if cert is None:
                 raise CertificationNotFoundError("Certification not found")
+            if cert.passing_threshold_pct is None:
+                raise MissingThresholdError(
+                    "Certification has no passing threshold configured"
+                )
+            threshold_pct = cert.passing_threshold_pct
+            # Feedback mode is snapshotted with the threshold (same rule:
+            # later certification edits never change a running attempt).
+            feedback_mode = cert.feedback_mode
 
             selected = self._selector.select_random_eligible(
                 certification_id=certification_id,
@@ -169,6 +183,11 @@ class ExamService:
                 user_id=learner_id,
                 certification_id=certification_id,
                 question_count=question_count,
+                # AC3: the applicable threshold is recorded at creation and
+                # later certification edits never affect existing attempts.
+                passing_threshold_pct=threshold_pct,
+                # Feedback mode snapshot: fixed for the whole attempt.
+                feedback_mode=feedback_mode,
             )
             self._session.add(attempt)
             # Flush first: no ORM relationship is needed to force parent before child.

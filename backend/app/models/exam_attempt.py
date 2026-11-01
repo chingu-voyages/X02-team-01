@@ -21,6 +21,14 @@ class ExamAttempt(SQLModel, table=True):
             "current_position BETWEEN 1 AND question_count",
             name="ck_exam_attempts_current_position",
         ),
+        CheckConstraint(
+            "passing_threshold_pct BETWEEN 0 AND 100",
+            name="ck_exam_attempts_passing_threshold",
+        ),
+        CheckConstraint(
+            "feedback_mode IS NULL OR feedback_mode IN ('immediate', 'deferred')",
+            name="ck_exam_attempts_feedback_mode",
+        ),
     )
 
     id: UUID = Field(
@@ -48,6 +56,22 @@ class ExamAttempt(SQLModel, table=True):
     )
 
     question_count: int = Field(nullable=False)
+
+    # Threshold snapshot recorded at attempt creation; older attempts keep
+    # NULL ("not assessed"). Certification edits never change this value.
+    passing_threshold_pct: int | None = Field(
+        default=None,
+        nullable=True,
+    )
+
+    # Feedback-mode snapshot recorded at attempt creation (same rule):
+    # 'immediate' | 'deferred' | NULL for pre-config attempts. Exam-admin
+    # edits never change an attempt that is running or completed.
+    feedback_mode: str | None = Field(
+        default=None,
+        max_length=20,
+        nullable=True,
+    )
 
     current_position: int = Field(
         default=1,

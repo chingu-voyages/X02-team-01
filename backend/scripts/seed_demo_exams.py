@@ -369,7 +369,13 @@ def seed() -> dict[str, int]:
             category_id = demo_uuid(f"{cert.slug}/category")
             inserted["certifications"] += ensure_row(
                 session,
-                Certification(id=cert_id, code=cert.code, name=cert.name),
+                Certification(
+                    id=cert_id,
+                    code=cert.code,
+                    name=cert.name,
+                    passing_threshold_pct=65,
+                    feedback_mode="immediate",
+                ),
                 ("code", "name"),
             )
             inserted["categories"] += ensure_row(

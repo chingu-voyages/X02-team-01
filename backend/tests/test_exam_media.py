@@ -69,7 +69,7 @@ def postgres_session():
 def test_version_pinned_media_is_in_exam_delivery(postgres_session, monkeypatch):
     monkeypatch.setattr(settings, "media_base_url", "https://cdn.example.test")
     user = User(email=f"media-{uuid4().hex}@example.test")
-    cert = Certification(name="Media", code=uuid4().hex[:10])
+    cert = Certification(name="Media", code=uuid4().hex[:10], passing_threshold_pct=70)
     postgres_session.add_all([user, cert])
     postgres_session.flush()
     question = Question(

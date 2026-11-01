@@ -2,6 +2,7 @@
 
 import os
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -28,6 +29,7 @@ from app.services.exam_service import (
     InvalidQuestionCountError,
     InvalidQuestionSelectionError,
     LearnerNotFoundError,
+    MissingThresholdError,
 )
 
 
@@ -37,6 +39,7 @@ class RecordingSession:
     def __init__(self, learner_id, certification_id, fail_on=None):
         self.learner_id = learner_id
         self.certification_id = certification_id
+        self.cert_threshold = 70
         self.fail_on = fail_on
         self.added = []
         self.commits = 0
@@ -46,7 +49,10 @@ class RecordingSession:
         if model is User and identifier == self.learner_id:
             return object()
         if model is Certification and identifier == self.certification_id:
-            return object()
+            return SimpleNamespace(
+                passing_threshold_pct=self.cert_threshold,
+                feedback_mode="deferred",
+            )
         return None
 
     def add(self, value):
@@ -113,6 +119,8 @@ def test_creates_attempt_with_stable_order():
     assert attempt.status == "in_progress"
     assert attempt.current_position == 1
     assert attempt.question_count == 3
+    # JHEP-35 AC3: the threshold snapshot is recorded when the attempt is created.
+    assert attempt.passing_threshold_pct == 70
 
     assignments = session.added[1:]
     assert all(isinstance(item, ExamAttemptQuestion) for item in assignments)
@@ -161,6 +169,20 @@ def test_rejects_nonexistent_certification():
         ExamService(session, FixedSelector(selections(1))).create_exam(
             learner_id=session.learner_id,
             certification_id=uuid4(),
+            question_count=1,
+        )
+    assert session.added == []
+    assert session.rollbacks == 1
+
+
+def test_rejects_certification_without_threshold():
+    session = RecordingSession(uuid4(), uuid4())
+    session.cert_threshold = None
+
+    with pytest.raises(MissingThresholdError):
+        ExamService(session, FixedSelector(selections(1))).create_exam(
+            learner_id=session.learner_id,
+            certification_id=session.certification_id,
             question_count=1,
         )
     assert session.added == []
@@ -256,7 +278,11 @@ def postgres_session():
 
 def seed_postgres_exam_bank(session, question_count=3):
     learner = User(email=f"learner-{uuid4().hex}@example.com")
-    certification = Certification(name="Test Exam Certification", code=uuid4().hex[:10])
+    certification = Certification(
+        name="Test Exam Certification",
+        code=uuid4().hex[:10],
+        passing_threshold_pct=70,
+    )
     session.add_all([learner, certification])
     session.flush()
 

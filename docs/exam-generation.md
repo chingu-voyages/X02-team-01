@@ -147,14 +147,22 @@ The smoke test generates exam attempts, checks status codes, validates certifica
 
 ## 🧩 Next Integrations
 
-| Ticket | Responsibility |
-|---|---|
-| JHEP-32 | Save responses, navigate, and resume |
-| JHEP-34 | Finalize an exam attempt |
-| JHEP-35 | Grade multiple-choice answers |
-| JHEP-36 / JHEP-46 | Present results and feedback |
-| JHEP-57 | Add images to question delivery |
+| Ticket | Responsibility | Backend state |
+|---|---|---|
+| JHEP-32 | Save responses, navigate, and resume | Backend done (responses, progress, resume) |
+| JHEP-34 | Finalize an exam attempt | Backend done (per-question lock, final submit) |
+| JHEP-35 | Grade multiple-choice answers | Done (scoring + Pass/Fail + results API) |
+| JHEP-36 / JHEP-46 | Present results and feedback | Frontend pending |
+| JHEP-57 | Add images to question delivery | Done |
 
 ## 🧾 Change Tracking
 
 **JHEP-29:** Exam-generation and persistence foundation complete; later tickets extend the saved attempt rather than reselecting its questions.
+
+**JHEP-35 (+ JHEP-32/34 backends):** automatic MC grading, configurable
+thresholds with attempt snapshots, saved learner responses, per-question
+locking and final submission, idempotent results, and admin-configured
+immediate/deferred feedback modes. Scoring rules per the ticket: single
+answers 1/0, strict exact-match multi-select, no partial credit or
+negative marking, unanswered = 0; short answers excluded until explicit
+grading rules are approved. See docs/grading.md for the full contract.

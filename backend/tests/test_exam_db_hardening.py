@@ -121,8 +121,12 @@ def add_question(
 def mixed_bank(postgres_session):
     session = postgres_session
     learner = User(email=f"hardening-{uuid4().hex}@example.com")
-    first_cert = Certification(name="Certification A", code=uuid4().hex[:12])
-    second_cert = Certification(name="Certification B", code=uuid4().hex[:12])
+    first_cert = Certification(
+        name="Certification A", code=uuid4().hex[:12], passing_threshold_pct=70
+    )
+    second_cert = Certification(
+        name="Certification B", code=uuid4().hex[:12], passing_threshold_pct=80
+    )
     session.add_all([learner, first_cert, second_cert])
     session.flush()
 

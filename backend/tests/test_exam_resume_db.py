@@ -45,7 +45,9 @@ def test_saved_order_access_control_and_batched_retrieval(pg_session):
     session, connection = pg_session
     user = User(email=f"owner-{uuid4().hex}@example.test")
     other = User(email=f"other-{uuid4().hex}@example.test")
-    cert = Certification(name="Retrieve", code=uuid4().hex[:12])
+    cert = Certification(
+        name="Retrieve", code=uuid4().hex[:12], passing_threshold_pct=70
+    )
     session.add_all([user, other, cert])
     session.flush()
 
