@@ -14,6 +14,7 @@ from app import models  # noqa: F401
 from app.db.session import engine
 from app.models import (
     AnswerOption,
+    Category,
     Certification,
     ExamAttempt,
     ExamAttemptQuestion,
@@ -26,6 +27,7 @@ from app.services.exam_service import (
     CertificationNotFoundError,
     ExamService,
     InsufficientQuestionsError,
+    InvalidCategoryError,
     InvalidQuestionCountError,
     InvalidQuestionSelectionError,
     LearnerNotFoundError,
@@ -40,6 +42,7 @@ class RecordingSession:
         self.learner_id = learner_id
         self.certification_id = certification_id
         self.cert_threshold = 70
+        self.category_id = None
         self.fail_on = fail_on
         self.added = []
         self.commits = 0
@@ -53,6 +56,8 @@ class RecordingSession:
                 passing_threshold_pct=self.cert_threshold,
                 feedback_mode="deferred",
             )
+        if model is Category and identifier == self.category_id:
+            return SimpleNamespace(certification_id=self.certification_id)
         return None
 
     def add(self, value):
@@ -385,3 +390,36 @@ def test_postgres_bad_assignment_rolls_back_attempt(postgres_session):
 
     assert postgres_session.exec(select(ExamAttempt)).all() == []
     assert postgres_session.exec(select(ExamAttemptQuestion)).all() == []
+
+
+def test_accepts_category_validated_against_certification():
+    """Contract alignment: category_id is accepted and validated, selection
+    stays certification-scoped until the exam-catalog ticket lands."""
+    learner_id, certification_id = uuid4(), uuid4()
+    session = RecordingSession(learner_id, certification_id)
+    session.category_id = uuid4()  # matching Category row exists
+
+    result = ExamService(session, FixedSelector(selections(3))).create_exam(
+        learner_id=learner_id,
+        certification_id=certification_id,
+        question_count=3,
+        category_id=session.category_id,
+    )
+    assert result.attempt_id == session.added[0].id
+    assert session.commits == 1
+
+
+def test_rejects_category_from_another_certification():
+    learner_id, certification_id = uuid4(), uuid4()
+    session = RecordingSession(learner_id, certification_id)
+    session.category_id = uuid4()  # registered elsewhere / unknown
+
+    with pytest.raises(InvalidCategoryError):
+        ExamService(session, FixedSelector(selections(1))).create_exam(
+            learner_id=learner_id,
+            certification_id=certification_id,
+            question_count=1,
+            category_id=uuid4(),  # not the session's tracked category
+        )
+    assert session.added == []
+    assert session.rollbacks == 1

@@ -33,13 +33,18 @@
 | Route | Behaviour |
 |---|---|
 | `PATCH /exams/{id}/progress` | save navigation position (in-progress only) |
-| `PUT /exams/{id}/responses/{v}` | save / update / clear one draft answer |
-| `POST /exams/{id}/responses/{v}/submit` | lock the question; feedback per mode |
+| `PUT /exams/{id}/responses/{q}` | save / update / clear one draft answer |
+| `POST /exams/{id}/responses/{q}/submit` | lock the question; feedback per mode |
 | `POST /exams/{id}/submit` | final submission → grading → `results_url` |
 | `GET /exams/{id}/results` | aggregates + Pass/Fail; graded lazily once |
 
-`v` is the pinned `question_version_id`. Responses are keyed
-`UNIQUE (attempt_id, question_version_id)` and validated to belong to the
+`q` accepts **either addressing key** for the contract bridge: the
+`attempt_question_id` (contract, screen 06/07) or the pinned
+`question_version_id` (grading key). Absence of either → the same 404 as a
+foreign attempt. `POST /exams` also accepts the contract's optional
+`category_id` (validated against the certification; selection stays
+certification-scoped until the exam-catalog ticket lands).
+Responses are keyed `UNIQUE (attempt_id, question_version_id)` and validated to belong to the
 pinned version; empty payloads clear the draft (question counts as
 unanswered). Pre-submission responses and per-question feedback never
 contain `is_correct` unless disclosure is permitted.
