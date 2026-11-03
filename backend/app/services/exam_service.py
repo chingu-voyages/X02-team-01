@@ -14,6 +14,7 @@ from sqlmodel import Session, select
 from app.core.config import settings
 from app.models import (
     AnswerOption,
+    Category,
     Certification,
     ExamAttempt,
     ExamAttemptQuestion,
@@ -90,6 +91,10 @@ class MissingThresholdError(Exception):
     be made available to learners without one)."""
 
 
+class InvalidCategoryError(ValueError):
+    """The requested category does not exist within the certification."""
+
+
 class InsufficientQuestionsError(Exception):
     """There are not enough eligible questions to generate a complete exam."""
 
@@ -124,6 +129,7 @@ class ExamService:
         learner_id: UUID,
         certification_id: UUID,
         question_count: int,
+        category_id: UUID | None = None,
     ) -> CreatedExam:
         """Create an attempt with exactly `question_count` distinct questions.
 
@@ -156,6 +162,16 @@ class ExamService:
             # Feedback mode is snapshotted with the threshold (same rule:
             # later certification edits never change a running attempt).
             feedback_mode = cert.feedback_mode
+
+            # Contract alignment (screen 05): category_id is accepted and
+            # validated so the frontend can send it, but selection remains
+            # certification-scoped until the exam-catalog ticket lands.
+            if category_id is not None:
+                category = self._session.get(Category, category_id)
+                if category is None or category.certification_id != certification_id:
+                    raise InvalidCategoryError(
+                        "Category is not part of this certification"
+                    )
 
             selected = self._selector.select_random_eligible(
                 certification_id=certification_id,
