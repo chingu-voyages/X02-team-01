@@ -1,17 +1,29 @@
 import PageHeader from "@/components/layouts/PageHeader";
 import Card from "@/components/ui/Card";
 
-export default function ResultCard() {
+interface ResultCardProps {
+  scorePercent: number;
+  correctCount: number;
+  incorrectCount: number;
+  isPassed: boolean;
+}
+
+export default function ResultCard({
+  scorePercent,
+  correctCount,
+  incorrectCount,
+  isPassed,
+}: ResultCardProps) {
   return (
     <div>
       <Card>
         <PageHeader title="Practice exam complete" />
         <div className="flex">
-          <Card>Score: 80%</Card>
-          <Card>Correct: 8</Card>
-          <Card>Incorect: 2</Card>
+          <Card>Score: {scorePercent}%</Card>
+          <Card>Correct: {correctCount}</Card>
+          <Card>Incorect: {incorrectCount}</Card>
         </div>
-        <Card>Result</Card>
+        <Card>{isPassed ? "Passed" : "Failed"}</Card>
       </Card>
     </div>
   );
