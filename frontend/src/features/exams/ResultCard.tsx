@@ -2,11 +2,11 @@ import PageHeader from "@/components/layouts/PageHeader";
 import Card from "@/components/ui/Card";
 
 interface ResultCardProps {
-  scorePercent: number;
+  scorePercent: number | null;
   correctCount: number;
   incorrectCount: number;
-  isPassed: boolean;
-  passingScorePercent?: number;
+  isPassed: boolean | null;
+  passingScorePercent?: number | null;
 }
 
 export default function ResultCard({
@@ -16,7 +16,11 @@ export default function ResultCard({
   isPassed,
   passingScorePercent,
 }: ResultCardProps) {
-  if (scorePercent === undefined || scorePercent === null) {
+  if (
+    scorePercent == null ||
+    isPassed == null ||
+    passingScorePercent == null
+  ) {
     return (
       <Card>
         <PageHeader title="Exam Result Unavailable" />
