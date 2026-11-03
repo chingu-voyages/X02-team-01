@@ -13,7 +13,7 @@ export default function Home() {
             incorrectCount={2}
             isPassed={false}
             passingScorePercent={85}
-          ></ResultCard>
+          />
         </div>
       </main>
     </div>
