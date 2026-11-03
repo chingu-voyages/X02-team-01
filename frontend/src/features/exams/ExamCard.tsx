@@ -6,7 +6,7 @@ import { RadioGroup } from "@/components/ui/radio-group";
 import { useState } from "react";
 import practiceData from "../../../src/data/mock-exam-response.json";
 import sumbissionsFeedback from "../../../src/data/submissionsFeedback.json";
-import ExamCardHeader from "../../components/layouts/PageHeader";
+import PageHeader from "../../components/layouts/PageHeader";
 
 export default function ExamCard() {
   // Track which question should be displayed
@@ -132,14 +132,23 @@ export default function ExamCard() {
     />
   ));
 
+  const instructionText = isMultiple
+    ? "Choose all that apply, then submit."
+    : "Choose one answer, then submit.";
+
   return (
     <div>
       <Card>
-        <ExamCardHeader
-          currentQuestionIndex={currentQuestionIndex}
-          totalQuestions={practiceData.questions.length}
-          isMultiple={isMultiple}
-          category={currentQuestion.category}
+        <PageHeader
+          title={currentQuestion.category}
+          status="In progress"
+          subtitle={
+            <>
+              Question {currentQuestionIndex + 1} of{" "}
+              {practiceData.questions.length} <span aria-hidden="true">·</span>{" "}
+              {instructionText}
+            </>
+          }
         />
         <Badge
           questionNumber={currentQuestionIndex + 1}
