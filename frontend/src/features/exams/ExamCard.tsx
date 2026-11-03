@@ -6,7 +6,7 @@ import { RadioGroup } from "@/components/ui/radio-group";
 import { useState } from "react";
 import practiceData from "../../../src/data/mock-exam-response.json";
 import sumbissionsFeedback from "../../../src/data/submissionsFeedback.json";
-import ExamCardHeader from "./ExamCardHeader";
+import ExamCardHeader from "../../components/layouts/PageHeader";
 
 export default function ExamCard() {
   // Track which question should be displayed

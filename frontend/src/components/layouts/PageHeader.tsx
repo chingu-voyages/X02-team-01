@@ -1,16 +1,16 @@
-interface ExamCardHeaderProps {
+interface PageHeaderProps {
   currentQuestionIndex: number;
   totalQuestions: number;
   isMultiple: boolean;
   category: string;
 }
 
-export default function ExamCardHeader({
+export default function PageHeader({
   currentQuestionIndex,
   totalQuestions,
   isMultiple,
   category,
-}: ExamCardHeaderProps) {
+}: PageHeaderProps) {
   const instructionText = isMultiple
     ? "Choose all that apply, then submit."
     : "Choose one answer, then submit.";
