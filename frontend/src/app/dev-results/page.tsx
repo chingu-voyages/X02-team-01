@@ -1,60 +1,37 @@
+
 "use client";
 
 import { useState, type FormEvent } from "react";
-import ResultCard from "@/features/exams/ResultCard";
-import { getExamResults } from "@/lib/exam-results";
-import type { ExamResultsResponse } from "@/types/exam-api.types";
+import ExamResultsScreen from "@/features/exams/ExamResultsScreen";
+
+interface TestRequest {
+  attemptId: string;
+  accessToken: string;
+  requestNumber: number;
+}
 
 export default function DevResultsPage() {
   const [attemptId, setAttemptId] = useState("");
   const [token, setToken] = useState("");
-  const [results, setResults] =
-    useState<ExamResultsResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [request, setRequest] = useState<TestRequest | null>(null);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (loading) return;
-
-    setLoading(true);
-    setError("");
-    setResults(null);
-
-    try {
-      const data = await getExamResults(
-        attemptId.trim(),
-        token.trim(),
-      );
-
-      if (data.attempt_id !== attemptId.trim()) {
-        throw new Error("Unexpected exam attempt returned.");
-      }
-
-      if (!data.grading_complete) {
-        throw new Error("Exam grading is not complete.");
-      }
-
-      setResults(data);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load exam results.",
-      );
-    } finally {
-      setLoading(false);
-    }
+    setRequest((previous) => ({
+      attemptId: attemptId.trim(),
+      accessToken: token.trim(),
+      requestNumber: (previous?.requestNumber ?? 0) + 1,
+    }));
   }
 
-  // Development-only testing page.
+  // Temporary development-only integration page.
   if (process.env.NODE_ENV !== "development") {
     return null;
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-6 space-y-6">
+    <main className="mx-auto max-w-3xl space-y-6 p-6">
       <h1 className="text-2xl font-bold">
         Exam Results — Integration Test
       </h1>
@@ -64,9 +41,9 @@ export default function DevResultsPage() {
           <label htmlFor="attempt-id">Attempt ID</label>
           <input
             id="attempt-id"
+            type="text"
             value={attemptId}
-            onChange={(e) => setAttemptId(e.target.value)}
-            placeholder="Paste exam attempt ID"
+            onChange={(event) => setAttemptId(event.target.value)}
             className="w-full rounded border p-2"
             required
           />
@@ -79,8 +56,7 @@ export default function DevResultsPage() {
             type="password"
             autoComplete="off"
             value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder="Paste development token"
+            onChange={(event) => setToken(event.target.value)}
             className="w-full rounded border p-2"
             required
           />
@@ -88,26 +64,17 @@ export default function DevResultsPage() {
 
         <button
           type="submit"
-          disabled={loading}
-          className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+          className="rounded bg-blue-600 px-4 py-2 text-white"
         >
-          {loading ? "Loading..." : "Get Results"}
+          Get Results
         </button>
       </form>
 
-      {error && (
-        <p role="alert" className="text-red-600">
-          {error}
-        </p>
-      )}
-
-      {results && (
-        <ResultCard
-          scorePercent={results.score_percent}
-          correctCount={results.correct_count}
-          incorrectCount={results.incorrect_count}
-          isPassed={results.passed}
-          passingScorePercent={results.passing_score_percent}
+      {request && (
+        <ExamResultsScreen
+          key={request.requestNumber}
+          attemptId={request.attemptId}
+          accessToken={request.accessToken}
         />
       )}
     </main>
