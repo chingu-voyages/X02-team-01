@@ -13,12 +13,18 @@ MAX_TEXT_ANSWER_LENGTH = 10_000
 
 
 class ExamCreateRequest(BaseModel):
-    """Client supplies certification and size, never learner identity."""
+    """Client supplies certification and size, never learner identity.
+
+    `category_id` is the contract's proposed extension (screen 05): it is
+    accepted and validated against the certification, but question
+    selection itself stays unscoped until the exam-catalog ticket lands.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     certification_id: UUID
     question_count: Annotated[int, Field(strict=True, ge=1, le=MAX_EXAM_QUESTIONS)]
+    category_id: UUID | None = None
 
 
 class ExamOptionOut(BaseModel):
