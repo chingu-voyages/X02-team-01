@@ -11,7 +11,8 @@ export default function Home() {
             scorePercent={80}
             correctCount={8}
             incorrectCount={2}
-            isPassed
+            isPassed={false}
+            passingScorePercent={85}
           ></ResultCard>
         </div>
       </main>

@@ -6,6 +6,7 @@ interface ResultCardProps {
   correctCount: number;
   incorrectCount: number;
   isPassed: boolean;
+  passingScorePercent?: number;
 }
 
 export default function ResultCard({
@@ -13,17 +14,51 @@ export default function ResultCard({
   correctCount,
   incorrectCount,
   isPassed,
+  passingScorePercent,
 }: ResultCardProps) {
+  if (scorePercent === undefined || scorePercent === null) {
+    return (
+      <Card>
+        <PageHeader title="Exam Result Unavailable" />
+        <p className="text-gray-500">Unable to load exam performance data.</p>
+      </Card>
+    );
+  }
+
   return (
     <div>
       <Card>
         <PageHeader title="Practice exam complete" />
         <div className="flex">
-          <Card>Score: {scorePercent}%</Card>
-          <Card>Correct: {correctCount}</Card>
-          <Card>Incorect: {incorrectCount}</Card>
+          <Card className="w-full flex flex-col">
+            <span className="text-sm text-gray-500">Score</span>{" "}
+            <span className="text-2xl font-bold">{scorePercent}%</span>
+          </Card>
+          <Card className="w-full flex flex-col">
+            <span className="text-sm text-gray-500">Correct</span>
+            <span className="text-2xl font-bold">{correctCount}</span>
+          </Card>
+          <Card className="w-full flex flex-col">
+            <span className="text-sm text-gray-500">Incorrect</span>
+            <span className="text-2xl font-bold">{incorrectCount}</span>
+          </Card>
         </div>
-        <Card>{isPassed ? "Passed" : "Failed"}</Card>
+        <Card className="flex items-center">
+          <div className="flex flex-col flex-1">
+            <span className="text-sm text-gray-500">Exam result</span>
+            <span
+              role="status"
+              aria-live="polite"
+              className="text-2xl font-bold"
+            >
+              {isPassed ? "Passed" : "Failed"}
+            </span>
+          </div>
+          <div className="flex-1">
+            scored {scorePercent}% <span aria-hidden="true">·</span>{" "}
+            {passingScorePercent}% required to pass
+          </div>
+        </Card>
       </Card>
     </div>
   );
