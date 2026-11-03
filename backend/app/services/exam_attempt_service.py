@@ -183,6 +183,35 @@ class ExamAttemptService:
             raise AttemptQuestionNotFoundError("Question not part of this attempt")
         return row
 
+    def resolve_question(
+        self, attempt_id: UUID, question_key: UUID
+    ) -> ExamAttemptQuestion:
+        """Address a pinned question by either contract key.
+
+        The contract (and the frontend mock) path-parameterise questions by
+        `attempt_question_id`; the grading engine and earlier integrations
+        key by pinned `question_version_id`. This resolver accepts both:
+        the `exam_attempt_questions` primary key wins, the version id is
+        the fallback. Absence of either raises the generic not-found error
+        so foreign/unknown ids are indistinguishable.
+        """
+        row = self._session.exec(
+            select(ExamAttemptQuestion).where(
+                ExamAttemptQuestion.attempt_id == attempt_id,
+                ExamAttemptQuestion.id == question_key,
+            )
+        ).first()
+        if row is None:
+            row = self._session.exec(
+                select(ExamAttemptQuestion).where(
+                    ExamAttemptQuestion.attempt_id == attempt_id,
+                    ExamAttemptQuestion.question_version_id == question_key,
+                )
+            ).first()
+        if row is None:
+            raise AttemptQuestionNotFoundError("Question not part of this attempt")
+        return row
+
     def _existing_response(
         self, attempt_id: UUID, question_version_id: UUID
     ) -> ExamResponse | None:

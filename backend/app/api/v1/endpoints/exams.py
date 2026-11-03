@@ -84,6 +84,25 @@ def _learner_id(subject: str) -> UUID:
         ) from exc
 
 
+def _resolved_version_id(
+    question_key: UUID,
+    attempt_id: UUID,
+    attempt_service: ExamAttemptService,
+) -> UUID:
+    """Contract bridge: the path key is the attempt_question_id, the legacy
+    key is the pinned question_version_id — resolve either, once, at the
+    boundary. Everything downstream keeps the version-based logic."""
+    try:
+        pinned = attempt_service.resolve_question(attempt_id, question_key)
+    except AttemptQuestionNotFoundError as exc:
+        # Identical result for absent and foreign attempts.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Exam attempt not found",
+        ) from exc
+    return pinned.question_version_id
+
+
 def _owned_attempt(
     attempt_id: UUID,
     learner_id: UUID,
@@ -121,6 +140,7 @@ def create_exam(
             learner_id=learner_id,
             certification_id=payload.certification_id,
             question_count=payload.question_count,
+            category_id=payload.category_id,
         )
     except LearnerNotFoundError as exc:
         raise HTTPException(
@@ -239,21 +259,25 @@ def update_progress(
 
 
 @router.put(
-    "/{attempt_id}/responses/{question_version_id}",
+    "/{attempt_id}/responses/{question_id}",
     response_model=ResponseSavedOut,
     response_model_exclude_none=True,
 )
 def save_response(
     attempt_id: UUID,
-    question_version_id: UUID,
+    question_id: UUID,
     payload: ResponseSaveRequest,
     subject: Annotated[str, Depends(get_current_subject)],
     service: Annotated[ExamService, Depends(get_exam_service)],
     attempt_service: Annotated[ExamAttemptService, Depends(get_exam_attempt_service)],
 ) -> ResponseSavedOut:
-    """Save, update or clear one question's answer (draft state only)."""
+    """Save, update or clear one question's answer (draft state only).
+
+    `question_id` carries either addressing key (contract's
+    `attempt_question_id` or the pinned `question_version_id`)."""
     learner_id = _learner_id(subject)
     attempt = _owned_attempt(attempt_id, learner_id, service)
+    question_version_id = _resolved_version_id(question_id, attempt_id, attempt_service)
 
     try:
         row = attempt_service.save_response(
@@ -314,14 +338,14 @@ def save_response(
 
 
 @router.post(
-    "/{attempt_id}/responses/{question_version_id}/submit",
+    "/{attempt_id}/responses/{question_id}/submit",
     response_model=QuestionFeedbackOut,
     response_model_exclude_none=True,
     status_code=status.HTTP_200_OK,
 )
 def submit_question(
     attempt_id: UUID,
-    question_version_id: UUID,
+    question_id: UUID,
     payload: ResponseSaveRequest,
     subject: Annotated[str, Depends(get_current_subject)],
     service: Annotated[ExamService, Depends(get_exam_service)],
@@ -335,6 +359,7 @@ def submit_question(
     """
     learner_id = _learner_id(subject)
     attempt = _owned_attempt(attempt_id, learner_id, service)
+    question_version_id = _resolved_version_id(question_id, attempt_id, attempt_service)
 
     try:
         feedback = attempt_service.submit_question(

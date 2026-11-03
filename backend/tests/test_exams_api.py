@@ -31,7 +31,9 @@ class StubExamService:
         self.option_id = uuid4()
         self.question_version_id = uuid4()
 
-    def create_exam(self, *, learner_id, certification_id, question_count):
+    def create_exam(
+        self, *, learner_id, certification_id, question_count, category_id=None
+    ):
         self.calls.append((learner_id, certification_id, question_count))
         if self.error is not None:
             raise self.error

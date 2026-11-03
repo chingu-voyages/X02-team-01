@@ -85,10 +85,16 @@ class StubAttemptService:
 
     def __init__(self, error=None):
         self.error = error
+        self.resolved = []
         self.saved = []
         self.questions_submitted = []
         self.submitted = False
         self.progress = []
+
+    def resolve_question(self, attempt_id, question_key):
+        """Contract bridge behaves like the real resolver: pass-through."""
+        self.resolved.append((attempt_id, question_key))
+        return SimpleNamespace(attempt_id=attempt_id, question_version_id=question_key)
 
     def response_blocks(self, attempt):
         return {}
@@ -437,3 +443,30 @@ def test_zero_gradable_attempt_has_no_misleading_score(api):
     assert data["score_percent"] is None
     assert data["passed"] is None
     assert data["grading_complete"] is True
+
+
+def test_question_key_is_resolved_for_both_addressing_styles(api):
+    """Contract alignment: the path key may be attempt_question_id (contract)
+    or the pinned question_version_id (legacy) — the resolver is hit before
+    any answering logic either way."""
+    client, attempt_service, learner_id, attempt_id = api
+    for key in (uuid4(), uuid4()):
+        response = client.put(
+            version_url(attempt_id, key),
+            json={"selected_option_ids": [str(uuid4())]},
+            headers=auth(learner_id),
+        )
+        assert response.status_code == 200
+    assert len(attempt_service.resolved) == 2
+
+
+def test_unknown_question_key_still_answers_404(api):
+    client, attempt_service, learner_id, attempt_id = api
+    attempt_service.error = AttemptQuestionNotFoundError("nope")
+    response = client.put(
+        version_url(attempt_id, uuid4()),
+        json={"selected_option_ids": [str(uuid4())]},
+        headers=auth(learner_id),
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Exam attempt not found"

@@ -37,7 +37,12 @@ class HardeningExamService:
         self.fail_with: Exception | None = None
 
     def create_exam(
-        self, *, learner_id: UUID, certification_id: UUID, question_count: int
+        self,
+        *,
+        learner_id: UUID,
+        certification_id: UUID,
+        question_count: int,
+        category_id: UUID | None = None,
     ) -> CreatedExam:
         self.calls.append((learner_id, certification_id, question_count))
         if self.fail_with is not None:
