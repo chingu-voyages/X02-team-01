@@ -1,6 +1,6 @@
 from uuid import UUID, uuid4
 
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import UniqueConstraint, text
 from sqlmodel import Field, SQLModel
 
 
@@ -33,4 +33,11 @@ class Category(SQLModel, table=True):
     name: str = Field(
         max_length=255,
         nullable=False,
+    )
+
+    # Publication is explicit. Eligibility/counting is handled separately.
+    is_published: bool = Field(
+        default=False,
+        nullable=False,
+        sa_column_kwargs={"server_default": text("false")},
     )
