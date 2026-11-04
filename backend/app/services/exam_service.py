@@ -95,6 +95,10 @@ class InvalidCategoryError(ValueError):
     """The requested category does not exist within the certification."""
 
 
+class CategoryUnavailableError(ValueError):
+    """The requested category exists but is not published for learners."""
+
+
 class InsufficientQuestionsError(Exception):
     """There are not enough eligible questions to generate a complete exam."""
 
@@ -163,20 +167,30 @@ class ExamService:
             # later certification edits never change a running attempt).
             feedback_mode = cert.feedback_mode
 
-            # Contract alignment (screen 05): category_id is accepted and
-            # validated so the frontend can send it, but selection remains
-            # certification-scoped until the exam-catalog ticket lands.
+            # JHEP-27: revalidate category availability when starting the exam.
+            # This protects against stale frontend state after catalog loading.
             if category_id is not None:
                 category = self._session.get(Category, category_id)
                 if category is None or category.certification_id != certification_id:
                     raise InvalidCategoryError(
                         "Category is not part of this certification"
                     )
+                if not category.is_published:
+                    raise CategoryUnavailableError("Category is not available")
 
-            selected = self._selector.select_random_eligible(
-                certification_id=certification_id,
-                question_count=question_count,
-            )
+            # Preserve the legacy certification-wide call when no category is
+            # supplied, but constrain catalog-driven starts to the chosen category.
+            if category_id is None:
+                selected = self._selector.select_random_eligible(
+                    certification_id=certification_id,
+                    question_count=question_count,
+                )
+            else:
+                selected = self._selector.select_random_eligible(
+                    certification_id=certification_id,
+                    question_count=question_count,
+                    category_id=category_id,
+                )
             if len(selected) < question_count:
                 raise InsufficientQuestionsError(
                     requested=question_count,

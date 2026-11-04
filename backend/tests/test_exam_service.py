@@ -24,6 +24,7 @@ from app.models import (
 )
 from app.repositories.question_repository import ExamQuestionSelection
 from app.services.exam_service import (
+    CategoryUnavailableError,
     CertificationNotFoundError,
     ExamService,
     InsufficientQuestionsError,
@@ -43,6 +44,7 @@ class RecordingSession:
         self.certification_id = certification_id
         self.cert_threshold = 70
         self.category_id = None
+        self.category_published = True
         self.fail_on = fail_on
         self.added = []
         self.commits = 0
@@ -57,7 +59,10 @@ class RecordingSession:
                 feedback_mode="deferred",
             )
         if model is Category and identifier == self.category_id:
-            return SimpleNamespace(certification_id=self.certification_id)
+            return SimpleNamespace(
+                certification_id=self.certification_id,
+                is_published=self.category_published,
+            )
         return None
 
     def add(self, value):
@@ -87,8 +92,16 @@ class FixedSelector:
         self.selections = selections
         self.calls = []
 
-    def select_random_eligible(self, certification_id, question_count):
-        self.calls.append((certification_id, question_count))
+    def select_random_eligible(
+        self,
+        certification_id,
+        question_count,
+        category_id=None,
+    ):
+        if category_id is None:
+            self.calls.append((certification_id, question_count))
+        else:
+            self.calls.append((certification_id, question_count, category_id))
         return self.selections
 
 
@@ -393,20 +406,42 @@ def test_postgres_bad_assignment_rolls_back_attempt(postgres_session):
 
 
 def test_accepts_category_validated_against_certification():
-    """Contract alignment: category_id is accepted and validated, selection
-    stays certification-scoped until the exam-catalog ticket lands."""
+    """Category-scoped starts forward the selected category to the selector."""
     learner_id, certification_id = uuid4(), uuid4()
     session = RecordingSession(learner_id, certification_id)
-    session.category_id = uuid4()  # matching Category row exists
+    session.category_id = uuid4()
+    selector = FixedSelector(selections(3))
 
-    result = ExamService(session, FixedSelector(selections(3))).create_exam(
+    result = ExamService(session, selector).create_exam(
         learner_id=learner_id,
         certification_id=certification_id,
         question_count=3,
         category_id=session.category_id,
     )
+
+    assert selector.calls == [(certification_id, 3, session.category_id)]
     assert result.attempt_id == session.added[0].id
     assert session.commits == 1
+
+
+def test_rejects_unpublished_category_before_question_selection():
+    learner_id, certification_id = uuid4(), uuid4()
+    session = RecordingSession(learner_id, certification_id)
+    session.category_id = uuid4()
+    session.category_published = False
+    selector = FixedSelector(selections(1))
+
+    with pytest.raises(CategoryUnavailableError):
+        ExamService(session, selector).create_exam(
+            learner_id=learner_id,
+            certification_id=certification_id,
+            question_count=1,
+            category_id=session.category_id,
+        )
+
+    assert selector.calls == []
+    assert session.added == []
+    assert session.rollbacks == 1
 
 
 def test_rejects_category_from_another_certification():

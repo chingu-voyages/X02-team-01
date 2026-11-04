@@ -99,11 +99,13 @@ class SQLModelQuestionRepository:
         self,
         certification_id: UUID,
         question_count: int,
+        category_id: UUID | None = None,
     ) -> list[ExamQuestionSelection]:
-        """Select random eligible question versions for one certification.
+        """Select eligible versions inside the requested exam scope.
 
         Return fewer than requested when the pool is insufficient. The exam
-        service validates sufficiency before persisting an attempt.
+        service validates sufficiency before persisting an attempt. Supplying
+        a category constrains the pool to that category within certification.
         """
         if question_count < 1:
             raise ValueError("question_count must be positive")
@@ -111,9 +113,13 @@ class SQLModelQuestionRepository:
         # Catalog counts and randomized selection share these exact rules.
         # Publication/start enforcement is added separately in JHEP-27.
         eligible = eligible_exam_questions_statement().subquery()
+        filters = [eligible.c.certification_id == certification_id]
+        if category_id is not None:
+            filters.append(eligible.c.category_id == category_id)
+
         statement = (
             select(eligible.c.question_id, eligible.c.question_version_id)
-            .where(eligible.c.certification_id == certification_id)
+            .where(*filters)
             .order_by(func.random())
             .limit(question_count)
         )

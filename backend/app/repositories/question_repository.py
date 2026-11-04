@@ -54,12 +54,13 @@ class ExamQuestionSelection:
 
 
 class ExamQuestionSelector(Protocol):
-    """Select eligible question versions for a certification."""
+    """Select eligible question versions for a certification/category."""
 
     def select_random_eligible(
         self,
         certification_id: UUID,
         question_count: int,
+        category_id: UUID | None = None,
     ) -> list[ExamQuestionSelection]:
-        """Return up to question_count randomized selections."""
+        """Return up to question_count randomized selections in scope."""
         ...

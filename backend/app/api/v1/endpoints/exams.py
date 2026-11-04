@@ -46,10 +46,12 @@ from app.services.exam_attempt_service import (
     QuestionAlreadyLockedError,
 )
 from app.services.exam_service import (
+    CategoryUnavailableError,
     CertificationNotFoundError,
     ExamAttemptNotFoundError,
     ExamService,
     InsufficientQuestionsError,
+    InvalidCategoryError,
     InvalidQuestionCountError,
     LearnerNotFoundError,
     MissingThresholdError,
@@ -152,6 +154,19 @@ def create_exam(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Certification not found",
+        ) from exc
+    except InvalidCategoryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Category not found",
+        ) from exc
+    except CategoryUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "CATEGORY_UNAVAILABLE",
+                "message": "Category is not available",
+            },
         ) from exc
     except MissingThresholdError as exc:
         raise HTTPException(
