@@ -1,21 +1,11 @@
 "use client";
 
-import ResultCard from "@/features/exams/ResultCard";
+import ExamCard from "@/features/exams/ExamCard";
 
 export default function Home() {
   return (
-    <div>
-      <main>
-        <div>
-          <ResultCard
-            scorePercent={80}
-            correctCount={8}
-            incorrectCount={2}
-            isPassed={false}
-            passingScorePercent={85}
-          />
-        </div>
-      </main>
-    </div>
+    <main>
+      <ExamCard />
+    </main>
   );
 }
