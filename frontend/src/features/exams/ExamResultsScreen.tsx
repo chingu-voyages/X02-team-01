@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+
 import ResultCard from "./ResultCard";
 import { getExamResults } from "@/lib/exam-results";
+import { ApiError } from "@/lib/api-client";
+import { useAuth } from "@/features/auth/AuthProvider";
+
 import type { ExamResultsResponse } from "@/types/exam-api.types";
 
 interface ExamResultsScreenProps {
@@ -19,9 +23,12 @@ export default function ExamResultsScreen({
   attemptId,
   accessToken,
 }: ExamResultsScreenProps) {
+  const { logout } = useAuth();
+
   const [state, setState] = useState<ResultsState>({
     status: "loading",
   });
+
   const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
@@ -42,11 +49,24 @@ export default function ExamResultsScreen({
           throw new Error("Exam grading is not complete.");
         }
 
-        setState({ status: "success", data });
+        setState({
+          status: "success",
+          data,
+        });
       })
       .catch((error: unknown) => {
         if (cancelled) return;
 
+        // Clear the session when the backend rejects the JWT.
+        if (
+          error instanceof ApiError &&
+          error.status === 401
+        ) {
+          logout();
+          return;
+        }
+
+        // Preserve error handling for all other failures.
         setState({
           status: "error",
           message:
@@ -59,7 +79,7 @@ export default function ExamResultsScreen({
     return () => {
       cancelled = true;
     };
-  }, [attemptId, accessToken, retryCount]);
+  }, [attemptId, accessToken, retryCount, logout]);
 
   if (state.status === "loading") {
     return <p role="status">Loading exam results...</p>;
@@ -69,6 +89,7 @@ export default function ExamResultsScreen({
     return (
       <div>
         <p role="alert">{state.message}</p>
+
         <button
           type="button"
           onClick={() => {
