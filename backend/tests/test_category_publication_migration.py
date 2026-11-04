@@ -13,11 +13,10 @@ from uuid import uuid4
 
 import pytest
 import sqlalchemy as sa
-from sqlalchemy.engine import Connection
-from sqlalchemy.exc import IntegrityError
-
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError
 
 MIGRATION_PATH = (
     Path(__file__).resolve().parents[1]
