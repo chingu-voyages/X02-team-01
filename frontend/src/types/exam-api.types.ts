@@ -45,3 +45,14 @@ export type InsufficientQuestionsError = {
     available: number;
   };
 };
+
+export type ExamResultsResponse = {
+  attempt_id: string;
+  status: "submitted";
+  correct_count: number;
+  incorrect_count: number;
+  score_percent: number | null;
+  passing_score_percent: number | null;
+  passed: boolean | null;
+  grading_complete: boolean;
+};

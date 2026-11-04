@@ -2,11 +2,11 @@ import PageHeader from "@/components/layouts/PageHeader";
 import Card from "@/components/ui/Card";
 
 interface ResultCardProps {
-  scorePercent: number;
+  scorePercent: number | null;
   correctCount: number;
   incorrectCount: number;
-  isPassed: boolean;
-  passingScorePercent?: number;
+  isPassed: boolean | null;
+  passingScorePercent: number | null;
 }
 
 export default function ResultCard({
@@ -16,7 +16,11 @@ export default function ResultCard({
   isPassed,
   passingScorePercent,
 }: ResultCardProps) {
-  if (scorePercent === undefined || scorePercent === null) {
+  if (
+    scorePercent === null ||
+    isPassed === null ||
+    passingScorePercent === null
+  ) {
     return (
       <Card>
         <PageHeader title="Exam Result Unavailable" />
@@ -25,6 +29,8 @@ export default function ResultCard({
     );
   }
 
+  const formattedScore = scorePercent.toFixed(2);
+
   return (
     <div>
       <Card>
@@ -32,7 +38,7 @@ export default function ResultCard({
         <div className="flex">
           <Card className="w-full flex flex-col">
             <span className="text-sm text-gray-500">Score</span>{" "}
-            <span className="text-2xl font-bold">{scorePercent}%</span>
+            <span className="text-2xl font-bold">{formattedScore}%</span>
           </Card>
           <Card className="w-full flex flex-col">
             <span className="text-sm text-gray-500">Correct</span>
@@ -55,7 +61,7 @@ export default function ResultCard({
             </span>
           </div>
           <div className="flex-1">
-            scored {scorePercent}% <span aria-hidden="true">·</span>{" "}
+            scored {formattedScore}% <span aria-hidden="true">·</span>{" "}
             {passingScorePercent}% required to pass
           </div>
         </Card>
