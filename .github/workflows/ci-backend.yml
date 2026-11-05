@@ -45,7 +45,7 @@ jobs:
         run: pytest -q
 
   compose:
-    name: Compose & Postgres integration tests
+    name: Compose config & Postgres healthcheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
