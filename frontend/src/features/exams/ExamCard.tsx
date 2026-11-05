@@ -1,12 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import OptionItem from "@/features/questions/OptionItem";
 import { Button } from "@/components/ui/button";
 import { RadioGroup } from "@/components/ui/radio-group";
-import { useEffect, useState } from "react";
-import PageHeader from "../../components/layouts/PageHeader";
+import PageHeader from "@/components/layouts/PageHeader";
 
 import { ApiError } from "@/lib/api-client";
 import { getExam, submitAnswer } from "@/lib/exam-api";
@@ -24,7 +25,8 @@ interface ExamCardProps {
 }
 
 interface FeedbackEntry {
-  is_correct: boolean | undefined | null;
+  feedback_released: boolean;
+  is_correct: boolean | null;
   correct_option_ids: string[];
   explanation?: string | null;
 }
@@ -32,32 +34,43 @@ interface FeedbackEntry {
 export default function ExamCard({ attemptId }: ExamCardProps) {
   const { token, ready, handleError } = useDemoSession();
 
-  const [questions, setQuestions] = useState<ExamQuestionWithResponse[]>([]);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [loadStatus, setLoadStatus] = useState<LoadStatus>("loading");
+  const [questions, setQuestions] = useState<
+    ExamQuestionWithResponse[]
+  >([]);
+
+  const [currentQuestionIndex, setCurrentQuestionIndex] =
+    useState(0);
+
+  const [loadStatus, setLoadStatus] =
+    useState<LoadStatus>("loading");
+
   const [loadError, setLoadError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
 
-  // Map each question's version ID to the learner's saved answer
+  // Store selected options for each question.
   const [selectedValuesMap, setSelectedValuesMap] = useState<
     Record<string, string[]>
   >({});
-  const [textAnswersMap, setTextAnswersMap] = useState<Record<string, string>>(
-    {},
-  );
 
-  // Track which questions have been submitted (locked)
-  const [submittedMap, setSubmittedMap] = useState<Record<string, boolean>>({});
+  // Store short-answer responses.
+  const [textAnswersMap, setTextAnswersMap] = useState<
+    Record<string, string>
+  >({});
 
-  // Feedback per question version ID - only populated when the backend
-  // released it. Deferred mode omits it; absence is NOT a wrong answer.
-  const [feedbackMap, setFeedbackMap] = useState<Record<string, FeedbackEntry>>(
-    {},
-  );
+  // Track submitted and locked questions.
+  const [submittedMap, setSubmittedMap] = useState<
+    Record<string, boolean>
+  >({});
+
+  // Only show correctness information released by FastAPI.
+  const [feedbackMap, setFeedbackMap] = useState<
+    Record<string, FeedbackEntry>
+  >({});
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
+  // Load the existing exam and restore saved responses.
   useEffect(() => {
     if (!ready || !token) return;
 
@@ -71,21 +84,34 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         const restoredSelection: Record<string, string[]> = {};
         const restoredText: Record<string, string> = {};
         const restoredFeedback: Record<string, FeedbackEntry> = {};
+
         for (const question of data.questions) {
           if (!question.response) continue;
-          restoredSubmitted[question.id] = question.response.is_submitted;
-          if (question.response.selected_option_ids) {
+
+          const response = question.response;
+
+          restoredSubmitted[question.id] =
+            response.is_submitted;
+
+          if (response.selected_option_ids) {
             restoredSelection[question.id] =
-              question.response.selected_option_ids;
+              response.selected_option_ids;
           }
-          if (question.response.text_response) {
-            restoredText[question.id] = question.response.text_response;
-            restoredSelection[question.id] ??= [];
+
+          if (response.text_response) {
+            restoredText[question.id] =
+              response.text_response;
           }
-          if (question.response.is_correct !== undefined) {
+
+          // The resume endpoint may return a verdict
+          // without returning the correct-option IDs.
+          // Keep options neutral unless those IDs are known.
+          if (typeof response.is_correct === "boolean") {
             restoredFeedback[question.id] = {
-              is_correct: question.response.is_correct,
+              feedback_released: false,
+              is_correct: response.is_correct,
               correct_option_ids: [],
+              explanation: null,
             };
           }
         }
@@ -95,21 +121,38 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         setSelectedValuesMap(restoredSelection);
         setTextAnswersMap(restoredText);
         setFeedbackMap(restoredFeedback);
-        setCurrentQuestionIndex(data.current_position - 1);
-        setLoadStatus("ready");
+
+        setCurrentQuestionIndex(
+          Math.max(
+            0,
+            Math.min(
+              data.current_position - 1,
+              data.questions.length - 1,
+            ),
+          ),
+        );
+
+        setSubmitError("");
         setLoadError("");
+        setLoadStatus("ready");
       })
       .catch((error: unknown) => {
         if (cancelled) return;
 
-        if (error instanceof ApiError && error.status === 401) {
+        if (
+          error instanceof ApiError &&
+          error.status === 401
+        ) {
           handleError(error);
           return;
         }
 
         setLoadError(
-          error instanceof Error ? error.message : "Unable to load the exam.",
+          error instanceof Error
+            ? error.message
+            : "Unable to load the exam.",
         );
+
         setLoadStatus("error");
       });
 
@@ -124,6 +167,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     setReloadKey((value) => value + 1);
   }
 
+  // Authentication loading state.
   if (!ready || !token) {
     return (
       <p role="status" className="p-6">
@@ -132,19 +176,34 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     );
   }
 
+  // Exam loading and error states.
   if (loadStatus === "loading" || loadStatus === "error") {
     return (
       <Card>
-        <PageHeader title="Practice exam" status={loadStatus} />
-        {loadStatus === "loading" ? <p>Loading exam...</p> : null}
-        {loadStatus === "error" ? (
+        <PageHeader
+          title="Practice exam"
+          status={loadStatus}
+        />
+
+        {loadStatus === "loading" && (
+          <p role="status">Loading exam...</p>
+        )}
+
+        {loadStatus === "error" && (
           <>
-            <p className="text-red-700">{loadError}</p>
-            <Button className="mt-2" variant="outline" onClick={retryLoading}>
+            <p role="alert" className="text-red-700">
+              {loadError}
+            </p>
+
+            <Button
+              className="mt-2"
+              variant="outline"
+              onClick={retryLoading}
+            >
               Retry
             </Button>
           </>
-        ) : null}
+        )}
       </Card>
     );
   }
@@ -155,57 +214,112 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     return (
       <Card>
         <PageHeader title="Practice exam complete" />
+
         <p aria-live="polite">
-          You reached the end of your questions. Final submission and results
-          arrive in the next step.
+          You reached the end of your questions.
+          Final submission and results arrive in
+          the next integration checkpoint.
         </p>
       </Card>
     );
   }
 
   const questionId = currentQuestion.id;
-  const isShortAnswer = currentQuestion.question_type === "short_answer";
-  const isMultiple = currentQuestion.allows_multiple_answers;
-  const currentSelected = selectedValuesMap[questionId] || [];
-  const isSubmitted = submittedMap[questionId] || false;
-  const currentFeedback = feedbackMap[questionId];
-  const textValue = textAnswersMap[questionId] ?? "";
-  const isLastQuestion = currentQuestionIndex >= questions.length - 1;
 
-  const handleSelect = (optionId: string) => {
+  const isShortAnswer =
+    currentQuestion.question_type === "short_answer";
+
+  const isMultiple =
+    currentQuestion.allows_multiple_answers;
+
+  const currentSelected =
+    selectedValuesMap[questionId] || [];
+
+  const isSubmitted =
+    submittedMap[questionId] || false;
+
+  const currentFeedback =
+    feedbackMap[questionId];
+
+  const textValue =
+    textAnswersMap[questionId] ?? "";
+
+  const isLastQuestion =
+    currentQuestionIndex >= questions.length - 1;
+
+  // A submission response can disclose correctness
+  // without disclosing the complete answer-option IDs.
+  const feedbackReleased = Boolean(
+    currentFeedback?.feedback_released &&
+    currentFeedback.correct_option_ids.length > 0,
+  );
+
+  // Handle multiple-choice option selection.
+  function handleSelect(optionId: string) {
     if (isSubmitted || isSubmitting) return;
 
     if (isMultiple) {
       setSelectedValuesMap((prev) => {
-        const existingList = prev[questionId] || [];
-        const updatedList = existingList.includes(optionId)
-          ? existingList.filter((id) => id !== optionId)
-          : [...existingList, optionId];
-        return { ...prev, [questionId]: updatedList };
+        const existing = prev[questionId] || [];
+
+        const updated = existing.includes(optionId)
+          ? existing.filter((id) => id !== optionId)
+          : [...existing, optionId];
+
+        return {
+          ...prev,
+          [questionId]: updated,
+        };
       });
     } else {
-      setSelectedValuesMap((prev) => ({ ...prev, [questionId]: [optionId] }));
+      setSelectedValuesMap((prev) => ({
+        ...prev,
+        [questionId]: [optionId],
+      }));
     }
-  };
-
-  function handleTextChange(value: string) {
-    setTextAnswersMap((prev) => ({ ...prev, [questionId]: value }));
   }
 
+  // Handle short-answer input.
+  function handleTextChange(value: string) {
+    if (isSubmitted || isSubmitting) return;
+
+    setTextAnswersMap((prev) => ({
+      ...prev,
+      [questionId]: value,
+    }));
+  }
+
+  // Submit and lock a question through FastAPI.
   function handleSubmit() {
-    if (!currentQuestion || isSubmitting || isSubmitted) return;
-    if (!token) return;
+    if (
+      !token ||
+      !currentQuestion ||
+      isSubmitting ||
+      isSubmitted
+    ) {
+      return;
+    }
 
     const answer: AnswerSubmission = isShortAnswer
-      ? { selected_option_ids: null, text_response: textValue.trim() || null }
-      : { selected_option_ids: currentSelected, text_response: null };
+      ? {
+          selected_option_ids: null,
+          text_response: textValue.trim() || null,
+        }
+      : {
+          selected_option_ids: currentSelected,
+          text_response: null,
+        };
 
-    // Empty answers are rejected by the backend with 422; guard locally too.
     if (
       !answer.text_response &&
-      !(answer.selected_option_ids && answer.selected_option_ids.length > 0)
+      !(
+        answer.selected_option_ids &&
+        answer.selected_option_ids.length > 0
+      )
     ) {
-      setSubmitError("Choose an answer before submitting.");
+      setSubmitError(
+        "Choose an answer before submitting.",
+      );
       return;
     }
 
@@ -214,25 +328,58 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
 
     submitAnswer(attemptId, questionId, answer, token)
       .then((feedback) => {
+        // Store only correctness information
+        // explicitly released by the backend.
         setFeedbackMap((prev) => ({
           ...prev,
           [questionId]: {
-            is_correct: feedback.is_correct,
-            correct_option_ids: feedback.correct_option_ids ?? [],
-            explanation: feedback.explanation ?? null,
+            feedback_released:
+              feedback.feedback_released,
+
+            is_correct:
+              feedback.feedback_released &&
+              typeof feedback.is_correct === "boolean"
+                ? feedback.is_correct
+                : null,
+
+            correct_option_ids:
+              feedback.feedback_released
+                ? (feedback.correct_option_ids ?? [])
+                : [],
+
+            explanation:
+              feedback.feedback_released
+                ? (feedback.explanation ?? null)
+                : null,
           },
         }));
-        setSubmittedMap((prev) => ({ ...prev, [questionId]: true }));
+
+        // Lock the question only after
+        // successful backend submission.
+        setSubmittedMap((prev) => ({
+          ...prev,
+          [questionId]: true,
+        }));
       })
       .catch((error: unknown) => {
-        if (error instanceof ApiError && error.status === 401) {
+        if (
+          error instanceof ApiError &&
+          error.status === 401
+        ) {
           handleError(error);
           return;
         }
 
-        if (error instanceof ApiError && error.status === 409) {
-          // Locked elsewhere: refresh the attempt state instead of retrying.
-          setSubmitError("This question was already submitted. Reloading...");
+        if (
+          error instanceof ApiError &&
+          error.status === 409
+        ) {
+          // Reload state when the question
+          // has already been locked elsewhere.
+          setSubmitError(
+            "This question was already submitted. Reloading...",
+          );
+
           setReloadKey((value) => value + 1);
           return;
         }
@@ -248,19 +395,28 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
       });
   }
 
-  const optionsList = currentQuestion.options.map((option) => (
-    <OptionItem
-      key={option.id}
-      id={option.id}
-      option={option.option_text}
-      questionType={isMultiple ? "multiple" : "single"}
-      isSelected={currentSelected.includes(option.id)}
-      onSelect={() => handleSelect(option.id)}
-      isSubmitted={isSubmitted}
-      feedbackReleased={Boolean(currentFeedback)}
-      correctOptionIds={currentFeedback?.correct_option_ids || []}
-    />
-  ));
+  // Render answer options.
+  const optionsList = currentQuestion.options.map(
+    (option) => (
+      <OptionItem
+        key={option.id}
+        id={option.id}
+        option={option.option_text}
+        questionType={
+          isMultiple ? "multiple" : "single"
+        }
+        isSelected={currentSelected.includes(option.id)}
+        onSelect={() => handleSelect(option.id)}
+        isSubmitted={isSubmitted}
+        feedbackReleased={feedbackReleased}
+        correctOptionIds={
+          feedbackReleased
+            ? currentFeedback.correct_option_ids
+            : []
+        }
+      />
+    ),
+  );
 
   const selectedCount = isShortAnswer
     ? textValue.trim().length
@@ -270,23 +426,26 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     <Card>
       <PageHeader
         title="Practice exam"
-        status={
-          loadStatus === "ready"
-            ? `Question ${currentQuestionIndex + 1} of ${questions.length}`
-            : undefined
-        }
+        status={`Question ${currentQuestionIndex + 1} of ${questions.length}`}
       />
+
       <Badge
         questionNumber={currentQuestionIndex + 1}
-        questionType={isShortAnswer ? "short answer" : "multiple choice"}
+        questionType={
+          isShortAnswer
+            ? "short_answer"
+            : "multiple_choice"
+        }
       />
+
       <h2
         id="question-heading"
-        className="text-base sm:text-xl font-semibold my-3"
+        className="my-3 text-base font-semibold sm:text-xl"
       >
         {currentQuestion.question_text}
       </h2>
 
+      {/* Answer input */}
       {isShortAnswer ? (
         <div
           role="group"
@@ -296,16 +455,23 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           <textarea
             aria-label="Your answer"
             value={textValue}
-            onChange={(event) => handleTextChange(event.target.value)}
-            disabled={isSubmitted}
+            onChange={(event) =>
+              handleTextChange(event.target.value)
+            }
+            disabled={isSubmitted || isSubmitting}
             placeholder="Type your answer..."
             className="min-h-24 w-full rounded-sm border border-gray-300 p-3 text-sm disabled:opacity-60"
           />
-          {isSubmitted ? (
-            <p className="text-sm text-gray-600" role="status">
-              Answer recorded — short answers are not auto-graded.
+
+          {isSubmitted && (
+            <p
+              className="text-sm text-gray-600"
+              role="status"
+            >
+              Answer recorded — short answers are
+              not automatically graded.
             </p>
-          ) : null}
+          )}
         </div>
       ) : isMultiple ? (
         <div
@@ -318,7 +484,9 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
       ) : (
         <RadioGroup
           value={currentSelected[0] || ""}
-          onValueChange={(val) => handleSelect(val)}
+          onValueChange={(value) =>
+            handleSelect(value)
+          }
           aria-labelledby="question-heading"
           className="flex flex-col gap-2"
         >
@@ -326,58 +494,99 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         </RadioGroup>
       )}
 
-      {currentFeedback?.explanation ? (
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-sm text-sm text-blue-900">
-          <strong>Explanation:</strong> {currentFeedback.explanation}
-        </div>
-      ) : null}
+      {/* Backend-provided correctness verdict */}
+      {!isShortAnswer &&
+        isSubmitted &&
+        typeof currentFeedback?.is_correct ===
+          "boolean" && (
+          <p
+            role="status"
+            className={`mt-4 rounded-md border p-3 text-sm font-medium ${
+              currentFeedback.is_correct
+                ? "border-green-200 bg-green-50 text-green-800"
+                : "border-red-200 bg-red-50 text-red-800"
+            }`}
+          >
+            {currentFeedback.is_correct
+              ? "Correct answer."
+              : "Incorrect answer."}
+          </p>
+        )}
 
-      {submitError ? (
-        <p className="mt-2 text-sm text-red-700" role="alert">
+      {/* Explanation released by backend */}
+      {currentFeedback?.explanation && (
+        <div className="mt-4 rounded-sm border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+          <strong>Explanation:</strong>{" "}
+          {currentFeedback.explanation}
+        </div>
+      )}
+
+      {/* Submission error */}
+      {submitError && (
+        <p
+          role="alert"
+          className="mt-2 text-sm text-red-700"
+        >
           {submitError}
         </p>
-      ) : null}
+      )}
 
-      <div className="flex gap-2 mt-2">
+      {/* Question navigation */}
+      <div className="mt-4 flex flex-wrap gap-2">
         <Button
           variant="outline"
           onClick={() => {
-            setCurrentQuestionIndex((prev) => Math.max(prev - 1, 0));
+            setCurrentQuestionIndex((prev) =>
+              Math.max(prev - 1, 0),
+            );
           }}
-          disabled={currentQuestionIndex === 0 || isSubmitting}
-          className="hover:cursor-pointer py-5 px-3 text-base border border-gray-300 rounded-sm"
+          disabled={
+            currentQuestionIndex === 0 ||
+            isSubmitting
+          }
+          className="rounded-sm border border-gray-300 px-3 py-5 text-base hover:cursor-pointer"
         >
           Previous
         </Button>
+
         {isSubmitted ? (
           isLastQuestion ? (
-            // Checkpoint 5 owns final submission (`POST /exams/{id}/submit`)
-            // and the results navigation; do not rebuild them here.
+            // JHEP-100 handles final exam submission
+            // and navigation to the results page.
             <div
-              className="flex items-center px-6 py-5 text-base border border-[#d4d8db] rounded-sm bg-white"
+              className="flex items-center rounded-sm border border-[#d4d8db] bg-white px-6 py-5 text-base"
               aria-live="polite"
             >
-              Exam complete — final submission arrives in the next checkpoint.
+              Exam complete — final submission
+              arrives in the next checkpoint.
             </div>
           ) : (
             <Button
               onClick={() => {
                 setCurrentQuestionIndex((prev) =>
-                  Math.min(prev + 1, questions.length - 1),
+                  Math.min(
+                    prev + 1,
+                    questions.length - 1,
+                  ),
                 );
               }}
-              className="hover:cursor-pointer py-5 px-3 text-base border border-gray-300 rounded-sm"
+              className="rounded-sm border border-gray-300 px-3 py-5 text-base hover:cursor-pointer"
             >
               Next question
             </Button>
           )
         ) : (
           <Button
-            disabled={selectedCount === 0 || isSubmitting}
+            disabled={
+              selectedCount === 0 ||
+              isSubmitting
+            }
             onClick={handleSubmit}
-            className="hover:cursor-pointer py-5 px-3 text-base border border-gray-300 rounded-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            className="rounded-sm border border-gray-300 px-3 py-5 text-base hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isSubmitting ? "Submitting..." : "Submit answer"}
+            {isSubmitting
+              ? "Submitting..."
+              : "Submit answer"}
           </Button>
         )}
       </div>
