@@ -118,3 +118,80 @@ def test_malformed_attempt_id_is_rejected(resume_api):
     response = client.get("/api/v1/exams/nope", headers=auth(learner))
     assert response.status_code == 422
     assert stub.retrieved == []
+
+
+class StubResumeServiceWithSavedAnswers(StubResumeService):
+    """Same fake, but one question carries a saved response block.
+
+    Mirrors the crash property of the GET resume endpoint: attaching a
+    response to the returned content must not raise FrozenInstanceError on
+    attempts that actually carry saved answers (the JHEP-35-era bug caught
+    during live verification).
+    """
+
+    def __init__(self, learner_id, attempt_id, cert_id):
+        super().__init__(learner_id, attempt_id, cert_id)
+        self.pinned_version_id = uuid4()
+
+    def response_blocks(self, attempt):  # type: ignore[override]
+        return {
+            self.pinned_version_id: {
+                "question_version_id": self.pinned_version_id,
+                "selected_option_ids": None,
+                "text_response": "My own words",
+                "is_submitted": True,
+                "answered_at": "2026-11-05T14:01:00Z",
+                "question_submitted_at": "2026-11-05T14:02:00Z",
+            }
+        }
+
+    def get_exam_questions(self, attempt_id):  # type: ignore[override]
+        # One question whose id MATCHES the saved response's version id,
+        # so the endpoint binds the block - exactly what a resumed
+        # attempt does.
+        question = ExamQuestionContent(
+            id=self.pinned_version_id,
+            position=1,
+            question_text="Saved-answer question",
+            question_type="multiple_choice",
+            allows_multiple_answers=False,
+            difficulty="easy",
+            options=[ExamOptionContent(id=uuid4(), position=1, option_text="A")],
+        )
+        return [question]
+
+
+@pytest.fixture
+def resume_api_with_saved_answers():
+    learner_id, attempt_id, cert_id = uuid4(), uuid4(), uuid4()
+    exam_service = StubResumeServiceWithSavedAnswers(learner_id, attempt_id, cert_id)
+    app.dependency_overrides[get_exam_service] = lambda: exam_service
+    app.dependency_overrides[get_exam_attempt_service] = lambda: exam_service
+    try:
+        with TestClient(app) as client:
+            yield client, exam_service, learner_id, attempt_id
+    finally:
+        app.dependency_overrides.pop(get_exam_service, None)
+        app.dependency_overrides.pop(get_exam_attempt_service, None)
+
+
+def test_resume_with_saved_answers_returns_200_and_echoes_response(
+    resume_api_with_saved_answers,
+):
+    """JHEP-32 regression: previously, viewing an attempt that has a saved
+    response raised FrozenInstanceError (500). The endpoint must convert to
+    the mutable response model and echo the block instead."""
+    client, _, learner_id, attempt_id = resume_api_with_saved_answers
+    response = client.get(f"/api/v1/exams/{attempt_id}", headers=auth(learner_id))
+    assert response.status_code == 200
+
+    data = response.json()
+    saved = [q for q in data["questions"] if q.get("response")]
+    assert len(saved) == 1
+
+    block = saved[0]["response"]
+    assert block["question_version_id"] == saved[0]["id"]
+    assert block["is_submitted"] is True
+    assert block["text_response"] == "My own words"
+    # Pre-submission attempt: correctness must not be echoed (AC4).
+    assert "is_correct" not in block

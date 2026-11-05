@@ -1,209 +1,595 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import OptionItem from "@/features/questions/OptionItem";
 import { Button } from "@/components/ui/button";
 import { RadioGroup } from "@/components/ui/radio-group";
-import { useState } from "react";
-import practiceData from "../../../src/data/mock-exam-response.json";
-import sumbissionsFeedback from "../../../src/data/submissionsFeedback.json";
-import PageHeader from "../../components/layouts/PageHeader";
+import PageHeader from "@/components/layouts/PageHeader";
 
-export default function ExamCard() {
-  // Track which question should be displayed
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
+import { ApiError } from "@/lib/api-client";
+import { getExam, submitAnswer } from "@/lib/exam-api";
+import { useDemoSession } from "@/features/auth/AuthProvider";
 
-  // Dictionary state - maps each question's unique version ID to an array of selected option IDs
+import type {
+  AnswerSubmission,
+  ExamQuestionWithResponse,
+} from "@/types/exam-api.types";
+
+type LoadStatus = "loading" | "ready" | "error";
+
+interface ExamCardProps {
+  attemptId: string;
+}
+
+interface FeedbackEntry {
+  feedback_released: boolean;
+  is_correct: boolean | null;
+  correct_option_ids: string[];
+  explanation?: string | null;
+}
+
+export default function ExamCard({ attemptId }: ExamCardProps) {
+  const { token, ready, handleError } = useDemoSession();
+
+  const [questions, setQuestions] = useState<
+    ExamQuestionWithResponse[]
+  >([]);
+
+  const [currentQuestionIndex, setCurrentQuestionIndex] =
+    useState(0);
+
+  const [loadStatus, setLoadStatus] =
+    useState<LoadStatus>("loading");
+
+  const [loadError, setLoadError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // Store selected options for each question.
   const [selectedValuesMap, setSelectedValuesMap] = useState<
     Record<string, string[]>
   >({});
 
-  // Track which question have been submitted
-  const [submittedMap, setSubmittedMap] = useState<Record<string, boolean>>({});
-
-  // Store feedback per question version ID
-  const [feedbackMap, setFeedbackMap] = useState<
-    Record<
-      string,
-      {
-        is_correct: boolean;
-        correct_option_ids: string[];
-        explanation?: string;
-      }
-    >
+  // Store short-answer responses.
+  const [textAnswersMap, setTextAnswersMap] = useState<
+    Record<string, string>
   >({});
 
-  // Grab the question from the array that matches the current index
-  const currentQuestion = practiceData.questions[currentQuestionIndex];
+  // Track submitted and locked questions.
+  const [submittedMap, setSubmittedMap] = useState<
+    Record<string, boolean>
+  >({});
 
-  // Safety check to prevent crashes if index is out of bounds
-  if (!currentQuestion) {
-    return <div>Loading or exam complete...</div>;
+  // Only show correctness information released by FastAPI.
+  const [feedbackMap, setFeedbackMap] = useState<
+    Record<string, FeedbackEntry>
+  >({});
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+
+  // Load the existing exam and restore saved responses.
+  useEffect(() => {
+    if (!ready || !token) return;
+
+    let cancelled = false;
+
+    getExam(attemptId, token)
+      .then((data) => {
+        if (cancelled) return;
+
+        const restoredSubmitted: Record<string, boolean> = {};
+        const restoredSelection: Record<string, string[]> = {};
+        const restoredText: Record<string, string> = {};
+        const restoredFeedback: Record<string, FeedbackEntry> = {};
+
+        for (const question of data.questions) {
+          if (!question.response) continue;
+
+          const response = question.response;
+
+          restoredSubmitted[question.id] =
+            response.is_submitted;
+
+          if (response.selected_option_ids) {
+            restoredSelection[question.id] =
+              response.selected_option_ids;
+          }
+
+          if (response.text_response) {
+            restoredText[question.id] =
+              response.text_response;
+          }
+
+          // The resume endpoint may return a verdict
+          // without returning the correct-option IDs.
+          // Keep options neutral unless those IDs are known.
+          if (typeof response.is_correct === "boolean") {
+            restoredFeedback[question.id] = {
+              feedback_released: false,
+              is_correct: response.is_correct,
+              correct_option_ids: [],
+              explanation: null,
+            };
+          }
+        }
+
+        setQuestions(data.questions);
+        setSubmittedMap(restoredSubmitted);
+        setSelectedValuesMap(restoredSelection);
+        setTextAnswersMap(restoredText);
+        setFeedbackMap(restoredFeedback);
+
+        setCurrentQuestionIndex(
+          Math.max(
+            0,
+            Math.min(
+              data.current_position - 1,
+              data.questions.length - 1,
+            ),
+          ),
+        );
+
+        setSubmitError("");
+        setLoadError("");
+        setLoadStatus("ready");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+
+        if (
+          error instanceof ApiError &&
+          error.status === 401
+        ) {
+          handleError(error);
+          return;
+        }
+
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load the exam.",
+        );
+
+        setLoadStatus("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, token, attemptId, reloadKey, handleError]);
+
+  function retryLoading() {
+    setLoadStatus("loading");
+    setLoadError("");
+    setReloadKey((value) => value + 1);
   }
 
-  // Extract the details and unique ID of the current question
+  // Authentication loading state.
+  if (!ready || !token) {
+    return (
+      <p role="status" className="p-6">
+        Checking session...
+      </p>
+    );
+  }
+
+  // Exam loading and error states.
+  if (loadStatus === "loading" || loadStatus === "error") {
+    return (
+      <Card>
+        <PageHeader
+          title="Practice exam"
+          status={loadStatus}
+        />
+
+        {loadStatus === "loading" && (
+          <p role="status">Loading exam...</p>
+        )}
+
+        {loadStatus === "error" && (
+          <>
+            <p role="alert" className="text-red-700">
+              {loadError}
+            </p>
+
+            <Button
+              className="mt-2"
+              variant="outline"
+              onClick={retryLoading}
+            >
+              Retry
+            </Button>
+          </>
+        )}
+      </Card>
+    );
+  }
+
+  const currentQuestion = questions[currentQuestionIndex];
+
+  if (!currentQuestion) {
+    return (
+      <Card>
+        <PageHeader title="Practice exam complete" />
+
+        <p aria-live="polite">
+          You reached the end of your questions.
+          Final submission and results arrive in
+          the next integration checkpoint.
+        </p>
+      </Card>
+    );
+  }
+
   const questionId = currentQuestion.id;
-  const currentQuestionText = currentQuestion.question_text;
-  const currentQuestionOptions = currentQuestion.options;
 
-  // Determine if single or multiple answers are required
-  const isMultiple = currentQuestion.allows_multiple_answers;
+  const isShortAnswer =
+    currentQuestion.question_type === "short_answer";
 
-  // Get the selected options for this specific question or default to an empty array
-  const currentSelected = selectedValuesMap[questionId] || [];
+  const isMultiple =
+    currentQuestion.allows_multiple_answers;
 
-  // Check if the questions is already submitted
-  const isSubmitted = submittedMap[questionId] || false;
+  const currentSelected =
+    selectedValuesMap[questionId] || [];
 
-  // Check current feedback
-  const currentFeedback = feedbackMap[questionId];
+  const isSubmitted =
+    submittedMap[questionId] || false;
 
-  const handleSelect = (optionId: string) => {
-    if (isSubmitted) return; // Prevent changing answers after submission
+  const currentFeedback =
+    feedbackMap[questionId];
 
-    if (!isMultiple) {
-      // Single choice: set this question's array to just the clicked option ID
+  const textValue =
+    textAnswersMap[questionId] ?? "";
+
+  const isLastQuestion =
+    currentQuestionIndex >= questions.length - 1;
+
+  // A submission response can disclose correctness
+  // without disclosing the complete answer-option IDs.
+  const feedbackReleased = Boolean(
+    currentFeedback?.feedback_released &&
+    currentFeedback.correct_option_ids.length > 0,
+  );
+
+  // Handle multiple-choice option selection.
+  function handleSelect(optionId: string) {
+    if (isSubmitted || isSubmitting) return;
+
+    if (isMultiple) {
+      setSelectedValuesMap((prev) => {
+        const existing = prev[questionId] || [];
+
+        const updated = existing.includes(optionId)
+          ? existing.filter((id) => id !== optionId)
+          : [...existing, optionId];
+
+        return {
+          ...prev,
+          [questionId]: updated,
+        };
+      });
+    } else {
       setSelectedValuesMap((prev) => ({
         ...prev,
         [questionId]: [optionId],
       }));
-    } else {
-      // Multiple choices: toggle the option ID in the specific question's array
-      setSelectedValuesMap((prev) => {
-        const existingList = prev[questionId] || [];
-        const updatedList = existingList.includes(optionId)
-          ? existingList.filter((id) => id !== optionId)
-          : [...existingList, optionId];
-
-        return {
-          ...prev,
-          [questionId]: updatedList,
-        };
-      });
     }
-  };
+  }
 
-  const handleSubmit = () => {
-    // Find the matching feedback from the imported JSON
-    const feedbackEntry = sumbissionsFeedback.examples.find(
-      (ex) => ex.response.question_version_id === questionId,
-    );
+  // Handle short-answer input.
+  function handleTextChange(value: string) {
+    if (isSubmitted || isSubmitting) return;
 
-    if (!feedbackEntry) return;
-
-    const correctIds = feedbackEntry.response.correct_option_ids;
-    const isCorrect =
-      currentSelected.length === correctIds.length &&
-      currentSelected.every((id) => correctIds.includes(id));
-
-    // Save feedback to state map
-    setFeedbackMap((prev) => ({
+    setTextAnswersMap((prev) => ({
       ...prev,
-      [questionId]: {
-        is_correct: isCorrect,
-        correct_option_ids: correctIds,
-        explanation: feedbackEntry?.response.explanation,
-      },
+      [questionId]: value,
     }));
+  }
 
-    // Mark question as submitted
-    setSubmittedMap((prev) => ({
-      ...prev,
-      [questionId]: true,
-    }));
-  };
+  // Submit and lock a question through FastAPI.
+  function handleSubmit() {
+    if (
+      !token ||
+      !currentQuestion ||
+      isSubmitting ||
+      isSubmitted
+    ) {
+      return;
+    }
 
-  // Move onto next question
-  const handleNext = () => {
-    setCurrentQuestionIndex((prev) =>
-      Math.min(prev + 1, practiceData.questions.length - 1),
-    );
-  };
+    const answer: AnswerSubmission = isShortAnswer
+      ? {
+          selected_option_ids: null,
+          text_response: textValue.trim() || null,
+        }
+      : {
+          selected_option_ids: currentSelected,
+          text_response: null,
+        };
 
-  const optionsList = currentQuestionOptions.map((option) => (
-    <OptionItem
-      key={option.id}
-      id={option.id}
-      option={option.option_text}
-      questionType={isMultiple ? "multiple" : "single"}
-      isSelected={currentSelected.includes(option.id)} // Checking against this question's saved state
-      onSelect={() => handleSelect(option.id)} // ID is passed on click
-      isSubmitted={isSubmitted}
-      correctOptionIds={currentFeedback?.correct_option_ids || []}
-    />
-  ));
+    if (
+      !answer.text_response &&
+      !(
+        answer.selected_option_ids &&
+        answer.selected_option_ids.length > 0
+      )
+    ) {
+      setSubmitError(
+        "Choose an answer before submitting.",
+      );
+      return;
+    }
 
-  const instructionText = isMultiple
-    ? "Choose all that apply, then submit."
-    : "Choose one answer, then submit.";
+    setIsSubmitting(true);
+    setSubmitError("");
+
+    submitAnswer(attemptId, questionId, answer, token)
+      .then((feedback) => {
+        // Store only correctness information
+        // explicitly released by the backend.
+        setFeedbackMap((prev) => ({
+          ...prev,
+          [questionId]: {
+            feedback_released:
+              feedback.feedback_released,
+
+            is_correct:
+              feedback.feedback_released &&
+              typeof feedback.is_correct === "boolean"
+                ? feedback.is_correct
+                : null,
+
+            correct_option_ids:
+              feedback.feedback_released
+                ? (feedback.correct_option_ids ?? [])
+                : [],
+
+            explanation:
+              feedback.feedback_released
+                ? (feedback.explanation ?? null)
+                : null,
+          },
+        }));
+
+        // Lock the question only after
+        // successful backend submission.
+        setSubmittedMap((prev) => ({
+          ...prev,
+          [questionId]: true,
+        }));
+      })
+      .catch((error: unknown) => {
+        if (
+          error instanceof ApiError &&
+          error.status === 401
+        ) {
+          handleError(error);
+          return;
+        }
+
+        if (
+          error instanceof ApiError &&
+          error.status === 409
+        ) {
+          // Reload state when the question
+          // has already been locked elsewhere.
+          setSubmitError(
+            "This question was already submitted. Reloading...",
+          );
+
+          setReloadKey((value) => value + 1);
+          return;
+        }
+
+        setSubmitError(
+          error instanceof Error
+            ? error.message
+            : "Unable to submit the answer.",
+        );
+      })
+      .finally(() => {
+        setIsSubmitting(false);
+      });
+  }
+
+  // Render answer options.
+  const optionsList = currentQuestion.options.map(
+    (option) => (
+      <OptionItem
+        key={option.id}
+        id={option.id}
+        option={option.option_text}
+        questionType={
+          isMultiple ? "multiple" : "single"
+        }
+        isSelected={currentSelected.includes(option.id)}
+        onSelect={() => handleSelect(option.id)}
+        isSubmitted={isSubmitted}
+        feedbackReleased={feedbackReleased}
+        correctOptionIds={
+          feedbackReleased
+            ? currentFeedback.correct_option_ids
+            : []
+        }
+      />
+    ),
+  );
+
+  const selectedCount = isShortAnswer
+    ? textValue.trim().length
+    : currentSelected.length;
 
   return (
-    <div>
-      <Card>
-        <PageHeader
-          title={currentQuestion.category}
-          status="In progress"
-          subtitle={
-            <>
-              Question {currentQuestionIndex + 1} of{" "}
-              {practiceData.questions.length} <span aria-hidden="true">·</span>{" "}
-              {instructionText}
-            </>
-          }
-        />
-        <Badge
-          questionNumber={currentQuestionIndex + 1}
-          questionType="multiple choice"
-        />
-        <h2
-          id="question-heading"
-          className="text-base sm:text-xl font-semibold my-3"
+    <Card>
+      <PageHeader
+        title="Practice exam"
+        status={`Question ${currentQuestionIndex + 1} of ${questions.length}`}
+      />
+
+      <Badge
+        questionNumber={currentQuestionIndex + 1}
+        questionType={
+          isShortAnswer
+            ? "short_answer"
+            : "multiple_choice"
+        }
+      />
+
+      <h2
+        id="question-heading"
+        className="my-3 text-base font-semibold sm:text-xl"
+      >
+        {currentQuestion.question_text}
+      </h2>
+
+      {/* Answer input */}
+      {isShortAnswer ? (
+        <div
+          role="group"
+          aria-labelledby="question-heading"
+          className="flex flex-col gap-2"
         >
-          {currentQuestionText}
-        </h2>
-        {isMultiple ? (
-          <div
-            role="group"
-            aria-labelledby="question-heading"
-            className="flex flex-col gap-2"
-          >
-            {optionsList}
-          </div>
-        ) : (
-          <RadioGroup
-            value={currentSelected[0] || ""}
-            onValueChange={(val) => handleSelect(val)}
-            aria-labelledby="question-heading"
-            className="flex flex-col gap-2"
-          >
-            {optionsList}
-          </RadioGroup>
-        )}
+          <textarea
+            aria-label="Your answer"
+            value={textValue}
+            onChange={(event) =>
+              handleTextChange(event.target.value)
+            }
+            disabled={isSubmitted || isSubmitting}
+            placeholder="Type your answer..."
+            className="min-h-24 w-full rounded-sm border border-gray-300 p-3 text-sm disabled:opacity-60"
+          />
 
-        {currentFeedback?.explanation && (
-          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-sm text-sm text-blue-900">
-            <strong>Explanation:</strong> {currentFeedback.explanation}
-          </div>
-        )}
-
-        <div className="flex gap-2 mt-2">
-          <Button
-            variant="outline"
-            onClick={() => {
-              setCurrentQuestionIndex((prev) => Math.max(prev - 1, 0));
-            }}
-            className="hover:cursor-pointer py-5 px-3 text-base border border-gray-300 rounded-sm"
-          >
-            Previous
-          </Button>
-          <Button
-            disabled={!isSubmitted && currentSelected.length === 0}
-            onClick={isSubmitted ? handleNext : handleSubmit}
-            className="hover:cursor-pointer py-5 px-3 text-base border border-gray-300 rounded-sm disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSubmitted ? "Next question" : "Submit answer"}
-          </Button>
+          {isSubmitted && (
+            <p
+              className="text-sm text-gray-600"
+              role="status"
+            >
+              Answer recorded — short answers are
+              not automatically graded.
+            </p>
+          )}
         </div>
-      </Card>
-    </div>
+      ) : isMultiple ? (
+        <div
+          role="group"
+          aria-labelledby="question-heading"
+          className="flex flex-col gap-2"
+        >
+          {optionsList}
+        </div>
+      ) : (
+        <RadioGroup
+          value={currentSelected[0] || ""}
+          onValueChange={(value) =>
+            handleSelect(value)
+          }
+          aria-labelledby="question-heading"
+          className="flex flex-col gap-2"
+        >
+          {optionsList}
+        </RadioGroup>
+      )}
+
+      {/* Backend-provided correctness verdict */}
+      {!isShortAnswer &&
+        isSubmitted &&
+        typeof currentFeedback?.is_correct ===
+          "boolean" && (
+          <p
+            role="status"
+            className={`mt-4 rounded-md border p-3 text-sm font-medium ${
+              currentFeedback.is_correct
+                ? "border-green-200 bg-green-50 text-green-800"
+                : "border-red-200 bg-red-50 text-red-800"
+            }`}
+          >
+            {currentFeedback.is_correct
+              ? "Correct answer."
+              : "Incorrect answer."}
+          </p>
+        )}
+
+      {/* Explanation released by backend */}
+      {currentFeedback?.explanation && (
+        <div className="mt-4 rounded-sm border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+          <strong>Explanation:</strong>{" "}
+          {currentFeedback.explanation}
+        </div>
+      )}
+
+      {/* Submission error */}
+      {submitError && (
+        <p
+          role="alert"
+          className="mt-2 text-sm text-red-700"
+        >
+          {submitError}
+        </p>
+      )}
+
+      {/* Question navigation */}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button
+          variant="outline"
+          onClick={() => {
+            setCurrentQuestionIndex((prev) =>
+              Math.max(prev - 1, 0),
+            );
+          }}
+          disabled={
+            currentQuestionIndex === 0 ||
+            isSubmitting
+          }
+          className="rounded-sm border border-gray-300 px-3 py-5 text-base hover:cursor-pointer"
+        >
+          Previous
+        </Button>
+
+        {isSubmitted ? (
+          isLastQuestion ? (
+            // JHEP-100 handles final exam submission
+            // and navigation to the results page.
+            <div
+              className="flex items-center rounded-sm border border-[#d4d8db] bg-white px-6 py-5 text-base"
+              aria-live="polite"
+            >
+              Exam complete — final submission
+              arrives in the next checkpoint.
+            </div>
+          ) : (
+            <Button
+              onClick={() => {
+                setCurrentQuestionIndex((prev) =>
+                  Math.min(
+                    prev + 1,
+                    questions.length - 1,
+                  ),
+                );
+              }}
+              className="rounded-sm border border-gray-300 px-3 py-5 text-base hover:cursor-pointer"
+            >
+              Next question
+            </Button>
+          )
+        ) : (
+          <Button
+            disabled={
+              selectedCount === 0 ||
+              isSubmitting
+            }
+            onClick={handleSubmit}
+            className="rounded-sm border border-gray-300 px-3 py-5 text-base hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSubmitting
+              ? "Submitting..."
+              : "Submit answer"}
+          </Button>
+        )}
+      </div>
+    </Card>
   );
 }
