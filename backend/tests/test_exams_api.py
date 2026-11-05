@@ -9,12 +9,14 @@ from app.api.v1.endpoints.exams import get_exam_service
 from app.core.security import create_access_token
 from app.main import app
 from app.services.exam_service import (
+    AttemptInProgressError,
     CertificationNotFoundError,
     CreatedExam,
     ExamOptionContent,
     ExamQuestionContent,
     InsufficientQuestionsError,
     LearnerNotFoundError,
+    MissingThresholdError,
 )
 
 EXAMS_URL = "/api/v1/exams"
@@ -192,6 +194,7 @@ def test_unknown_certification_returns_404(setup_api):
         EXAMS_URL, json=payload(certification_id), headers=headers(learner_id)
     )
     assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "CERTIFICATION_NOT_FOUND"
     assert stub.deliveries == []
 
 
@@ -207,6 +210,58 @@ def test_insufficient_pool_returns_409(setup_api):
         "requested": 5,
         "available": 2,
     }
+    assert stub.deliveries == []
+
+
+@pytest.mark.parametrize(
+    "error_instance, expected_code",
+    [
+        (
+            CertificationNotFoundError("Certification not found"),
+            "CERTIFICATION_NOT_FOUND",
+        ),
+        (
+            MissingThresholdError("Certification has no passing threshold configured"),
+            "MISSING_THRESHOLD",
+        ),
+        (
+            InsufficientQuestionsError(requested=5, available=2),
+            "INSUFFICIENT_QUESTIONS",
+        ),
+        (AttemptInProgressError(uuid4()), "ATTEMPT_IN_PROGRESS"),
+    ],
+)
+def test_start_failure_payloads_are_coded_and_safe(
+    setup_api, error_instance, expected_code
+):
+    """AC3/AC4 audit: every business failure of /exams returns a stable
+    machine-readable code (frontend renders one message component) and
+    never leaks internals."""
+    client, stub, learner_id, certification_id = setup_api
+    stub.error = error_instance
+    response = client.post(
+        EXAMS_URL, json=payload(certification_id, 1), headers=headers(learner_id)
+    )
+    detail = response.json()["detail"]
+    assert detail["code"] == expected_code
+    body = response.text.lower()
+    for forbidden in ("traceback", "sqlalchemy", "psycopg", "stack", "secret"):
+        assert forbidden not in body
+
+
+def test_duplicate_start_names_the_existing_attempt(setup_api):
+    client, stub, learner_id, certification_id = setup_api
+    existing = uuid4()
+    stub.error = AttemptInProgressError(existing)
+    response = client.post(
+        EXAMS_URL, json=payload(certification_id, 1), headers=headers(learner_id)
+    )
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "ATTEMPT_IN_PROGRESS"
+    assert detail["attempt_id"] == str(existing)
+    # The learner navigates to THEIR unknown attempt (JHEP-32 recovery);
+    # identity of any other attempt stays indistinguishable.
     assert stub.deliveries == []
 
 

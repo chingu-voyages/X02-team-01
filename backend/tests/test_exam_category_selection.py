@@ -288,7 +288,9 @@ def test_unknown_or_cross_certification_category_returns_404(api_client):
     )
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Category not found"}
+    detail = response.json()["detail"]
+    assert detail["code"] == "CATEGORY_NOT_FOUND"
+    assert detail["message"] == "Category is not part of this certification"
 
 
 def test_unpublished_category_returns_conflict(api_client):
@@ -396,3 +398,103 @@ def test_postgres_exam_creation_stays_inside_selected_category(postgres_session)
 
     assert assignment.question_id == selected_question.id
     assert assignment.question_id != other_question.id
+
+
+def test_category_start_snapshots_threshold_and_feedback(postgres_session):
+    """AC2 (JHEP-35): the attempt records the certification's passing
+    threshold and feedback mode at creation - later certification edits
+    never change running attempts, so this snapshot is contractually
+    mandatory for every start path, category-aware or not."""
+    from app.models import ExamAttempt
+    from app.services.exam_service import ExamService
+
+    learner = User(email=f"cat-snapshot-{uuid4().hex}@example.test")
+    certification = Certification(
+        name="Snapshot Certification",
+        code=uuid4().hex[:12],
+        passing_threshold_pct=70,
+        feedback_mode="immediate",
+    )
+    category = Category(
+        certification_id=certification.id,
+        name="Snapshotted",
+        is_published=True,
+    )
+    postgres_session.add_all([learner, certification])
+    postgres_session.flush()
+    postgres_session.add(category)
+    postgres_session.flush()
+
+    _add_multiple_choice(
+        postgres_session,
+        author=learner,
+        certification=certification,
+        category=category,
+        text_value="Snapshot question",
+    )
+    postgres_session.commit()
+
+    created = ExamService(postgres_session).create_exam(
+        learner_id=learner.id,
+        certification_id=certification.id,
+        category_id=category.id,
+        question_count=1,
+    )
+
+    attempt = postgres_session.get(ExamAttempt, created.attempt_id)
+    assert attempt is not None
+    assert attempt.passing_threshold_pct == 70
+    assert attempt.feedback_mode == "immediate"
+
+
+def test_category_start_delivers_first_question_in_persisted_order(
+    postgres_session,
+):
+    """AC1: the learner lands on the first question; the assigned order is
+    stable and 1-indexed exactly as JHEP-29 established."""
+    from app.models import ExamAttemptQuestion
+    from app.services.exam_service import ExamService
+
+    learner = User(email=f"cat-order-{uuid4().hex}@example.test")
+    certification = Certification(
+        name="Order Certification",
+        code=uuid4().hex[:12],
+        passing_threshold_pct=60,
+    )
+    category = Category(
+        certification_id=certification.id,
+        name="Orderly",
+        is_published=True,
+    )
+    postgres_session.add_all([learner, certification])
+    postgres_session.flush()
+    postgres_session.add(category)
+    postgres_session.flush()
+
+    for number in range(1, 4):
+        _add_multiple_choice(
+            postgres_session,
+            author=learner,
+            certification=certification,
+            category=category,
+            text_value=f"Order question {number}",
+        )
+    postgres_session.commit()
+
+    created = ExamService(postgres_session).create_exam(
+        learner_id=learner.id,
+        certification_id=certification.id,
+        category_id=category.id,
+        question_count=3,
+    )
+
+    assignments = postgres_session.exec(
+        select(ExamAttemptQuestion)
+        .where(ExamAttemptQuestion.attempt_id == created.attempt_id)
+        .order_by(ExamAttemptQuestion.position)
+    ).all()
+    assert [item.position for item in assignments] == [1, 2, 3]
+
+    # The exam interface opens on position 1 (first question delivered).
+    delivery = ExamService(postgres_session).get_exam_questions(created.attempt_id)
+    assert [question.position for question in delivery] == [1, 2, 3]

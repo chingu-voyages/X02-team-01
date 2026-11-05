@@ -46,6 +46,7 @@ from app.services.exam_attempt_service import (
     QuestionAlreadyLockedError,
 )
 from app.services.exam_service import (
+    AttemptInProgressError,
     CategoryUnavailableError,
     CertificationNotFoundError,
     ExamAttemptNotFoundError,
@@ -153,12 +154,18 @@ def create_exam(
     except CertificationNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Certification not found",
+            detail={
+                "code": "CERTIFICATION_NOT_FOUND",
+                "message": "Certification not found",
+            },
         ) from exc
     except InvalidCategoryError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Category not found",
+            detail={
+                "code": "CATEGORY_NOT_FOUND",
+                "message": "Category is not part of this certification",
+            },
         ) from exc
     except CategoryUnavailableError as exc:
         raise HTTPException(
@@ -168,10 +175,21 @@ def create_exam(
                 "message": "Category is not available",
             },
         ) from exc
+    except AttemptInProgressError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "ATTEMPT_IN_PROGRESS",
+                "attempt_id": str(exc.existing_attempt_id),
+            },
+        ) from exc
     except MissingThresholdError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Certification has no passing threshold configured",
+            detail={
+                "code": "MISSING_THRESHOLD",
+                "message": "Certification has no passing threshold configured",
+            },
         ) from exc
     except InsufficientQuestionsError as exc:
         raise HTTPException(

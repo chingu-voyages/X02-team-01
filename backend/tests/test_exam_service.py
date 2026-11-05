@@ -24,6 +24,7 @@ from app.models import (
 )
 from app.repositories.question_repository import ExamQuestionSelection
 from app.services.exam_service import (
+    AttemptInProgressError,
     CategoryUnavailableError,
     CertificationNotFoundError,
     ExamService,
@@ -45,10 +46,16 @@ class RecordingSession:
         self.cert_threshold = 70
         self.category_id = None
         self.category_published = True
+        self.active_attempt = None  # JHEP-28: a live in-progress attempt, if any
         self.fail_on = fail_on
         self.added = []
         self.commits = 0
         self.rollbacks = 0
+
+    def exec(self, statement):
+        """Single-column/entity selects produce row objects; the duplicate-
+        start guard reads `.first()` only, so a row stub is enough."""
+        return SimpleNamespace(first=lambda: self.active_attempt)
 
     def get(self, model, identifier):
         if model is User and identifier == self.learner_id:
@@ -458,3 +465,52 @@ def test_rejects_category_from_another_certification():
         )
     assert session.added == []
     assert session.rollbacks == 1
+
+
+def test_rejects_second_attempt_while_one_is_in_progress():
+    """AC3: repeated clicks must never create parallel attempts."""
+    learner_id, certification_id = uuid4(), uuid4()
+    session = RecordingSession(learner_id, certification_id)
+    session.active_attempt = SimpleNamespace(id=uuid4())  # live attempt exists
+
+    with pytest.raises(AttemptInProgressError):
+        ExamService(session, FixedSelector(selections(2))).create_exam(
+            learner_id=learner_id,
+            certification_id=certification_id,
+            question_count=2,
+        )
+    assert session.added == []
+    assert session.rollbacks == 1
+
+
+def test_attempt_in_progress_error_carries_existing_id():
+    learner_id, certification_id = uuid4(), uuid4()
+    session = RecordingSession(learner_id, certification_id)
+    existing_id = uuid4()
+    session.active_attempt = SimpleNamespace(id=existing_id)
+
+    with pytest.raises(AttemptInProgressError) as exc:
+        ExamService(session, FixedSelector(selections(1))).create_exam(
+            learner_id=learner_id,
+            certification_id=certification_id,
+            question_count=1,
+        )
+    # JHEP-32 recovery: the API surfaces this id so the learner can return
+    # to their unfinished exam instead of a duplicate being created.
+    assert exc.value.existing_attempt_id == existing_id
+
+
+def test_allows_start_again_after_previous_attempt_was_submitted():
+    learner_id, certification_id = uuid4(), uuid4()
+    session = RecordingSession(learner_id, certification_id)
+    session.active_attempt = None  # previous attempt submitted -> no guard
+
+    result = ExamService(session, FixedSelector(selections(2))).create_exam(
+        learner_id=learner_id,
+        certification_id=certification_id,
+        question_count=2,
+    )
+    assert session.commits == 1
+    assert session.rollbacks == 0
+    attempt = session.added[0]
+    assert attempt.id == result.attempt_id

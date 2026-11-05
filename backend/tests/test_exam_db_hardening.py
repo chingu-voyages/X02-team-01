@@ -274,6 +274,28 @@ def test_separate_exam_attempts_remain_independent_and_order_is_stable(
         for item in service.get_exam_questions(first.attempt_id)
     ]
 
+    # JHEP-28 AC3: while the first attempt is in progress, a second start
+    # for the same learner + certification must be refused — instead of
+    # silently creating a parallel attempt, Try Again requires submitting.
+    from app.models import ExamAttempt
+    from app.services.exam_service import AttemptInProgressError
+
+    with pytest.raises(AttemptInProgressError) as exc:
+        service.create_exam(
+            learner_id=mixed_bank["learner_id"],
+            certification_id=mixed_bank["first_cert_id"],
+            question_count=3,
+        )
+    assert exc.value.existing_attempt_id == first.attempt_id
+
+    # Submitting the first attempt unlocks Try Again; the previous attempt's
+    # stored order must be untouched by the new one.
+    prior_attempt = session.get(ExamAttempt, first.attempt_id)
+    prior_attempt.status = "submitted"
+    prior_attempt.submitted_at = datetime.now(UTC)
+    session.add(prior_attempt)
+    session.commit()
+
     second = service.create_exam(
         learner_id=mixed_bank["learner_id"],
         certification_id=mixed_bank["first_cert_id"],
