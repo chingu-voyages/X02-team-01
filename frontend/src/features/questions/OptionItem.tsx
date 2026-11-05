@@ -8,6 +8,7 @@ interface OptionItemProps {
   isSelected: boolean;
   onSelect: () => void;
   isSubmitted: boolean;
+  feedbackReleased: boolean;
   correctOptionIds: string[];
 }
 
@@ -18,10 +19,15 @@ export default function OptionItem({
   isSelected,
   onSelect,
   isSubmitted,
+  feedbackReleased,
   correctOptionIds,
 }: OptionItemProps) {
-  const isCorrectOption = correctOptionIds.includes(id);
-  const isIncorrectSelection = isSubmitted && isSelected && !isCorrectOption;
+  // Correctness is only known when the backend released feedback.
+  // Do NOT infer a wrong answer from the absence of the fields:
+  // deferred mode (and withheld grading) must stay neutral.
+  const isCorrectOption = feedbackReleased && correctOptionIds.includes(id);
+  const isIncorrectSelection =
+    feedbackReleased && isSubmitted && isSelected && !isCorrectOption;
 
   const getFeedbackBadge = () => {
     if (!isSubmitted) return null;
