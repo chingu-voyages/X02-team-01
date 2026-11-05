@@ -30,8 +30,13 @@ function ResultsPageContent() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f3f4f5] px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-3xl">
+    <main
+      className="min-h-screen bg-[#f3f4f5] px-4 py-6 text-[#2c3134] sm:px-6 lg:px-8"
+      style={{
+        fontFamily: "Arial, Helvetica, sans-serif",
+      }}
+    >
+      <div className="mx-auto max-w-7xl">
         <ExamResultsScreen
           attemptId={attemptId}
           accessToken={token}
