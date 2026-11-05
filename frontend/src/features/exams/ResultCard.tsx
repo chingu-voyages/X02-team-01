@@ -1,6 +1,3 @@
-import PageHeader from "@/components/layouts/PageHeader";
-import Card from "@/components/ui/Card";
-
 interface ResultCardProps {
   scorePercent: number | null;
   correctCount: number;
@@ -16,56 +13,170 @@ export default function ResultCard({
   isPassed,
   passingScorePercent,
 }: ResultCardProps) {
-  if (
-    scorePercent === null ||
-    isPassed === null ||
-    passingScorePercent === null
-  ) {
-    return (
-      <Card>
-        <PageHeader title="Exam Result Unavailable" />
-        <p className="text-gray-500">Unable to load exam performance data.</p>
-      </Card>
-    );
-  }
+  const hasScore =
+    scorePercent !== null && isPassed !== null;
 
-  const formattedScore = scorePercent.toFixed(2);
+  const formattedScore =
+    scorePercent === null
+      ? "—"
+      : `${scorePercent.toFixed(1)}%`;
+
+  const resultLabel = !hasScore
+    ? "Not assessed"
+    : isPassed
+      ? "Passed"
+      : "Not passed";
 
   return (
-    <div>
-      <Card>
-        <PageHeader title="Practice exam complete" />
-        <div className="flex">
-          <Card className="w-full flex flex-col">
-            <span className="text-sm text-gray-500">Score</span>{" "}
-            <span className="text-2xl font-bold">{formattedScore}%</span>
-          </Card>
-          <Card className="w-full flex flex-col">
-            <span className="text-sm text-gray-500">Correct</span>
-            <span className="text-2xl font-bold">{correctCount}</span>
-          </Card>
-          <Card className="w-full flex flex-col">
-            <span className="text-sm text-gray-500">Incorrect</span>
-            <span className="text-2xl font-bold">{incorrectCount}</span>
-          </Card>
+    <section
+      aria-labelledby="results-heading"
+      className="w-full space-y-6 text-[#303639]"
+    >
+      {/* Navigation — same as category page */}
+      <nav
+        aria-label="Main navigation"
+        className="flex flex-wrap items-center gap-x-7 gap-y-3 rounded-md border border-[#d4d8db] bg-white px-6 py-5"
+      >
+        <span className="text-sm font-extrabold tracking-tight">
+          THE JOB HACKERS
+        </span>
+
+        <div className="flex flex-wrap items-center gap-4 text-sm">
+          <span className="font-semibold text-[#303639]">
+            Exams
+          </span>
+          <span className="text-gray-300" aria-hidden="true">
+            •
+          </span>
+          <span className="text-gray-400">
+            My History
+          </span>
+          <span className="text-gray-300" aria-hidden="true">
+            •
+          </span>
+          <span className="text-gray-400">
+            Journal
+          </span>
+          <span className="text-gray-300" aria-hidden="true">
+            •
+          </span>
+          <span className="text-gray-400">
+            Account
+          </span>
         </div>
-        <Card className="flex items-center">
-          <div className="flex flex-col flex-1">
-            <span className="text-sm text-gray-500">Exam result</span>
-            <span
-              role="status"
-              aria-live="polite"
-              className="text-2xl font-bold"
-            >
-              {isPassed ? "Passed" : "Failed"}
-            </span>
-          </div>
-          <div className="flex-1">
-            scored {formattedScore}% <span aria-hidden="true">·</span>{" "}
-            {passingScorePercent}% required to pass
-          </div>
-        </Card>
-      </Card>
-    </div>
+      </nav>
+
+      {/* Heading */}
+      <header className="space-y-2">
+        <h1
+          id="results-heading"
+          className="text-2xl font-bold tracking-tight sm:text-3xl"
+        >
+          Practice exam complete
+        </h1>
+
+        <p className="text-sm text-[#687178]">
+          Your results are based on automatically graded
+          multiple-choice answers.
+        </p>
+      </header>
+
+      {/* Full-width statistics */}
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+        <div className="rounded-md border border-[#cbd0d3] bg-white p-6">
+          <p className="text-xs font-medium uppercase text-[#687178]">
+            Score
+          </p>
+
+          <p className="mt-3 text-3xl font-bold">
+            {formattedScore}
+          </p>
+        </div>
+
+        <div className="rounded-md border border-[#cbd0d3] bg-white p-6">
+          <p className="text-xs font-medium uppercase text-[#687178]">
+            Correct
+          </p>
+
+          <p className="mt-3 text-3xl font-bold">
+            {correctCount}
+          </p>
+        </div>
+
+        <div className="rounded-md border border-[#cbd0d3] bg-white p-6">
+          <p className="text-xs font-medium uppercase text-[#687178]">
+            Incorrect
+          </p>
+
+          <p className="mt-3 text-3xl font-bold">
+            {incorrectCount}
+          </p>
+        </div>
+      </div>
+
+      {/* Wide result summary */}
+      <div className="grid grid-cols-1 gap-4 rounded-md border border-[#cbd0d3] bg-[#f8f9fa] p-4 md:grid-cols-3">
+        <div className="bg-white p-5 md:col-span-1">
+          <p className="text-xs font-medium uppercase text-[#687178]">
+            Exam Result
+          </p>
+
+          <p
+            role="status"
+            className="mt-3 text-3xl font-bold uppercase"
+          >
+            {resultLabel}
+          </p>
+        </div>
+
+        <div className="flex flex-col justify-center bg-white p-5 md:col-span-2">
+          <p className="text-lg font-bold">
+            {scorePercent !== null
+              ? `${formattedScore} scored`
+              : "Score unavailable"}
+
+            {passingScorePercent !== null && (
+              <>
+                <span
+                  className="mx-2 text-gray-500"
+                  aria-hidden="true"
+                >
+                  •
+                </span>
+                <span>
+                  {passingScorePercent}% required to pass
+                </span>
+              </>
+            )}
+          </p>
+
+          <p className="mt-2 text-sm text-[#687178]">
+            The result is calculated using the passing
+            threshold configured for this exam.
+          </p>
+        </div>
+      </div>
+
+      {/* Supporting information */}
+      <div className="rounded-md border border-[#cbd0d3] bg-[#f8f9fa] p-5">
+        <p className="text-xs font-semibold uppercase text-[#687178]">
+          About your result
+        </p>
+
+        <p className="mt-2 text-sm leading-6 text-[#687178]">
+          Scores reflect automatically graded questions.
+          Your passing requirement and final pass/fail
+          result come directly from the backend.
+        </p>
+
+        {!hasScore && (
+          <p className="mt-3 text-sm text-[#687178]">
+            No automatically graded score is available
+            for this attempt. This does not mean the
+            exam was failed.
+          </p>
+        )}
+      </div>
+    </section>
   );
 }
