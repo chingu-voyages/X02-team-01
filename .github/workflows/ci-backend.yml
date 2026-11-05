@@ -59,6 +59,28 @@ jobs:
       - name: Start Postgres and wait for healthcheck
         run: docker compose up -d --wait postgres
 
+      # The opt-in DB suite now runs in CI against the real Postgres
+      # service above (fixtures refuse remote-host databases, which CI
+      # runners satisfy — localhost only).
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: backend/.python-version
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Run PostgreSQL integration suite
+        working-directory: backend
+        run: pytest -q
+        env:
+          RUN_DB_INTEGRATION: "1"
+          POSTGRES_DB: jhep_db
+          POSTGRES_USER: jhep
+          POSTGRES_PASSWORD: replace_with_local_password
+
       - name: Tear down
         if: always()
         run: docker compose down -v

@@ -99,6 +99,18 @@ class CategoryUnavailableError(ValueError):
     """The requested category exists but is not published for learners."""
 
 
+class AttemptInProgressError(Exception):
+    """A learner may hold only one in-progress attempt per certification.
+
+    Carries the existing attempt's id so the API can point the learner
+    back to it (JHEP-32 recovery) instead of creating a duplicate.
+    """
+
+    def __init__(self, existing_attempt_id: UUID) -> None:
+        self.existing_attempt_id = existing_attempt_id
+        super().__init__(f"Attempt {existing_attempt_id} is already in progress")
+
+
 class InsufficientQuestionsError(Exception):
     """There are not enough eligible questions to generate a complete exam."""
 
@@ -177,6 +189,21 @@ class ExamService:
                     )
                 if not category.is_published:
                     raise CategoryUnavailableError("Category is not available")
+
+            # AC3: repeated clicks must never create parallel attempts.
+            # Try-Again stays allowed — this only guards while a previous
+            # attempt for the same certification is still in progress.
+            existing_active = self._session.exec(
+                select(ExamAttempt)
+                .where(
+                    ExamAttempt.user_id == learner_id,
+                    ExamAttempt.certification_id == certification_id,
+                    ExamAttempt.status == "in_progress",
+                )
+                .limit(1)
+            ).first()
+            if existing_active is not None:
+                raise AttemptInProgressError(existing_active.id)
 
             # Preserve the legacy certification-wide call when no category is
             # supplied, but constrain catalog-driven starts to the chosen category.

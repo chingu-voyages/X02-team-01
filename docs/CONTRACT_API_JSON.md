@@ -1,6 +1,6 @@
 # JHEP — Screens 03–10: API Routes and Mock JSON Responses
 
-**Team review draft · Updated for PR #18**
+**Team review draft · Updated for PRs #18–#28 (JHEP-27/35/28 category-aware, contract-aligned)**
 
 **Status:** `PR18` = implemented at the reviewed PR #18 commit; available on `dev` after merge and the required migrations. `EXTENSION` = proposed additional fields, not returned by PR #18. `PROPOSED` = route not implemented by PR #18. All IDs, content, dates, and percentages are mock values.
 
@@ -15,9 +15,9 @@ All PR18 exam routes require `Authorization: Bearer <token>`.
 | Screen | API route | Contract |
 |---|---|---|
 | 03 — Exam selection | `GET /api/v1/exam-catalog` | PROPOSED |
-| 03 — Categories | `GET /api/v1/certifications/{certification_id}/categories` | PROPOSED |
+| 03 — Categories | `GET /api/v1/categories?certification_id={certification_id}` | CURRENT (JHEP-27) |
 | 04 — Instructions | `GET /api/v1/exam-catalog/{catalog_id}` | PROPOSED |
-| 05 — Start exam | `POST /api/v1/exams` | PR18 + category EXTENSION |
+| 05 — Start exam | `POST /api/v1/exams` | CURRENT (JHEP-27/28) |
 | 06 — Resume exam | `GET /api/v1/exams/{attempt_id}` | PR18 + display EXTENSION |
 | 06 — Save answer | `PUT /api/v1/exams/{attempt_id}/responses/{question_version_id}` | PR18 |
 | 06 — Save position | `PATCH /api/v1/exams/{attempt_id}/progress` | PR18 |
@@ -25,7 +25,7 @@ All PR18 exam routes require `Authorization: Bearer <token>`.
 | 07 — Complete exam | `POST /api/v1/exams/{attempt_id}/submit` | PR18 |
 | 08 — View results | `GET /api/v1/exams/{attempt_id}/results` | PR18 + display EXTENSION |
 | 08 — Set passing threshold (admin) | `PATCH /api/v1/admin/exam-catalog/{catalog_id}/settings` | PROPOSED; PR18 uses certification-level DB configuration |
-| 08 — Try again | `POST /api/v1/exams` | PR18 + category EXTENSION |
+| 08 — Try again | `POST /api/v1/exams` | CURRENT (JHEP-27/28) |
 | 09 — Review questions | `GET /api/v1/exams/{attempt_id}/review` | PROPOSED |
 | 10 — Attempt history | `GET /api/v1/me/exam-attempts` | PROPOSED |
 
@@ -86,7 +86,25 @@ All PR18 exam routes require `Authorization: Bearer <token>`.
 }
 ```
 
-**GET** `/api/v1/certifications/{certification_id}/categories` — **PROPOSED**
+**GET** `/api/v1/categories?certification_id={certification_id}` — **CURRENT (JHEP-27)**
+
+Implemented with the `certification_id` **query parameter** (elected standard). Returns only categories a learner may currently start: unpublished or question-less categories are omitted. Response shape (per `app/schemas/category.py`):
+
+```json
+{
+  "categories": [
+    {
+      "id": "42e9c25f-4ada-5147-a894-d7fbcb0df5b7",
+      "certification_id": "3c27471b-ed05-5433-b8c5-bf611b1dc12d",
+      "name": "Agile Principles",
+      "certification_name": "Agile Fundamentals",
+      "available_question_count": 36
+    }
+  ]
+}
+```
+
+An empty `categories` array is a valid response, not an error. The mapping table below keeps the original screen-03 wireframe label (`category`) distinct from question-bank topic metadata.
 
 **200 response**
 ```json
@@ -144,7 +162,7 @@ All PR18 exam routes require `Authorization: Bearer <token>`.
 
 ## Screen 05 — Start exam
 
-**POST** `/api/v1/exams` — **PR18; category EXTENSION remains proposed**
+**POST** `/api/v1/exams` — **CURRENT; category-aware start (JHEP-27/28)**
 
 **Request — PR18**
 ```json
@@ -218,7 +236,7 @@ All PR18 exam routes require `Authorization: Bearer <token>`.
 }
 ```
 
-**Category-aware request — EXTENSION only; not accepted by PR18**
+**Category-aware request — CURRENT**
 ```json
 {
   "certification_id": "3c27471b-ed05-5433-b8c5-bf611b1dc12d",
@@ -241,18 +259,43 @@ All PR18 exam routes require `Authorization: Bearer <token>`.
 }
 ```
 
-Question-level `category_id` and `category_name` also remain proposed additions. PR18 accepts only `certification_id` and `question_count`; sending `category_id` produces `422`.
+Sending `category_id` is supported (JHEP-21/27 alignment): the category must belong to the certification and be published — otherwise the start returns `404 CATEGORY_NOT_FOUND` / `409 CATEGORY_UNAVAILABLE`. A start also returns `409 ATTEMPT_IN_PROGRESS` when the learner already holds an unfinished attempt for this certification (see the error table above).
+
+Duplicate starts are refused while a learner already holds an `in_progress` attempt **for the same certification** (screen 08's Try Again works again the moment that attempt is submitted):
+
+```json
+{
+  "detail": {
+    "code": "ATTEMPT_IN_PROGRESS",
+    "attempt_id": "f45ab512-829f-55e7-bc44-e710396aa939"
+  }
+}
+```
+
+**Start-time error codes (CURRENT)** — every business failure returns `{"code": ..., ...}`; authentication (401) and schema validation (422) use their standard shapes:
+
+| Code | Status | When |
+|---|---|---|
+| `CERTIFICATION_NOT_FOUND` | 404 | unknown certification |
+| `CATEGORY_NOT_FOUND` | 404 | category not part of this certification |
+| `ATTEMPT_IN_PROGRESS` | 409 | a live attempt already exists (JHEP-28) |
+| `CATEGORY_UNAVAILABLE` | 409 | category unpublished or has no eligible questions |
+| `INSUFFICIENT_QUESTIONS` | 409 | not enough eligible questions |
+| `MISSING_THRESHOLD` | 409 | certification misconfigured (no passing threshold) |
 
 **409 response — certification has no configured passing threshold**
 ```json
 {
-  "detail": "Certification has no passing threshold configured"
+  "detail": {
+    "code": "MISSING_THRESHOLD",
+    "message": "Certification has no passing threshold configured"
+  }
 }
 ```
 
 ## Screen 06 — Exam interface, saving answers and navigation
 
-**GET** `/api/v1/exams/{attempt_id}` — **PR18; display EXTENSION remains proposed**
+**GET** `/api/v1/exams/{attempt_id}` — **PR18; display fields remain EXTENSION**
 
 **200 response — PR18**
 ```json
@@ -543,7 +586,7 @@ This route is retained as a proposal, not added by PR18. The PR currently stores
 }
 ```
 
-**POST** `/api/v1/exams` — **PR18; category EXTENSION remains proposed — Try Again**
+**POST** `/api/v1/exams` — **CURRENT; category-aware start — Try Again**
 
 **Request — create a new attempt, not resubmit the completed one**
 ```json

@@ -17,6 +17,7 @@ from app import models  # noqa: F401
 from app.db.session import engine
 from app.models import (
     AnswerOption,
+    Category,
     Certification,
     ExamAttempt,
     ExamQuestionGrade,
@@ -400,3 +401,112 @@ def test_short_answer_is_excluded_from_grading(postgres_session):
     # Zero gradable questions → no misleading percentage, no Pass/Fail.
     assert result.points_possible == 0
     assert result.passed is None
+
+
+def test_duplicate_start_protection_survives_persistence(postgres_session):
+    """AC3: the in-progress guard must be state-aware — once an attempt is
+    committed, a second start for the same learner + certification is
+    refused until that attempt is submitted (Try Again)."""
+    from app.models import ExamAttempt
+    from app.services.exam_service import AttemptInProgressError, ExamService
+
+    learner = User(email=f"dup-start-{uuid4().hex}@example.test")
+    certification = Certification(
+        name="Duplicate Start",
+        code=uuid4().hex[:12],
+        passing_threshold_pct=50,
+    )
+    category = Category(
+        certification_id=certification.id,
+        name="Dup Start Category",
+        is_published=True,
+    )
+    # Two-phase flush (repo convention): parents commit-visibility before
+    # children; a single combined add_all here sorts categories ahead of
+    # their parent certification and trips the FK.
+    postgres_session.add_all([learner, certification])
+    postgres_session.flush()
+    postgres_session.add(category)
+    postgres_session.flush()
+
+    question = Question(
+        certification_id=certification.id,
+        category_id=category.id,
+        difficulty="easy",
+        created_by_id=learner.id,
+    )
+    postgres_session.add(question)
+    postgres_session.flush()
+
+    version = QuestionVersion(
+        question_id=question.id,
+        version_number=1,
+        question_text="Single question",
+        question_type="multiple_choice",
+        allows_multiple_answers=False,
+        review_status="approved",
+        publication_status="active",
+        submitted_by_id=learner.id,
+        reviewed_by_id=learner.id,
+        reviewed_at=datetime.now(UTC),
+    )
+    postgres_session.add(version)
+    postgres_session.flush()
+    # Eligibility requires >= 2 options and exactly-one correct for a
+    # single-answer question (JHEP-27's shared eligibility statement).
+    postgres_session.add_all(
+        [
+            AnswerOption(
+                question_version_id=version.id,
+                position=1,
+                option_text="First",
+                is_correct=True,
+            ),
+            AnswerOption(
+                question_version_id=version.id,
+                position=2,
+                option_text="Second",
+                is_correct=False,
+            ),
+        ]
+    )
+    postgres_session.commit()
+
+    service = ExamService(postgres_session)
+
+    # First start succeeds and stays in progress.
+    first = service.create_exam(
+        learner_id=learner.id,
+        certification_id=certification.id,
+        category_id=category.id,
+        question_count=1,
+    )
+    attempts = postgres_session.exec(select(ExamAttempt)).all()
+    assert len(attempts) == 1
+
+    # Second start is refused, naming the existing attempt; nothing new.
+    with pytest.raises(AttemptInProgressError) as exc:
+        service.create_exam(
+            learner_id=learner.id,
+            certification_id=certification.id,
+            category_id=category.id,
+            question_count=1,
+        )
+    assert exc.value.existing_attempt_id == first.attempt_id
+    assert len(postgres_session.exec(select(ExamAttempt)).all()) == 1
+
+    # Submitting unlocks Try Again: a fresh attempt is created and kept.
+    attempt = postgres_session.get(ExamAttempt, first.attempt_id)
+    attempt.status = "submitted"
+    attempt.submitted_at = datetime.now(UTC)
+    postgres_session.add(attempt)
+    postgres_session.commit()
+
+    second = ExamService(postgres_session).create_exam(
+        learner_id=learner.id,
+        certification_id=certification.id,
+        category_id=category.id,
+        question_count=1,
+    )
+    assert second.attempt_id != first.attempt_id
+    assert len(postgres_session.exec(select(ExamAttempt)).all()) == 2
