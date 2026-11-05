@@ -69,6 +69,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
+        working-directory: backend
         run: pip install -r requirements.txt
 
       - name: Run PostgreSQL integration suite
