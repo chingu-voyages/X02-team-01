@@ -40,6 +40,8 @@ class ExamOptionOut(BaseModel):
 class ExamImageOut(BaseModel):
     """Version-associated image, with an optional CDN delivery URL."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     position: int
     alt_text: str
