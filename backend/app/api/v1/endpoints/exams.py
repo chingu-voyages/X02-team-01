@@ -26,6 +26,7 @@ from app.db.session import get_session
 from app.schemas.exam import (
     ExamCreatedOut,
     ExamCreateRequest,
+    ExamQuestionOut,
     ExamResumedOut,
     FinalSubmitOut,
     ProgressSavedOut,
@@ -220,8 +221,15 @@ def get_exam_attempt(
     learner_id = _learner_id(subject)
     attempt = _owned_attempt(attempt_id, learner_id, service)
 
+    # Services return frozen dataclasses — convert to the mutable pydantic
+    # response models once, then attach saved-response blocks. (Mutating the
+    # DTOs themselves would raise FrozenInstanceError on any attempt that
+    # already has saved answers, i.e. every submitted attempt.)
     blocks = attempt_service.response_blocks(attempt)
-    questions = service.get_exam_questions(attempt.id)
+    questions = [
+        ExamQuestionOut.model_validate(question, from_attributes=True)
+        for question in service.get_exam_questions(attempt.id)
+    ]
     for question in questions:
         block = blocks.pop(question.id, None)
         if block is not None:
