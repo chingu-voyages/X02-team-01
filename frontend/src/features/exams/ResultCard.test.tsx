@@ -19,7 +19,7 @@ describe("ResultCard", () => {
       />,
     );
 
-    expect(screen.getByText("85.0%")).toBeTruthy();
+    expect(screen.getByText("85%")).toBeTruthy();
     expect(screen.getByText("Passed")).toBeTruthy();
     expect(screen.getByText("17")).toBeTruthy();
     expect(screen.getByText("3")).toBeTruthy();
@@ -36,7 +36,7 @@ describe("ResultCard", () => {
       />,
     );
 
-    expect(screen.getByText("40.0%")).toBeTruthy();
+    expect(screen.getByText("40%")).toBeTruthy();
     expect(screen.getByText("Not passed")).toBeTruthy();
   });
 
@@ -72,4 +72,19 @@ describe("ResultCard", () => {
       screen.getByText("65% required to pass"),
     ).toBeTruthy();
   });
+});
+
+it("rounds fractional scores for display", () => {
+  render(
+    <ResultCard
+      scorePercent={66.6667}
+      correctCount={2}
+      incorrectCount={1}
+      isPassed={false}
+      passingScorePercent={70}
+    />,
+  );
+
+  expect(screen.getByText("67%")).toBeTruthy();
+  expect(screen.getByText("Not passed")).toBeTruthy();
 });
