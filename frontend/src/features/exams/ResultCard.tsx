@@ -19,7 +19,7 @@ export default function ResultCard({
   const formattedScore =
     scorePercent === null
       ? "—"
-      : `${scorePercent.toFixed(1)}%`;
+      : `${Math.round(scorePercent)}%`;
 
   const resultLabel = !hasScore
     ? "Not assessed"

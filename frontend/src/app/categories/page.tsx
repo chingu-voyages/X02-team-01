@@ -14,6 +14,26 @@ import type { PracticeCategory } from "@/types/category-api.types";
 
 type LoadStatus = "loading" | "ready" | "error";
 
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function getExistingAttemptId(detail: unknown): string | null {
+  if (
+    detail === null ||
+    typeof detail !== "object" ||
+    !("code" in detail) ||
+    detail.code !== "ATTEMPT_IN_PROGRESS" ||
+    !("attempt_id" in detail) ||
+    typeof detail.attempt_id !== "string"
+  ) {
+    return null;
+  }
+
+  return uuidPattern.test(detail.attempt_id)
+    ? detail.attempt_id
+    : null;
+}
+
 export default function CategoriesPage() {
   const router = useRouter();
   const { token, ready, handleError } = useDemoSession();
@@ -28,6 +48,9 @@ export default function CategoriesPage() {
   const [questionCount, setQuestionCount] = useState(1);
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState("");
+  const [existingAttemptId, setExistingAttemptId] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!ready || !token) return;
@@ -37,6 +60,7 @@ export default function CategoriesPage() {
     getAvailableCategories(token)
       .then((data) => {
         if (cancelled) return;
+
         setCategories(data);
         setLoadStatus("ready");
         setLoadError("");
@@ -83,17 +107,23 @@ export default function CategoriesPage() {
   const selectedCategory =
     categories.find((category) => category.id === selectedId) ?? null;
 
+  function clearStartState() {
+    setStartError("");
+    setExistingAttemptId(null);
+  }
+
   function selectCategory(category: PracticeCategory) {
     setSelectedId(category.id);
     setQuestionCount(
       Math.min(5, category.available_question_count, 100),
     );
-    setStartError("");
+    clearStartState();
   }
 
   function retryLoading() {
     setLoadStatus("loading");
     setLoadError("");
+    clearStartState();
     setReloadKey((value) => value + 1);
   }
 
@@ -103,7 +133,7 @@ export default function CategoriesPage() {
     if (!token || !selectedCategory || isStarting) return;
 
     setIsStarting(true);
-    setStartError("");
+    clearStartState();
 
     try {
       const exam = await startCategoryExam(
@@ -120,19 +150,36 @@ export default function CategoriesPage() {
       }
 
       if (error instanceof ApiError && error.status === 409) {
-        setStartError(
-          "This category may have changed. Reload the categories and try again.",
-        );
-      } else {
-        setStartError(
-          error instanceof Error
-            ? error.message
-            : "Unable to start exam.",
-        );
+        const attemptId = getExistingAttemptId(error.detail);
+
+        if (attemptId) {
+          setExistingAttemptId(attemptId);
+          setStartError(
+            "You already have an unfinished exam for this certification.",
+          );
+        } else {
+          setStartError(
+            "This category may have changed. Reload the categories and try again.",
+          );
+        }
+
+        return;
       }
+
+      setStartError(
+        error instanceof Error
+          ? error.message
+          : "Unable to start exam.",
+      );
     } finally {
       setIsStarting(false);
     }
+  }
+
+  function continueExistingExam() {
+    if (!existingAttemptId) return;
+
+    router.push(`/exams/${encodeURIComponent(existingAttemptId)}`);
   }
 
   if (!ready || !token) {
@@ -149,8 +196,6 @@ export default function CategoriesPage() {
       style={{ fontFamily: "Arial, Helvetica, sans-serif" }}
     >
       <div className="mx-auto max-w-7xl space-y-6">
-
-        {/* Main navigation */}
         <nav
           aria-label="Main navigation"
           className="flex flex-wrap items-center gap-x-7 gap-y-3 rounded-md border border-[#d4d8db] bg-white px-6 py-5"
@@ -163,40 +208,45 @@ export default function CategoriesPage() {
             <span className="font-semibold text-[#303639]">
               Exams
             </span>
-            <span className="text-gray-300" aria-hidden="true">•</span>
+            <span className="text-gray-300" aria-hidden="true">
+              •
+            </span>
             <span className="text-gray-400" title="Coming soon">
               My History
             </span>
-            <span className="text-gray-300" aria-hidden="true">•</span>
+            <span className="text-gray-300" aria-hidden="true">
+              •
+            </span>
             <span className="text-gray-400" title="Coming soon">
               Journal
             </span>
-            <span className="text-gray-300" aria-hidden="true">•</span>
+            <span className="text-gray-300" aria-hidden="true">
+              •
+            </span>
             <span className="text-gray-400" title="Coming soon">
               Account
             </span>
           </div>
         </nav>
 
-        {/* Page heading */}
         <header className="space-y-2">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
             Select a practice exam
           </h1>
+
           <p className="text-sm text-[#687178]">
             Choose a certification or category. Available questions
             are selected from the approved question bank.
           </p>
         </header>
 
-        {/* Filters */}
         <div className="flex flex-wrap items-center gap-4 rounded-md border border-[#d4d8db] bg-white px-5 py-3">
           <button
             type="button"
             onClick={() => {
               setCertificationFilter("all");
               setSelectedId(null);
-              setStartError("");
+              clearStartState();
             }}
             className={`text-sm font-medium ${
               certificationFilter === "all"
@@ -207,9 +257,15 @@ export default function CategoriesPage() {
             All categories
           </button>
 
-          <div className="h-4 w-px bg-gray-300" aria-hidden="true" />
+          <div
+            className="h-4 w-px bg-gray-300"
+            aria-hidden="true"
+          />
 
-          <label htmlFor="certification-filter" className="sr-only">
+          <label
+            htmlFor="certification-filter"
+            className="sr-only"
+          >
             Certification or topic
           </label>
 
@@ -219,20 +275,23 @@ export default function CategoriesPage() {
             onChange={(event) => {
               setCertificationFilter(event.target.value);
               setSelectedId(null);
-              setStartError("");
+              clearStartState();
             }}
             className="max-w-full rounded bg-transparent py-1 text-sm text-[#4c5459] focus-visible:outline-2 focus-visible:outline-offset-2"
           >
             <option value="all">Certification / topic</option>
+
             {certifications.map((certification) => (
-              <option key={certification.id} value={certification.id}>
+              <option
+                key={certification.id}
+                value={certification.id}
+              >
                 {certification.name}
               </option>
             ))}
           </select>
         </div>
 
-        {/* Loading and error states */}
         {loadStatus === "loading" && (
           <p role="status" className="py-10 text-sm text-gray-600">
             Loading categories...
@@ -240,8 +299,14 @@ export default function CategoriesPage() {
         )}
 
         {loadStatus === "error" && (
-          <div role="alert" className="rounded-md border bg-white p-6">
-            <p className="mb-4 text-red-700">{loadError}</p>
+          <div
+            role="alert"
+            className="rounded-md border bg-white p-6"
+          >
+            <p className="mb-4 text-red-700">
+              {loadError}
+            </p>
+
             <button
               type="button"
               onClick={retryLoading}
@@ -253,12 +318,14 @@ export default function CategoriesPage() {
         )}
 
         {loadStatus === "ready" && categories.length === 0 && (
-          <p role="status" className="rounded-md border bg-white p-6">
+          <p
+            role="status"
+            className="rounded-md border bg-white p-6"
+          >
             No practice categories are currently available.
           </p>
         )}
 
-        {/* Available exam cards */}
         {loadStatus === "ready" && categories.length > 0 && (
           <>
             <section
@@ -266,7 +333,8 @@ export default function CategoriesPage() {
               className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3"
             >
               {filteredCategories.map((category) => {
-                const isSelected = selectedId === category.id;
+                const isSelected =
+                  selectedId === category.id;
 
                 return (
                   <article
@@ -297,6 +365,7 @@ export default function CategoriesPage() {
                       <p className="text-xs leading-5 text-[#747d83]">
                         Questions drawn from active, approved bank
                       </p>
+
                       <p className="mt-1 text-xs text-[#747d83]">
                         {category.available_question_count} questions available
                       </p>
@@ -322,7 +391,6 @@ export default function CategoriesPage() {
               </p>
             )}
 
-            {/* Existing exam-start functionality */}
             {selectedCategory && (
               <form
                 onSubmit={handleStart}
@@ -368,9 +436,29 @@ export default function CategoriesPage() {
                 </div>
 
                 {startError && (
-                  <p role="alert" className="text-sm text-red-700">
+                  <p
+                    role="alert"
+                    className="text-sm text-red-700"
+                  >
                     {startError}
                   </p>
+                )}
+
+                {existingAttemptId && (
+                  <div className="rounded-md border border-[#cbd0d3] bg-[#f3f4f5] p-4">
+                    <p className="mb-3 text-sm text-[#4c5459]">
+                      Continue your existing attempt instead
+                      of starting another exam.
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={continueExistingExam}
+                      className="rounded-md bg-[#343a3e] px-5 py-3 text-sm font-medium text-white hover:bg-[#1e2427]"
+                    >
+                      Continue existing exam
+                    </button>
+                  </div>
                 )}
 
                 <button
@@ -378,7 +466,9 @@ export default function CategoriesPage() {
                   disabled={isStarting}
                   className="rounded-md bg-[#343a3e] px-6 py-3 text-sm font-medium text-white hover:bg-[#1e2427] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {isStarting ? "Starting exam..." : "Start Exam"}
+                  {isStarting
+                    ? "Starting exam..."
+                    : "Start Exam"}
                 </button>
               </form>
             )}
