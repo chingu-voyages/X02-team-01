@@ -3,13 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import Card from "@/components/ui/Card";
-import Badge from "@/components/ui/Badge";
 import OptionItem from "@/features/questions/OptionItem";
 import { Button } from "@/components/ui/button";
 import { RadioGroup } from "@/components/ui/radio-group";
-import PageHeader from "@/components/layouts/PageHeader";
-
 import { ApiError } from "@/lib/api-client";
 import { getExam, submitAnswer } from "@/lib/exam-api";
 import { submitExam } from "@/lib/exam-submission";
@@ -31,6 +27,12 @@ interface FeedbackEntry {
   is_correct: boolean | null;
   correct_option_ids: string[];
   explanation?: string | null;
+}
+
+function letterForPosition(position: number) {
+  return position >= 1 && position <= 26
+    ? String.fromCharCode(64 + position)
+    : String(position);
 }
 
 export default function ExamCard({ attemptId }: ExamCardProps) {
@@ -86,8 +88,8 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           if (response.text_response) {
             restoredText[question.id] = response.text_response;
           }
-          // The resume endpoint can provide a verdict without answer-key IDs.
-          // Keep option styling neutral rather than assuming a wrong answer.
+          // Resume data does not expose correct-option IDs. Leave options
+          // visually neutral even if a result verdict is available.
           if (typeof response.is_correct === "boolean") {
             restoredFeedback[question.id] = {
               feedback_released: false,
@@ -104,7 +106,10 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         setTextAnswersMap(restoredText);
         setFeedbackMap(restoredFeedback);
         setCurrentQuestionIndex(
-          Math.max(0, Math.min(data.current_position - 1, data.questions.length - 1)),
+          Math.max(
+            0,
+            Math.min(data.current_position - 1, data.questions.length - 1),
+          ),
         );
         setSubmitError("");
         setFinishError("");
@@ -140,18 +145,21 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
 
   if (loadStatus === "loading" || loadStatus === "error") {
     return (
-      <Card>
-        <PageHeader title="Practice exam" status={loadStatus} />
-        {loadStatus === "loading" && <p role="status">Loading exam...</p>}
-        {loadStatus === "error" && (
+      <section className="rounded-md border border-[#d4d8db] bg-white p-6">
+        <h1 className="mb-3 text-xl font-bold">Practice exam</h1>
+        {loadStatus === "loading" ? (
+          <p role="status">Loading exam...</p>
+        ) : (
           <>
-            <p role="alert" className="text-red-700">{loadError}</p>
-            <Button className="mt-2" variant="outline" onClick={retryLoading}>
+            <p role="alert" className="mb-4 text-sm text-red-700">
+              {loadError}
+            </p>
+            <Button type="button" variant="outline" onClick={retryLoading}>
               Retry
             </Button>
           </>
         )}
-      </Card>
+      </section>
     );
   }
 
@@ -159,10 +167,10 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
 
   if (!currentQuestion) {
     return (
-      <Card>
-        <PageHeader title="Practice exam" />
+      <section className="rounded-md border border-[#d4d8db] bg-white p-6">
+        <h1 className="mb-2 text-xl font-bold">Practice exam</h1>
         <p role="status">No questions are available for this attempt.</p>
-      </Card>
+      </section>
     );
   }
 
@@ -174,17 +182,21 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
   const currentFeedback = feedbackMap[questionId];
   const textValue = textAnswersMap[questionId] ?? "";
   const isLastQuestion = currentQuestionIndex >= questions.length - 1;
+  const submittedCount = questions.filter((question) => submittedMap[question.id]).length;
   const allQuestionsSubmitted =
     questions.length > 0 &&
     questions.every((question) => submittedMap[question.id] === true);
   const firstUnsubmittedIndex = questions.findIndex(
     (question) => !submittedMap[question.id],
   );
-
-  const feedbackReleased = Boolean(
+  const optionFeedbackReleased = Boolean(
     currentFeedback?.feedback_released &&
-    currentFeedback.correct_option_ids.length > 0,
+      currentFeedback.correct_option_ids.length > 0,
   );
+  const selectedLetters = currentQuestion.options
+    .filter((option) => currentSelected.includes(option.id))
+    .map((option) => letterForPosition(option.position))
+    .join(", ");
 
   function handleSelect(optionId: string) {
     if (isSubmitted || isSubmitting || isFinishing) return;
@@ -232,12 +244,14 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
 
     submitAnswer(attemptId, questionId, answer, token)
       .then((feedback) => {
+        // FastAPI owns correctness and release timing; never grade locally.
         setFeedbackMap((previous) => ({
           ...previous,
           [questionId]: {
             feedback_released: feedback.feedback_released,
             is_correct:
-              feedback.feedback_released && typeof feedback.is_correct === "boolean"
+              feedback.feedback_released &&
+              typeof feedback.is_correct === "boolean"
                 ? feedback.is_correct
                 : null,
             correct_option_ids: feedback.feedback_released
@@ -289,9 +303,8 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         handleError(error);
         return;
       }
-
       if (error instanceof ApiError && error.status === 409) {
-        // A prior successful request may have submitted the same attempt.
+        // The request may already have succeeded in another tab.
         try {
           const current = await getExam(attemptId, token);
           if (current.status === "submitted") {
@@ -308,13 +321,11 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         setFinishError("Unable to finalize this attempt. Please try again.");
         return;
       }
-
       setFinishError(
         error instanceof Error ? error.message : "Unable to finish the exam.",
       );
     } finally {
-      // Keep the button disabled after successful navigation to avoid a
-      // second POST while Next.js is transitioning to the results route.
+      // Keep the Finish action disabled after navigation begins.
       if (!navigating) {
         finishingRef.current = false;
         setIsFinishing(false);
@@ -326,148 +337,255 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     <OptionItem
       key={option.id}
       id={option.id}
+      position={option.position}
       option={option.option_text}
       questionType={isMultiple ? "multiple" : "single"}
       isSelected={currentSelected.includes(option.id)}
       onSelect={() => handleSelect(option.id)}
       isSubmitted={isSubmitted}
-      feedbackReleased={feedbackReleased}
-      correctOptionIds={feedbackReleased ? currentFeedback.correct_option_ids : []}
+      disabled={isSubmitting || isFinishing}
+      feedbackReleased={optionFeedbackReleased}
+      correctOptionIds={
+        optionFeedbackReleased ? currentFeedback.correct_option_ids : []
+      }
     />
   ));
 
   const selectedCount = isShortAnswer
     ? textValue.trim().length
     : currentSelected.length;
+  const answeredStatus = isSubmitted
+    ? typeof currentFeedback?.is_correct === "boolean" ||
+      Boolean(currentFeedback?.explanation)
+      ? "Answer submitted. Feedback shown below."
+      : "Answer submitted. Answer locked for this attempt."
+    : isMultiple
+      ? "Choose all that apply, then submit your answer."
+      : isShortAnswer
+        ? "Type your answer, then submit."
+        : "Choose an answer, then submit.";
 
   return (
-    <Card>
-      <PageHeader
-        title="Practice exam"
-        status={`Question ${currentQuestionIndex + 1} of ${questions.length}`}
-      />
-      <Badge
-        questionNumber={currentQuestionIndex + 1}
-        questionType={isShortAnswer ? "short_answer" : "multiple_choice"}
-      />
-      <h2 id="question-heading" className="my-3 text-base font-semibold sm:text-xl">
-        {currentQuestion.question_text}
-      </h2>
-
-      {isShortAnswer ? (
-        <div role="group" aria-labelledby="question-heading" className="flex flex-col gap-2">
-          <textarea
-            aria-label="Your answer"
-            value={textValue}
-            onChange={(event) => handleTextChange(event.target.value)}
-            disabled={isSubmitted || isSubmitting || isFinishing}
-            placeholder="Type your answer..."
-            className="min-h-24 w-full rounded-sm border border-gray-300 p-3 text-sm disabled:opacity-60"
-          />
-          {isSubmitted && (
-            <p className="text-sm text-gray-600" role="status">
-              Answer recorded — short answers are not automatically graded.
-            </p>
-          )}
+    <div className="w-full space-y-6">
+      {/* Same global-style navigation treatment as Categories and Results. */}
+      <nav
+        aria-label="Main navigation"
+        className="flex flex-wrap items-center gap-x-7 gap-y-3 rounded-md border border-[#d4d8db] bg-white px-6 py-5"
+      >
+        <span className="text-sm font-extrabold tracking-tight">
+          THE JOB HACKERS
+        </span>
+        <div className="flex flex-wrap items-center gap-4 text-sm">
+          <span className="font-semibold text-[#303639]">Exams</span>
+          <span className="text-gray-300" aria-hidden="true">•</span>
+          <span className="text-gray-400" title="Coming soon">My History</span>
+          <span className="text-gray-300" aria-hidden="true">•</span>
+          <span className="text-gray-400" title="Coming soon">Journal</span>
+          <span className="text-gray-300" aria-hidden="true">•</span>
+          <span className="text-gray-400" title="Coming soon">Account</span>
         </div>
-      ) : isMultiple ? (
-        <div role="group" aria-labelledby="question-heading" className="flex flex-col gap-2">
-          {optionsList}
-        </div>
-      ) : (
-        <RadioGroup
-          value={currentSelected[0] || ""}
-          onValueChange={handleSelect}
-          aria-labelledby="question-heading"
-          className="flex flex-col gap-2"
-        >
-          {optionsList}
-        </RadioGroup>
-      )}
+      </nav>
 
-      {!isShortAnswer && isSubmitted && typeof currentFeedback?.is_correct === "boolean" && (
-        <p
-          role="status"
-          className={`mt-4 rounded-md border p-3 text-sm font-medium ${
-            currentFeedback.is_correct
-              ? "border-green-200 bg-green-50 text-green-800"
-              : "border-red-200 bg-red-50 text-red-800"
-          }`}
-        >
-          {currentFeedback.is_correct ? "Correct answer." : "Incorrect answer."}
+      <header className="space-y-2">
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+          Practice exam <span className="font-medium text-[#687178]">· In progress</span>
+        </h1>
+        <p className="text-sm text-[#687178]">
+          Question {currentQuestionIndex + 1} of {questions.length}
+          <span className="mx-2" aria-hidden="true">·</span>
+          {answeredStatus}
         </p>
-      )}
+      </header>
 
-      {currentFeedback?.explanation && (
-        <div className="mt-4 rounded-sm border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-          <strong>Explanation:</strong> {currentFeedback.explanation}
-        </div>
-      )}
-
-      {submitError && <p role="alert" className="mt-2 text-sm text-red-700">{submitError}</p>}
-      {finishError && <p role="alert" className="mt-2 text-sm text-red-700">{finishError}</p>}
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setCurrentQuestionIndex((previous) => Math.max(previous - 1, 0))}
-          disabled={currentQuestionIndex === 0 || isSubmitting || isFinishing}
-          className="rounded-sm border border-gray-300 px-3 py-5 text-base hover:cursor-pointer"
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+        <section
+          aria-labelledby="question-heading"
+          className="min-w-0 rounded-md border border-[#cbd0d3] bg-white p-5 sm:p-6"
         >
-          Previous
-        </Button>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[#687178]">
+            Question {String(currentQuestionIndex + 1).padStart(2, "0")} / {isShortAnswer ? "Short answer" : isMultiple ? "Multiple select" : "Multiple choice"}
+          </p>
+          <h2
+            id="question-heading"
+            className="mb-5 mt-4 text-lg font-bold leading-7 sm:text-xl"
+          >
+            {currentQuestion.question_text}
+          </h2>
 
-        {isSubmitted ? (
-          isLastQuestion ? (
-            allQuestionsSubmitted ? (
-              <Button
-                type="button"
-                onClick={handleFinish}
-                disabled={isFinishing || isSubmitting}
-                className="rounded-sm bg-[#343a3e] px-6 py-5 text-base text-white hover:bg-[#1e2427] disabled:opacity-50"
-              >
-                {isFinishing ? "Finishing exam..." : "Finish Exam"}
-              </Button>
+          {isShortAnswer ? (
+            <textarea
+              aria-label="Your answer"
+              value={textValue}
+              onChange={(event) => handleTextChange(event.target.value)}
+              disabled={isSubmitted || isSubmitting || isFinishing}
+              placeholder="Type your answer..."
+              className="min-h-32 w-full rounded-md border border-[#d4dadd] bg-white p-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
+            />
+          ) : isMultiple ? (
+            <div role="group" aria-labelledby="question-heading" className="flex flex-col gap-3">
+              {optionsList}
+            </div>
+          ) : (
+            <RadioGroup
+              value={currentSelected[0] || ""}
+              onValueChange={handleSelect}
+              aria-labelledby="question-heading"
+              className="flex flex-col gap-3"
+            >
+              {optionsList}
+            </RadioGroup>
+          )}
+
+          {isSubmitted && (
+            <div
+              role="status"
+              className={`mt-5 rounded-md border p-4 text-sm ${
+                typeof currentFeedback?.is_correct === "boolean"
+                  ? currentFeedback.is_correct
+                    ? "border-[#9fcfad] bg-[#e7f5ea] text-[#225c38]"
+                    : "border-[#e8abb2] bg-[#fff0f1] text-[#933443]"
+                  : "border-[#d4dadd] bg-[#f7f8f9] text-[#56616a]"
+              }`}
+            >
+              <p className="font-semibold">
+                {isShortAnswer
+                  ? "Answer recorded."
+                  : typeof currentFeedback?.is_correct === "boolean"
+                    ? currentFeedback.is_correct
+                      ? "Correct answer."
+                      : "Incorrect answer."
+                    : "Answer submitted."}
+              </p>
+              {currentFeedback?.explanation ? (
+                <p className="mt-2 leading-5">
+                  <span className="font-semibold">Explanation:</span> {currentFeedback.explanation}
+                </p>
+              ) : (
+                <p className="mt-2 leading-5">
+                  {isShortAnswer
+                    ? "Short answers are not automatically graded."
+                    : "Your submitted answer is locked for this attempt."}
+                </p>
+              )}
+            </div>
+          )}
+
+          {submitError && (
+            <p role="alert" className="mt-3 text-sm text-red-700">{submitError}</p>
+          )}
+
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() =>
+                setCurrentQuestionIndex((previous) => Math.max(previous - 1, 0))
+              }
+              disabled={currentQuestionIndex === 0 || isSubmitting || isFinishing}
+              className="h-10 rounded-md border-[#cbd0d3] px-4 text-sm"
+            >
+              Previous
+            </Button>
+            {isSubmitted ? (
+              isLastQuestion ? (
+                allQuestionsSubmitted ? (
+                  <span className="text-sm text-[#56616a]">
+                    All answers submitted. Finish the exam in the progress panel.
+                  </span>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      if (firstUnsubmittedIndex >= 0) {
+                        setCurrentQuestionIndex(firstUnsubmittedIndex);
+                      }
+                    }}
+                    disabled={isFinishing}
+                    className="h-10 rounded-md border-[#cbd0d3] px-4 text-sm"
+                  >
+                    Review unanswered questions
+                  </Button>
+                )
+              ) : (
+                <Button
+                  type="button"
+                  onClick={() =>
+                    setCurrentQuestionIndex((previous) =>
+                      Math.min(previous + 1, questions.length - 1),
+                    )
+                  }
+                  disabled={isFinishing}
+                  className="h-10 rounded-md bg-[#343a3e] px-4 text-sm text-white hover:bg-[#1e2427]"
+                >
+                  Next question
+                </Button>
+              )
             ) : (
               <Button
                 type="button"
-                variant="outline"
-                onClick={() => {
-                  if (firstUnsubmittedIndex >= 0) {
-                    setCurrentQuestionIndex(firstUnsubmittedIndex);
-                  }
-                }}
-                disabled={isFinishing}
+                disabled={selectedCount === 0 || isSubmitting || isFinishing}
+                onClick={handleSubmit}
+                className="h-10 rounded-md bg-[#343a3e] px-4 text-sm text-white hover:bg-[#1e2427] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Review unanswered questions
+                {isSubmitting ? "Submitting..." : "Submit answer"}
               </Button>
-            )
-          ) : (
+            )}
+          </div>
+        </section>
+
+        <aside
+          aria-labelledby="attempt-progress-heading"
+          className="rounded-md border border-[#cbd0d3] bg-white p-5 sm:p-6"
+        >
+          <h2 id="attempt-progress-heading" className="text-base font-bold">
+            Attempt progress
+          </h2>
+          <div className="mt-4 space-y-3 text-sm text-[#56616a]">
+            <p>Question {currentQuestionIndex + 1} / {questions.length}</p>
+            <p>Submitted answers: {submittedCount} / {questions.length}</p>
+            <p>
+              {isSubmitted
+                ? isShortAnswer
+                  ? "Submitted: short answer"
+                  : `Submitted answer${isMultiple ? "s" : ""}: ${selectedLetters || "recorded"}`
+                : "Current question not yet submitted"}
+            </p>
+          </div>
+          <div className="my-5 border-t border-[#e2e5e7]" />
+
+          {isLastQuestion && allQuestionsSubmitted ? (
             <Button
               type="button"
-              onClick={() =>
-                setCurrentQuestionIndex((previous) =>
-                  Math.min(previous + 1, questions.length - 1),
-                )
-              }
-              disabled={isFinishing}
-              className="rounded-sm border border-gray-300 px-3 py-5 text-base hover:cursor-pointer"
+              onClick={handleFinish}
+              disabled={isFinishing || isSubmitting}
+              className="h-10 rounded-md bg-[#343a3e] px-5 text-sm text-white hover:bg-[#1e2427] disabled:opacity-50"
             >
-              Next question
+              {isFinishing ? "Finishing exam..." : "Finish Exam"}
             </Button>
-          )
-        ) : (
-          <Button
-            type="button"
-            disabled={selectedCount === 0 || isSubmitting || isFinishing}
-            onClick={handleSubmit}
-            className="rounded-sm border border-gray-300 px-3 py-5 text-base hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isSubmitting ? "Submitting..." : "Submit answer"}
-          </Button>
-        )}
+          ) : (
+            <p className="text-sm text-[#687178]">
+              Submit all questions to enable Finish Exam.
+            </p>
+          )}
+
+          {finishError && (
+            <p role="alert" className="mt-3 text-sm text-red-700">
+              {finishError}
+            </p>
+          )}
+
+          {isSubmitted && (
+            <p className="mt-4 text-xs leading-5 text-[#687178]">
+              {typeof currentFeedback?.is_correct === "boolean"
+                ? currentFeedback.is_correct
+                  ? "✓ Correct · Answer locked for this attempt."
+                  : "× Incorrect · Answer locked for this attempt."
+                : "✓ Answer saved · Locked for this attempt."}
+            </p>
+          )}
+        </aside>
       </div>
-    </Card>
+    </div>
   );
 }
