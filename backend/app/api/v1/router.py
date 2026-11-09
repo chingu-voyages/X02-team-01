@@ -1,6 +1,12 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, categories, exams, questions
+from app.api.v1.endpoints import (
+    admin,
+    auth,
+    categories,
+    exams,
+    questions,
+)
 
 api_router = APIRouter()
 
@@ -26,4 +32,10 @@ api_router.include_router(
     exams.router,
     prefix="/exams",
     tags=["exams"],
+)
+
+api_router.include_router(
+    admin.router,
+    prefix="/admin",
+    tags=["admin"],
 )
