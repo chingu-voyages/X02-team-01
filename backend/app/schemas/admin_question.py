@@ -108,3 +108,13 @@ class QuestionDraftEdit(_QuestionDraftContent):
 
     category_id: UUID | None = None
     difficulty: Literal["easy", "medium", "hard"]
+
+
+class QuestionDraftCreated(BaseModel):
+    """Server-controlled response after a draft is persisted."""
+
+    question_id: UUID
+    question_version_id: UUID
+    version_number: int
+    review_status: Literal["pending"]
+    publication_status: Literal["draft"]
