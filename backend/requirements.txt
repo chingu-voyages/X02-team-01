@@ -10,6 +10,7 @@ alembic
 
 # Configuration and environment variables
 pydantic-settings
+email-validator
 python-dotenv
 
 # Authentication and password security

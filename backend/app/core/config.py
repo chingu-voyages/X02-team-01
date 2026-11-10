@@ -25,6 +25,17 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: str = "http://localhost:3000"
 
+    # JHEP-24: registration verification email delivery.
+    # `console` ship default: writes the verification link to the log
+    # (deterministic tests/CI). `mailpit`: local SMTP catcher so the demo
+    # shows a real mailbox with its link. Production transport is
+    # committed only after JHEP-102 confirms the provider decision.
+    email_delivery: Literal["console", "mailpit"] = "console"
+    email_smtp_host: str = "127.0.0.1"
+    email_smtp_port: int = 1025
+    email_from: str = "no-reply@jobhackers.local"
+    verification_link_base: str = "http://127.0.0.1:8010/api/v1/auth/verify"
+
     # Site deployments can enforce a smaller exam; hard ceiling remains 100.
     max_exam_questions: int = Field(default=100, ge=1, le=100)
 
