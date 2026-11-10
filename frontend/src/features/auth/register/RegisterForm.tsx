@@ -31,7 +31,7 @@ export default function RegisterForm() {
   };
 
   // Password strength calculation
-  const calculatePasswordStrengh = (pass: string) => {
+  const calculatePasswordStrength = (pass: string) => {
     let score = 0;
     if (!pass) return 0;
     if (pass.length >= 8) score += 1;
@@ -41,9 +41,15 @@ export default function RegisterForm() {
     return score;
   };
 
-  const passwordStrenth = calculatePasswordStrengh(formData.password);
+  const passwordStrength = calculatePasswordStrength(formData.password);
 
-  const getStrengthLabel = (score: number) => {
+  const getStrengthLabel = (pass: string, score: number) => {
+    if (pass.length > 0 && pass.length < 8) {
+      return {
+        text: "Minimum 8 characters.",
+        color: "bg-transparent",
+      };
+    }
     switch (score) {
       case 1:
         return { text: "Weak", color: "bg-red-500" };
@@ -54,11 +60,11 @@ export default function RegisterForm() {
       case 4:
         return { text: "Strong", color: "bg-green-500" };
       default:
-        return { text: "", color: "bg-gray-200" };
+        return { text: "", color: "bg-transparent" };
     }
   };
 
-  const strengthInfo = getStrengthLabel(passwordStrenth);
+  const strengthInfo = getStrengthLabel(formData.password, passwordStrength);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,17 +133,27 @@ export default function RegisterForm() {
       />
 
       {/* Password */}
-      <FormInput
-        label="Create password"
-        id="password"
-        name="password"
-        type="password"
-        placeholder="Enter a password of at least 8 characters. Try including a number, capital letter, and special character for strength."
-        value={formData.password}
-        onChange={handleChange}
-        onBlur={() => handleBlur("password")}
-        error={errors.password}
-      />
+      <div className="relative">
+        <FormInput
+          label="Create password"
+          id="password"
+          name="password"
+          type="password"
+          placeholder="At least 8 characters"
+          value={formData.password}
+          onChange={handleChange}
+          onBlur={() => handleBlur("password")}
+          error={errors.password}
+        />
+
+        {/* Password strength indicator */}
+        {formData.password && (
+          <div className="absolute right-3 top-8.5 flex items-center gap-1.5 pointer-events-none text-xs font-medium text-gray-500 bg-white px-1">
+            <span className={`w-10 h-2 rounded-full ${strengthInfo.color}`} />
+            <span>{strengthInfo.text}</span>
+          </div>
+        )}
+      </div>
 
       {/* Password confirmation */}
       <FormInput
