@@ -1,14 +1,13 @@
 "use client";
 
+import Card from "@/components/ui/Card";
+import PageHeader from "@/components/layouts/PageHeader";
 import { Button } from "@/components/ui/button";
 import FormInput from "@/components/ui/FormInput";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export default function RegisterForm() {
-  const router = useRouter();
-
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -19,6 +18,9 @@ export default function RegisterForm() {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);          // ALIGNMENT: double-click guard
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null); // ALIGNMENT: pending-verification state
+  const [resendMessage, setResendMessage] = useState("");
 
   // Handle input changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -93,6 +95,12 @@ export default function RegisterForm() {
     if (!formData.password.trim()) newErrors.password = "Password is required.";
     else if (formData.password.length < 8)
       newErrors.password = "Password must be at least 8 characters.";
+    else if (!/[A-Z]/.test(formData.password))
+      newErrors.password = "Password must contain an uppercase letter.";
+    else if (!/[a-z]/.test(formData.password))
+      newErrors.password = "Password must contain a lowercase letter.";
+    else if (!/[0-9]/.test(formData.password))
+      newErrors.password = "Password must contain a digit.";
     if (formData.password !== formData.confirmPassword)
       newErrors.confirmPassword = "Passwords do not match.";
 
@@ -100,6 +108,10 @@ export default function RegisterForm() {
       setErrors(newErrors);
       return;
     }
+
+    // isSubmitting guard: a double-click must not fire a second POST
+    if (isSubmitting) return;
+    setIsSubmitting(true);
 
     // Submit logic
     try {
@@ -118,14 +130,91 @@ export default function RegisterForm() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || "Registration failed");
+        // coded top-level {code, message} bodies (JHEP-24 backend)
+        throw new Error(
+          typeof data.message === "string"
+            ? data.message
+            : "Registration failed",
+        );
       }
 
-      router.push("/login");
+      // AC2: pending-verification state (login arrives with JHEP-25)
+      setPendingEmail(formData.email);
     } catch (error) {
-      console.error(error);
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : "Registration failed";
+      // surface the exact backend guidance (e.g. EMAIL_TAKEN / WEAK_PASSWORD)
+      setErrors({ email: message });
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
+  async function handleResend() {
+    if (isSubmitting || !pendingEmail) return;
+    setIsSubmitting(true);
+    setResendMessage("");
+    try {
+      const response = await fetch("/api/v1/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: pendingEmail }),
+      });
+      const data = await response.json();
+      setResendMessage(
+        data.message ||
+          "If the account exists and is unverified, a verification email has been sent.",
+      );
+    } catch (error) {
+      setResendMessage(
+        error instanceof Error ? error.message : "Unable to resend the email.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  // ALIGNMENT: pending-verification state (backend 201 contract)
+  if (pendingEmail) {
+    return (
+      <Card aria-live="polite">
+        <h2 className="text-xl font-semibold mb-2">Check your email</h2>
+        <p className="text-sm text-gray-700">
+          We sent a one-time verification link to{" "}
+          <strong>{pendingEmail}</strong>. The link expires in 24 hours —
+          click it to activate your account before signing in.
+        </p>
+
+        {resendMessage ? (
+          <p className="mt-2 text-sm text-gray-600" role="status">
+            {resendMessage}
+          </p>
+        ) : null}
+
+        <div className="flex gap-2 mt-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleResend}
+            disabled={isSubmitting}
+            className="hover:cursor-pointer py-5 px-4 text-base border border-gray-300 rounded-sm"
+          >
+            {isSubmitting ? "Sending..." : "Resend verification email"}
+          </Button>
+        </div>
+
+        <p className="text-sm text-gray-600 mt-4">
+          Already registered?{" "}
+          <Link href="#" className="text-primary hover:underline font-medium">
+            Sign in
+          </Link>{" "}
+          once your account is verified.
+        </p>
+      </Card>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
@@ -206,9 +295,10 @@ export default function RegisterForm() {
       <div className="flex flex-col gap-3">
         <Button
           type="submit"
-          className="self-start py-6 px-4 text-base hover:cursor-pointer"
+          disabled={isSubmitting}
+          className="self-start py-6 px-4 text-base hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Create account
+          {isSubmitting ? "Creating account..." : "Create account"}
         </Button>
         <p className="text-sm text-gray-600">
           Already registered?{" "}
