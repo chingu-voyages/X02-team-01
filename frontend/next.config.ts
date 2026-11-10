@@ -5,7 +5,7 @@ import type { NextConfig } from "next";
 // keeps components free of absolute API URLs — set BACKEND_PROXY_TARGET
 // per environment (defaults to the local FastAPI port). The proxy runs at
 // request time, so the target follows the runtime env, not the build.
-const BACKEND_PROXY_TARGET =
+const backendProxyTarget =
   process.env.BACKEND_PROXY_TARGET ?? "http://127.0.0.1:8010";
 
 const nextConfig: NextConfig = {
@@ -24,7 +24,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/api/v1/:path*",
-        destination: `${BACKEND_PROXY_TARGET}/api/v1/:path*`,
+        destination: `${backendProxyTarget}/api/v1/:path*`,
       },
     ];
   },
