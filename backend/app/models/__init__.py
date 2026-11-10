@@ -1,6 +1,7 @@
 from .answer_option import AnswerOption as AnswerOption
 from .category import Category as Category
 from .certification import Certification as Certification
+from .email_verification_token import EmailVerificationToken as EmailVerificationToken
 from .exam_attempt import ExamAttempt as ExamAttempt
 from .exam_attempt_question import ExamAttemptQuestion as ExamAttemptQuestion
 from .exam_question_grade import ExamQuestionGrade as ExamQuestionGrade
