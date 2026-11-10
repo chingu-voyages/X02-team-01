@@ -40,11 +40,12 @@ def get_registration_service(
 
 
 def _learner_out(user) -> LearnerOut:
-    """Confirmed response shape: pending-verification learner, never any
-    password or hash."""
+    """Confirmed response shape: pending-verification learner (incl. the
+    display name), never any password or hash."""
     return LearnerOut(
         id=user.id,
         email=user.email,
+        full_name=user.full_name,
         role=user.role,
         is_verified=user.is_verified,
         status="verified" if user.is_verified else "pending_verification",
@@ -63,7 +64,11 @@ def register(
 ) -> LearnerOut:
     """Create one learner account and start email verification (AC1/AC2)."""
     try:
-        user = service.register(email=str(payload.email), password=payload.password)
+        user = service.register(
+            email=str(payload.email),
+            full_name=payload.full_name.strip(),
+            password=payload.password,
+        )
     except WeakPasswordError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

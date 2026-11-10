@@ -39,17 +39,21 @@ All PR18 exam routes require `Authorization: Bearer <token>`.
 ```json
 {
   "email": "learner@example.com",
+  "full_name": "John Doe",
   "password": "Str0ngEn0ugh1"
 }
 ```
 
 **Password policy (board-confirmed)**: minimum length 8, at least one uppercase letter, at least one lowercase letter, at least one digit, maximum length 128, no trimming, special characters optional ("alphabetic characters" is implied by the upper+lower rules). Stored hashed with Argon2id (`pwdlib`); **never returned in any response and never logged**. Self-registration always creates `role: "learner"` (DB check constraint — no self-provisioned elevated roles).
 
+**`full_name` (AC1 display name)**: **required**, whitespace-**trimmed server-side**, 1–255 chars after trimming (whitespace-only values are rejected as standard 422). Returned in every learner response so the frontend renders the "Welcome, {full_name}" state; the verification email greets the learner by name.
+
 **201 response — pending-verification state**
 ```json
 {
   "id": "11111111-1111-4111-8111-111111111111",
   "email": "learner@example.com",
+  "full_name": "John Doe",
   "role": "learner",
   "is_verified": false,
   "status": "pending_verification"

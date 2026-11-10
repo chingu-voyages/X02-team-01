@@ -83,7 +83,7 @@ class RegistrationService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def register(self, *, email: str, password: str) -> User:
+    def register(self, *, email: str, full_name: str, password: str) -> User:
         """AC1: create exactly one Learner. AC3: atomic — nothing is
         committed unless every check has passed. The verification email
         is sent AFTER commit: a mail outage must not roll back the
@@ -97,6 +97,7 @@ class RegistrationService:
 
         user = User(
             email=email,
+            full_name=full_name,
             hashed_password=hash_password(password),
             role="learner",
             is_verified=False,
@@ -110,7 +111,7 @@ class RegistrationService:
             to=user.email,
             subject="Verify your Job Hackers account",
             body=(
-                f"Welcome! Verify your account:\n"
+                f"Welcome, {full_name}! Verify your account:\n"
                 f"{_verification_link(raw_token)}\n\n"
                 f"This link expires in {VERIFY_LINK_TTL_HOURS} hours."
             ),

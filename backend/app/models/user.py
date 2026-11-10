@@ -28,6 +28,14 @@ class User(SQLModel, table=True):
         nullable=False,
     )
 
+    # AC1: display name collected at registration; trimmed by the
+    # registration schema (1-255 chars).
+    full_name: str = Field(
+        default="",
+        max_length=255,
+        nullable=False,
+    )
+
     # AC3: Argon2id digest of the registration password (see
     # core/security.py). Created only inside the registration service;
     # never logged or returned. Nullable because the seeded demo learner
