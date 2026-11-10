@@ -1,6 +1,8 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import FormInput from "@/components/ui/FormInput";
+import Link from "next/link";
 import { useState } from "react";
 
 export default function RegisterForm() {
@@ -69,6 +71,15 @@ export default function RegisterForm() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Mark all fields as touched on submit so all errors render if invalid
+    setTouched({
+      fullName: true,
+      email: true,
+      confirmEmail: true,
+      password: true,
+      confirmPassword: true,
+    });
+
     // Client validation checks
     const newErrors: Record<string, string> = {};
     if (!formData.fullName.trim())
@@ -103,7 +114,7 @@ export default function RegisterForm() {
         value={formData.fullName}
         onChange={handleChange}
         onBlur={() => handleBlur("fullName")}
-        error={errors.fullName}
+        error={touched.fullName ? errors.fullName : undefined}
       />
 
       {/* Email address */}
@@ -116,7 +127,7 @@ export default function RegisterForm() {
         value={formData.email}
         onChange={handleChange}
         onBlur={() => handleBlur("email")}
-        error={errors.email}
+        error={touched.email ? errors.email : undefined}
       />
 
       {/* Email confirmation */}
@@ -129,7 +140,7 @@ export default function RegisterForm() {
         value={formData.confirmEmail}
         onChange={handleChange}
         onBlur={() => handleBlur("confirmEmail")}
-        error={errors.confirmEmail}
+        error={touched.confirmEmail ? errors.confirmEmail : undefined}
       />
 
       {/* Password */}
@@ -143,7 +154,7 @@ export default function RegisterForm() {
           value={formData.password}
           onChange={handleChange}
           onBlur={() => handleBlur("password")}
-          error={errors.password}
+          error={touched.password ? errors.password : undefined}
         />
 
         {/* Password strength indicator */}
@@ -165,8 +176,22 @@ export default function RegisterForm() {
         value={formData.confirmPassword}
         onChange={handleChange}
         onBlur={() => handleBlur("confirmPassword")}
-        error={errors.confirmPassword}
+        error={touched.confirmPassword ? errors.confirmPassword : undefined}
       />
+      <div className="flex flex-col gap-1">
+        <Button
+          type="submit"
+          className="self-start py-6 px-4 text-base hover:cursor-pointer"
+        >
+          Create account
+        </Button>
+        <p className="text-sm text-gray-600">
+          Already registered?{" "}
+          <Link href="#" className="text-primary hover:underline font-medium">
+            Sign in
+          </Link>
+        </p>
+      </div>
     </form>
   );
 }
