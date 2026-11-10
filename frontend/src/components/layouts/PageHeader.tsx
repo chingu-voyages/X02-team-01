@@ -15,14 +15,14 @@ export default function PageHeader({
 
   return (
     <div>
-      <div className="mb-4 sm:mb-6">
+      <div className="mx-4 pb-4 border-b border-gray-300">
         {stepLabel && (
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-500">
             {stepLabel}
           </p>
         )}
-        <h1 className="text-lg sm:text-2xl">
-          {title}
+        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-gray-900 flex items-baseline">
+          <span>{title}</span>
           {status && (
             <span aria-hidden="true" className="font-normal text-gray-500 ml-2">
               · {status}

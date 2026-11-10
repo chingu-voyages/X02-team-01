@@ -5,7 +5,7 @@ import Navbar from "@/components/layouts/Navbar";
 
 export default function RegisterScreen() {
   return (
-    <div>
+    <div className="mx-4">
       <Navbar />
       <PageHeader
         title="Create an account"
@@ -13,16 +13,66 @@ export default function RegisterScreen() {
       />
 
       <div className="mt-6 grid grid-cols-1 md:grid-cols-12">
-        <Card className="col-span-7">
+        <Card className="col-span-7 shadow-lg px-6 py-4">
           <h2 className="text-xl font-semibold mb-4">Account details</h2>
           <RegisterForm />
         </Card>
-        <Card className="col-span-5">
-          <h2 className="text-xl font-semibold mb-4">Why create an account</h2>
-          <ul>
-            <li>Acces previously completed exams</li>
-            <li>Keep a timestamped answer journal</li>
-            <li>Return for unlimited practice attempts</li>
+        <Card className="col-span-5 self-start p-10 bg-gray-100">
+          <h2 className="font-heading text-xl font-bold text-gray-900 mb-4">
+            Why create an account
+          </h2>
+          <ul className="space-y-3 items-start gap-2.5">
+            <li className="flex items-start gap-2.5">
+              <svg
+                className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+              <span>Acces previously completed exams</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <svg
+                className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+              <span>Keep a timestamped answer journal</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <svg
+                className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+              <span>Return for unlimited practice attempts</span>
+            </li>
           </ul>
         </Card>
       </div>

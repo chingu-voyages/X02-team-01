@@ -178,7 +178,7 @@ export default function RegisterForm() {
         onBlur={() => handleBlur("confirmPassword")}
         error={touched.confirmPassword ? errors.confirmPassword : undefined}
       />
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-3">
         <Button
           type="submit"
           className="self-start py-6 px-4 text-base hover:cursor-pointer"
