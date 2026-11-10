@@ -26,7 +26,10 @@ app = FastAPI()
 def me(
     user: Annotated[User, Depends(get_current_user)],
 ) -> dict[str, str]:
-    return {"id": str(user.id), "role": user.role.value}
+    return {
+        "id": str(user.id),
+        "role": user.role,
+    }
 
 
 @app.get("/contributor")
@@ -36,14 +39,17 @@ def contributor(
         Depends(require_contributor_or_administrator),
     ],
 ) -> dict[str, str]:
-    return {"role": user.role.value}
+    return {"role": user.role}
 
 
 @app.get("/administrator")
 def administrator(
-    user: Annotated[User, Depends(require_administrator)],
+    user: Annotated[
+        User,
+        Depends(require_administrator),
+    ],
 ) -> dict[str, str]:
-    return {"role": user.role.value}
+    return {"role": user.role}
 
 
 @pytest.fixture
@@ -63,7 +69,9 @@ def session() -> Iterator[Session]:
 
 
 @pytest.fixture
-def client(session: Session) -> Iterator[TestClient]:
+def client(
+    session: Session,
+) -> Iterator[TestClient]:
     def override_session() -> Iterator[Session]:
         yield session
 
@@ -76,10 +84,15 @@ def client(session: Session) -> Iterator[TestClient]:
         app.dependency_overrides.clear()
 
 
-def create_user(session: Session, role: UserRole) -> User:
+def create_user(
+    session: Session,
+    role: UserRole,
+) -> User:
     user = User(
         email=f"{uuid4()}@example.com",
-        role=role,
+        full_name="Role Test User",
+        role=role.value,
+        is_verified=True,
     )
 
     session.add(user)
@@ -89,7 +102,9 @@ def create_user(session: Session, role: UserRole) -> User:
     return user
 
 
-def auth_header(user: User) -> dict[str, str]:
+def auth_header(
+    user: User,
+) -> dict[str, str]:
     token = create_access_token(str(user.id))
 
     return {
@@ -97,7 +112,10 @@ def auth_header(user: User) -> dict[str, str]:
     }
 
 
-@pytest.mark.parametrize("role", list(UserRole))
+@pytest.mark.parametrize(
+    "role",
+    list(UserRole),
+)
 def test_current_user_is_loaded_from_database(
     client: TestClient,
     session: Session,
@@ -239,7 +257,7 @@ def test_role_change_takes_effect_without_new_token(
 
     assert before.status_code == 403
 
-    user.role = UserRole.ADMINISTRATOR
+    user.role = UserRole.ADMINISTRATOR.value
     session.add(user)
     session.commit()
 

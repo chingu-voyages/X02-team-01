@@ -62,6 +62,7 @@ def get_current_user(
         ) from exc
 
     user = session.get(User, user_id)
+
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -73,11 +74,11 @@ def get_current_user(
 
 
 def require_roles(*allowed_roles: UserRole) -> Callable[..., User]:
-    """Create a dependency that authorizes only the supplied database roles."""
+    """Authorize users against the role stored in the trusted account record."""
     if not allowed_roles:
         raise ValueError("At least one allowed role is required")
 
-    allowed = frozenset(allowed_roles)
+    allowed = frozenset(role.value for role in allowed_roles)
 
     def role_guard(
         current_user: Annotated[User, Depends(get_current_user)],
@@ -87,6 +88,7 @@ def require_roles(*allowed_roles: UserRole) -> Callable[..., User]:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions",
             )
+
         return current_user
 
     return role_guard
@@ -96,4 +98,7 @@ require_contributor_or_administrator = require_roles(
     UserRole.CONTRIBUTOR,
     UserRole.ADMINISTRATOR,
 )
-require_administrator = require_roles(UserRole.ADMINISTRATOR)
+
+require_administrator = require_roles(
+    UserRole.ADMINISTRATOR,
+)
