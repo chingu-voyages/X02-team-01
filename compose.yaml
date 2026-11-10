@@ -23,5 +23,21 @@ services:
       timeout: 5s
       retries: 5
 
+  # JHEP-24: local SMTP catcher for registration verification emails.
+  # Mailpit's web UI (port 8025) shows the verification link; SMTP 1025 is
+  # where the backend's MailpitSender delivers. Purely local/demo — the
+  # production transport is JHEP-102's provider decision.
+  mailpit:
+    image: axllent/mailpit:v1
+    restart: unless-stopped
+
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+
+    ports:
+      - "127.0.0.1:8025:8025"   # web UI
+      - "127.0.0.1:1025:1025"   # SMTP
+
 volumes:
   postgres_data:
