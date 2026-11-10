@@ -31,6 +31,43 @@ All PR18 exam routes require `Authorization: Bearer <token>`.
 
 ## 2. Mock JSON by screen
 
+## Screen 02 — Registration (JHEP-24) — CURRENT
+
+**POST** `/api/v1/auth/register`
+
+**Request**
+```json
+{
+  "email": "learner@example.com",
+  "password": "Str0ngEn0ugh1"
+}
+```
+
+**Password policy (board-confirmed)**: minimum length 8, at least one uppercase letter, at least one lowercase letter, at least one digit, maximum length 128, no trimming, special characters optional ("alphabetic characters" is implied by the upper+lower rules). Stored hashed with Argon2id (`pwdlib`); **never returned in any response and never logged**. Self-registration always creates `role: "learner"` (DB check constraint — no self-provisioned elevated roles).
+
+**201 response — pending-verification state**
+```json
+{
+  "id": "11111111-1111-4111-8111-111111111111",
+  "email": "learner@example.com",
+  "role": "learner",
+  "is_verified": false,
+  "status": "pending_verification"
+}
+```
+No access token is returned: only verified identities reach protected routes (AC2/AC3). **Errors:** `EMAIL_TAKEN` (409, duplicate — no second account created), `WEAK_PASSWORD` (422, names the first failed policy rule), plus standard 422 schema validation.
+
+**GET** `/api/v1/auth/verify?token={one_time_link_token}` — consumes the emailed verification link (TTL 24 h, single-use; the raw token is never stored — only its SHA-256 digest). Response: the learner object with `is_verified: true` and `status: "verified"`.
+
+**Errors:** `INVALID_OR_EXPIRED_TOKEN` (400) for unknown, expired, or already-used tokens — identical error class for all three, so links cannot be probed.
+
+**POST** `/api/v1/auth/resend-verification` — rate-limited (1 request per 60 s per account) resend of the verification email. **Generic response** regardless of account existence (no enumeration):
+```json
+{ "message": "If the account exists and is unverified, a verification email has been sent." }
+```
+Rate-limit failures: `RATE_LIMITED` (429). Email transport is pluggable (`console` default for tests/CI, `mailpit` for the local demo) — the production provider is JHEP-102's confirmation and only replaces the delivery adapter.
+
+
 ## Screen 03 — Exam selection
 
 **GET** `/api/v1/exam-catalog` — **PROPOSED**

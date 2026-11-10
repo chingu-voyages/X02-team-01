@@ -5,10 +5,10 @@ SHA-256 digest with one-time (`used_at`) and TTL (`expires_at`) semantics,
 so expired/used links fail safely per AC2.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Text, text
+from sqlalchemy import DateTime, Text
 from sqlmodel import Field, SQLModel
 
 
@@ -23,9 +23,9 @@ class EmailVerificationToken(SQLModel, table=True):
     token_hash: str = Field(sa_type=Text, nullable=False, unique=True)
 
     expires_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC) + timedelta(hours=24),
         sa_type=DateTime(timezone=True),
         nullable=False,
-        sa_column_kwargs={"server_default": text("now() + interval '24 hours'")},
     )
 
     # One-time semantics (AC2): a used token can never activate twice.
@@ -35,5 +35,4 @@ class EmailVerificationToken(SQLModel, table=True):
         default_factory=lambda: datetime.now(UTC),
         sa_type=DateTime(timezone=True),
         nullable=False,
-        sa_column_kwargs={"server_default": text("now()")},
     )

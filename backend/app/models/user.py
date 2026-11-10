@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Text, func, text
+from sqlalchemy import CheckConstraint, Column, DateTime, Text, func
 from sqlmodel import Field, SQLModel
 
 
@@ -44,7 +44,6 @@ class User(SQLModel, table=True):
         default="learner",
         max_length=20,
         nullable=False,
-        sa_column_kwargs={"server_default": text("'learner'")},
     )
 
     # AC2: pending-verification state until the emailed one-time link is
@@ -52,7 +51,6 @@ class User(SQLModel, table=True):
     is_verified: bool = Field(
         default=False,
         nullable=False,
-        sa_column_kwargs={"server_default": text("false")},
     )
 
     # AC2: rate-limits the resend endpoint (one per 60 seconds).

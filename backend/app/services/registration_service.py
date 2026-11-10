@@ -147,7 +147,11 @@ class RegistrationService:
             raise InvalidVerificationTokenError("Verification link is invalid")
         if row.used_at is not None:
             raise InvalidVerificationTokenError("Verification link already used")
-        if row.expires_at < _utcnow():
+        # SQLite hands back naive expires_at; normalise to aware UTC.
+        expires_at = row.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if expires_at < _utcnow():
             raise InvalidVerificationTokenError("Verification link expired")
 
         row.used_at = _utcnow()
@@ -170,9 +174,12 @@ class RegistrationService:
             return  # silence: no enumeration
 
         if user.last_verification_sent_at is not None:
-            elapsed_seconds = (
-                _utcnow() - user.last_verification_sent_at
-            ).total_seconds()
+            # SQLite hands back naive datetimes; normalise to aware UTC so
+            # the comparison is valid on both engines.
+            sent_at = user.last_verification_sent_at
+            if sent_at.tzinfo is None:
+                sent_at = sent_at.replace(tzinfo=UTC)
+            elapsed_seconds = (_utcnow() - sent_at).total_seconds()
             if elapsed_seconds < RESEND_MIN_INTERVAL_SECONDS:
                 raise RateLimitError(
                     f"Wait {RESEND_MIN_INTERVAL_SECONDS} seconds before "
