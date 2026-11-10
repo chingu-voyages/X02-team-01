@@ -1,3 +1,5 @@
+import Navbar from "@/components/layouts/Navbar";
+
 interface ResultCardProps {
   scorePercent: number | null;
   correctCount: number;
@@ -33,38 +35,7 @@ export default function ResultCard({
       className="w-full space-y-6 text-[#303639]"
     >
       {/* Navigation — same as category page */}
-      <nav
-        aria-label="Main navigation"
-        className="flex flex-wrap items-center gap-x-7 gap-y-3 rounded-md border border-[#d4d8db] bg-white px-6 py-5"
-      >
-        <span className="text-sm font-extrabold tracking-tight">
-          THE JOB HACKERS
-        </span>
-
-        <div className="flex flex-wrap items-center gap-4 text-sm">
-          <span className="font-semibold text-[#303639]">
-            Exams
-          </span>
-          <span className="text-gray-300" aria-hidden="true">
-            •
-          </span>
-          <span className="text-gray-400">
-            My History
-          </span>
-          <span className="text-gray-300" aria-hidden="true">
-            •
-          </span>
-          <span className="text-gray-400">
-            Journal
-          </span>
-          <span className="text-gray-300" aria-hidden="true">
-            •
-          </span>
-          <span className="text-gray-400">
-            Account
-          </span>
-        </div>
-      </nav>
+      <Navbar />
 
       {/* Heading */}
       <header className="space-y-2">

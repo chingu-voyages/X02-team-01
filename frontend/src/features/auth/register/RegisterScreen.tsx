@@ -1,15 +1,12 @@
-"use client";
-
 import PageHeader from "@/components/layouts/PageHeader";
 import Card from "@/components/ui/Card";
+import RegisterForm from "./RegisterForm";
+import Navbar from "@/components/layouts/Navbar";
 
 export default function RegisterScreen() {
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-  };
-
   return (
     <div>
+      <Navbar />
       <PageHeader
         title="Create an account"
         subtitle="Your exam attempts and learning journal will be saved to your profile."
@@ -18,8 +15,7 @@ export default function RegisterScreen() {
       <div className="mt-6 grid grid-cols-1 md:grid-cols-12">
         <Card className="col-span-7">
           <h2 className="text-xl font-semibold mb-4">Account details</h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
-          </form>
+          <RegisterForm />
         </Card>
         <Card className="col-span-5">
           <h2 className="text-xl font-semibold mb-4">Why create an account</h2>
