@@ -70,12 +70,14 @@ class QuestionVersion(SQLModel, table=True):
             "reviewed_at IS NOT NULL)",
             name="ck_question_versions_review_information",
         ),
-        # Only one active version per question
+        # Only one active version per question.
+        # Keep PostgreSQL and SQLite test behavior equivalent.
         Index(
             "uq_question_versions_active_question",
             "question_id",
             unique=True,
             postgresql_where=text("publication_status = 'active'"),
+            sqlite_where=text("publication_status = 'active'"),
         ),
     )
 

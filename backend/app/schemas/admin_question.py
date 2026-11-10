@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -118,3 +119,63 @@ class QuestionDraftCreated(BaseModel):
     version_number: int
     review_status: Literal["pending"]
     publication_status: Literal["draft"]
+
+
+class QuestionBankItem(BaseModel):
+    """Question-bank row built from the latest stored version."""
+
+    question_id: UUID
+    question_version_id: UUID
+    version_number: int
+    question_preview: str
+    certification_id: UUID
+    certification_name: str
+    category_id: UUID | None
+    category_name: str | None
+    difficulty: Literal["easy", "medium", "hard"]
+    question_type: Literal["multiple_choice", "short_answer"]
+    review_status: Literal["pending", "approved", "rejected"]
+    publication_status: Literal["draft", "active", "retired"]
+    is_flagged: bool
+    created_by_id: UUID
+    last_updated: datetime
+
+
+class QuestionBankList(BaseModel):
+    """Role-filtered management list, including an explicit empty state."""
+
+    items: list[QuestionBankItem]
+    count: int
+
+
+class AdminAnswerOptionOut(BaseModel):
+    """Trusted answer configuration visible only in management routes."""
+
+    position: int
+    option_text: str
+    is_correct: bool
+
+
+class QuestionBankDetail(BaseModel):
+    """Latest-version management detail for one permitted question."""
+
+    question_id: UUID
+    question_version_id: UUID
+    version_number: int
+    certification_id: UUID
+    certification_name: str
+    category_id: UUID | None
+    category_name: str | None
+    difficulty: Literal["easy", "medium", "hard"]
+    question_text: str
+    question_type: Literal["multiple_choice", "short_answer"]
+    allows_multiple_answers: bool
+    explanation: str | None
+    review_status: Literal["pending", "approved", "rejected"]
+    publication_status: Literal["draft", "active", "retired"]
+    is_flagged: bool
+    created_by_id: UUID
+    submitted_by_id: UUID
+    last_updated: datetime
+    options: list[AdminAnswerOptionOut] = Field(default_factory=list)
+    expected_answer: str | None = None

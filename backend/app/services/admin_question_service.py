@@ -1,21 +1,28 @@
 """Persistence services for administrator/contributor question management."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
+from app.core.roles import UserRole
 from app.models.answer_option import AnswerOption
 from app.models.category import Category
 from app.models.certification import Certification
 from app.models.question import Question
 from app.models.question_version import QuestionVersion
 from app.models.text_answer_key import TextAnswerKey
+from app.models.user import User
 from app.schemas.admin_question import QuestionDraftCreate
 
 
 class QuestionDraftScopeError(ValueError):
     """The selected certification/category scope is invalid."""
+
+
+class QuestionBankNotFoundError(LookupError):
+    """Question is absent or outside the current manager's permitted scope."""
 
 
 @dataclass(frozen=True)
@@ -29,17 +36,69 @@ class CreatedQuestionDraft:
     publication_status: str
 
 
+@dataclass(frozen=True)
+class QuestionBankRecord:
+    """Latest-version summary shown in the management question bank."""
+
+    question_id: UUID
+    question_version_id: UUID
+    version_number: int
+    question_preview: str
+    certification_id: UUID
+    certification_name: str
+    category_id: UUID | None
+    category_name: str | None
+    difficulty: str
+    question_type: str
+    review_status: str
+    publication_status: str
+    is_flagged: bool
+    created_by_id: UUID
+    last_updated: datetime
+
+
+@dataclass(frozen=True)
+class QuestionBankOption:
+    """Trusted answer option returned only to authorized question managers."""
+
+    position: int
+    option_text: str
+    is_correct: bool
+
+
+@dataclass(frozen=True)
+class QuestionBankDetails:
+    """Latest-version content and answer configuration for management."""
+
+    question_id: UUID
+    question_version_id: UUID
+    version_number: int
+    certification_id: UUID
+    certification_name: str
+    category_id: UUID | None
+    category_name: str | None
+    difficulty: str
+    question_text: str
+    question_type: str
+    allows_multiple_answers: bool
+    explanation: str | None
+    review_status: str
+    publication_status: str
+    is_flagged: bool
+    created_by_id: UUID
+    submitted_by_id: UUID
+    last_updated: datetime
+    options: list[QuestionBankOption]
+    expected_answer: str | None
+
+
 def create_question_draft(
     session: Session,
     payload: QuestionDraftCreate,
     *,
     actor_id: UUID,
 ) -> CreatedQuestionDraft:
-    """Create a question and version 1 atomically in pending/draft state.
-
-    Authorization is enforced by the HTTP dependency layer before calling this
-    service. ``actor_id`` is therefore the trusted authenticated account id.
-    """
+    """Create a question and version 1 atomically in pending/draft state."""
     _validate_question_scope(session, payload)
 
     question = Question(
@@ -80,7 +139,6 @@ def create_question_draft(
                     )
                 )
         else:
-            # The request schema guarantees this is present for short-answer.
             assert payload.expected_answer is not None
             session.add(
                 TextAnswerKey(
@@ -103,6 +161,95 @@ def create_question_draft(
     )
 
 
+def list_question_bank(
+    session: Session,
+    *,
+    actor: User,
+) -> list[QuestionBankRecord]:
+    """Return question-bank rows permitted by the manager's role."""
+    statement = select(Question)
+    if actor.role == UserRole.CONTRIBUTOR:
+        statement = statement.where(Question.created_by_id == actor.id)
+    elif actor.role != UserRole.ADMINISTRATOR:
+        return []
+
+    records = [
+        _question_bank_record(session, question)
+        for question in session.exec(statement).all()
+    ]
+    records.sort(key=lambda item: item.last_updated, reverse=True)
+    return records
+
+
+def get_question_bank_details(
+    session: Session,
+    question_id: UUID,
+    *,
+    actor: User,
+) -> QuestionBankDetails:
+    """Return latest-version management data within the actor's role scope."""
+    question = session.get(Question, question_id)
+    if question is None or not _question_visible_to_actor(question, actor):
+        raise QuestionBankNotFoundError("Question not found")
+
+    version = _latest_version(session, question.id)
+    certification = session.get(Certification, question.certification_id)
+    assert certification is not None
+
+    category = (
+        session.get(Category, question.category_id)
+        if question.category_id is not None
+        else None
+    )
+
+    options: list[QuestionBankOption] = []
+    expected_answer: str | None = None
+
+    if version.question_type == "multiple_choice":
+        option_rows = session.exec(
+            select(AnswerOption)
+            .where(AnswerOption.question_version_id == version.id)
+            .order_by(AnswerOption.position)
+        ).all()
+        options = [
+            QuestionBankOption(
+                position=option.position,
+                option_text=option.option_text,
+                is_correct=option.is_correct,
+            )
+            for option in option_rows
+        ]
+    else:
+        answer_key = session.exec(
+            select(TextAnswerKey).where(TextAnswerKey.question_version_id == version.id)
+        ).first()
+        if answer_key is not None:
+            expected_answer = answer_key.expected_answer
+
+    return QuestionBankDetails(
+        question_id=question.id,
+        question_version_id=version.id,
+        version_number=version.version_number,
+        certification_id=question.certification_id,
+        certification_name=certification.name,
+        category_id=question.category_id,
+        category_name=category.name if category is not None else None,
+        difficulty=question.difficulty,
+        question_text=version.question_text,
+        question_type=version.question_type,
+        allows_multiple_answers=version.allows_multiple_answers,
+        explanation=version.explanation,
+        review_status=version.review_status,
+        publication_status=version.publication_status,
+        is_flagged=version.is_flagged,
+        created_by_id=question.created_by_id,
+        submitted_by_id=version.submitted_by_id,
+        last_updated=version.submitted_at,
+        options=options,
+        expected_answer=expected_answer,
+    )
+
+
 def _validate_question_scope(
     session: Session,
     payload: QuestionDraftCreate,
@@ -122,3 +269,59 @@ def _validate_question_scope(
         raise QuestionDraftScopeError(
             "Category does not belong to the selected certification"
         )
+
+
+def _question_visible_to_actor(question: Question, actor: User) -> bool:
+    if actor.role == UserRole.ADMINISTRATOR:
+        return True
+    return actor.role == UserRole.CONTRIBUTOR and question.created_by_id == actor.id
+
+
+def _question_bank_record(
+    session: Session,
+    question: Question,
+) -> QuestionBankRecord:
+    version = _latest_version(session, question.id)
+    certification = session.get(Certification, question.certification_id)
+    assert certification is not None
+
+    category = (
+        session.get(Category, question.category_id)
+        if question.category_id is not None
+        else None
+    )
+
+    return QuestionBankRecord(
+        question_id=question.id,
+        question_version_id=version.id,
+        version_number=version.version_number,
+        question_preview=_preview(version.question_text),
+        certification_id=question.certification_id,
+        certification_name=certification.name,
+        category_id=question.category_id,
+        category_name=category.name if category is not None else None,
+        difficulty=question.difficulty,
+        question_type=version.question_type,
+        review_status=version.review_status,
+        publication_status=version.publication_status,
+        is_flagged=version.is_flagged,
+        created_by_id=question.created_by_id,
+        last_updated=version.submitted_at,
+    )
+
+
+def _latest_version(session: Session, question_id: UUID) -> QuestionVersion:
+    version = session.exec(
+        select(QuestionVersion)
+        .where(QuestionVersion.question_id == question_id)
+        .order_by(QuestionVersion.version_number.desc())
+    ).first()
+    if version is None:
+        raise QuestionBankNotFoundError("Question not found")
+    return version
+
+
+def _preview(question_text: str, limit: int = 160) -> str:
+    if len(question_text) <= limit:
+        return question_text
+    return f"{question_text[: limit - 3]}..."
