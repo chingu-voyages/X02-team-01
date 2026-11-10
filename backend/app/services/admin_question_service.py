@@ -1,7 +1,7 @@
 """Persistence services for administrator/contributor question management."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlmodel import Session, select
@@ -14,7 +14,7 @@ from app.models.question import Question
 from app.models.question_version import QuestionVersion
 from app.models.text_answer_key import TextAnswerKey
 from app.models.user import User
-from app.schemas.admin_question import QuestionDraftCreate
+from app.schemas.admin_question import QuestionDraftCreate, QuestionDraftEdit
 
 
 class QuestionDraftScopeError(ValueError):
@@ -23,6 +23,10 @@ class QuestionDraftScopeError(ValueError):
 
 class QuestionBankNotFoundError(LookupError):
     """Question is absent or outside the current manager's permitted scope."""
+
+
+class QuestionDraftNotEditableError(ValueError):
+    """The current question version cannot be edited in place as a draft."""
 
 
 @dataclass(frozen=True)
@@ -161,6 +165,94 @@ def create_question_draft(
     )
 
 
+def edit_question_draft(
+    session: Session,
+    question_id: UUID,
+    payload: QuestionDraftEdit,
+    *,
+    actor: User,
+) -> QuestionBankDetails:
+    """Replace editable fields on the current draft without changing its version.
+
+    Contributors may edit only their own question records. Administrators may edit
+    any permitted draft. Active/retired versions are not modified in place; their
+    revision lifecycle is handled separately so historical exam content is preserved.
+    """
+    question = session.get(Question, question_id)
+    if question is None or not _question_visible_to_actor(question, actor):
+        raise QuestionBankNotFoundError("Question not found")
+
+    version = _latest_version(session, question.id)
+    if version.publication_status != "draft":
+        raise QuestionDraftNotEditableError(
+            "Only draft questions can be edited directly"
+        )
+
+    _validate_category_scope(
+        session,
+        certification_id=question.certification_id,
+        category_id=payload.category_id,
+    )
+
+    try:
+        question.category_id = payload.category_id
+        question.difficulty = payload.difficulty
+
+        version.question_text = payload.question_text
+        version.question_type = payload.question_type
+        version.allows_multiple_answers = payload.allows_multiple_answers
+        version.explanation = payload.explanation
+        version.review_status = "pending"
+        version.publication_status = "draft"
+        version.submitted_by_id = actor.id
+        version.submitted_at = datetime.now(UTC)
+        version.reviewed_by_id = None
+        version.reviewed_at = None
+        version.review_note = None
+
+        existing_options = session.exec(
+            select(AnswerOption).where(AnswerOption.question_version_id == version.id)
+        ).all()
+        for option in existing_options:
+            session.delete(option)
+
+        existing_key = session.exec(
+            select(TextAnswerKey).where(TextAnswerKey.question_version_id == version.id)
+        ).first()
+        if existing_key is not None:
+            session.delete(existing_key)
+
+        # Make removals visible before inserting replacement rows with the same
+        # version/position keys. A later failure still rolls the transaction back.
+        session.flush()
+
+        if payload.question_type == "multiple_choice":
+            for position, option in enumerate(payload.options, start=1):
+                session.add(
+                    AnswerOption(
+                        question_version_id=version.id,
+                        option_text=option.option_text,
+                        is_correct=option.is_correct,
+                        position=position,
+                    )
+                )
+        else:
+            assert payload.expected_answer is not None
+            session.add(
+                TextAnswerKey(
+                    question_version_id=version.id,
+                    expected_answer=payload.expected_answer,
+                )
+            )
+
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+    return get_question_bank_details(session, question.id, actor=actor)
+
+
 def list_question_bank(
     session: Session,
     *,
@@ -258,14 +350,27 @@ def _validate_question_scope(
     if certification is None:
         raise QuestionDraftScopeError("Certification not found")
 
-    if payload.category_id is None:
+    _validate_category_scope(
+        session,
+        certification_id=payload.certification_id,
+        category_id=payload.category_id,
+    )
+
+
+def _validate_category_scope(
+    session: Session,
+    *,
+    certification_id: UUID,
+    category_id: UUID | None,
+) -> None:
+    if category_id is None:
         return
 
-    category = session.get(Category, payload.category_id)
+    category = session.get(Category, category_id)
     if category is None:
         raise QuestionDraftScopeError("Category not found")
 
-    if category.certification_id != payload.certification_id:
+    if category.certification_id != certification_id:
         raise QuestionDraftScopeError(
             "Category does not belong to the selected certification"
         )
