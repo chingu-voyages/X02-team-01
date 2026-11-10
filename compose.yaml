@@ -10,7 +10,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
     ports:
-      - "127.0.0.1:5432:5432"
+      # Host port can be overridden per environment (e.g. 5435) when the
+      # default 5432 is already taken on the developer machine.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
 
     volumes:
       - postgres_data:/var/lib/postgresql/data
