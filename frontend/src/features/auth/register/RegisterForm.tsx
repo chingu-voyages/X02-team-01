@@ -68,7 +68,7 @@ export default function RegisterForm() {
 
   const strengthInfo = getStrengthLabel(formData.password, passwordStrength);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Mark all fields as touched on submit so all errors render if invalid
@@ -98,8 +98,28 @@ export default function RegisterForm() {
       return;
     }
 
-    // Submit logic comes here later
-    console.log("Form submitted successfully:", formData);
+    // Submit logic
+    try {
+      const response = await fetch("/api/v1/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          fullName: formData.fullName,
+          password: formData.password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Registration failed");
+      }
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   return (
