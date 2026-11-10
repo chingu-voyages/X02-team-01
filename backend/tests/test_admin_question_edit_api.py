@@ -379,61 +379,49 @@ def test_client_cannot_override_workflow_status_during_edit(
     assert version.question_text == "Original question"
 
 
-def test_active_question_is_not_edited_in_place(
+def test_contributor_cannot_revise_active_question(
     client: TestClient,
     session: Session,
 ):
-    administrator = create_user(
-        session,
-        UserRole.ADMINISTRATOR,
-    )
-
-    contributor = create_user(
-        session,
-        UserRole.CONTRIBUTOR,
-    )
-
-    # Cache the UUID before later commits can expire the ORM object.
+    administrator = create_user(session, UserRole.ADMINISTRATOR)
+    contributor = create_user(session, UserRole.CONTRIBUTOR)
     administrator_id = administrator.id
-
     certification, category = seed_scope(session)
-
     created = create_mc_draft(
         session,
         owner=contributor,
         certification=certification,
         category=category,
     )
-
-    version = session.get(
-        QuestionVersion,
-        created.question_version_id,
-    )
-
+    version = session.get(QuestionVersion, created.question_version_id)
     assert version is not None
-
     version.reviewed_by_id = administrator_id
     version.reviewed_at = datetime.now(UTC)
     version.review_status = "approved"
     version.publication_status = "active"
-
     session.add(version)
     session.commit()
 
+    payload = edit_mc_payload(category)
+    payload["difficulty"] = "medium"
+
     response = client.patch(
         f"/admin/questions/{created.question_id}",
-        headers=auth_header(administrator),
-        json=edit_mc_payload(category),
+        headers=auth_header(contributor),
+        json=payload,
     )
 
-    assert response.status_code == 409
-    assert response.json() == {"detail": "Only draft questions can be edited directly"}
-
-    session.refresh(version)
-
-    assert version.question_text == "Original question"
-    assert version.review_status == "approved"
-    assert version.publication_status == "active"
+    assert response.status_code == 403
+    assert response.json() == {
+        "detail": "Only administrators can revise published questions"
+    }
+    versions = session.exec(
+        select(QuestionVersion).where(
+            QuestionVersion.question_id == created.question_id
+        )
+    ).all()
+    assert len(versions) == 1
+    assert versions[0].publication_status == "active"
 
 
 def test_missing_question_returns_not_found(

@@ -23,6 +23,7 @@ from app.services.admin_question_service import (
     QuestionBankNotFoundError,
     QuestionDraftNotEditableError,
     QuestionDraftScopeError,
+    QuestionPublishedRevisionForbiddenError,
     create_question_draft,
     edit_question_draft,
     get_question_bank_details,
@@ -77,11 +78,7 @@ def list_managed_questions(
     session: Annotated[Session, Depends(get_session)],
 ) -> QuestionBankList:
     """Return question-bank rows permitted by the manager's role."""
-    records = list_question_bank(
-        session,
-        actor=current_user,
-    )
-
+    records = list_question_bank(session, actor=current_user)
     return QuestionBankList(
         items=[
             QuestionBankItem(
@@ -142,7 +139,7 @@ def edit_managed_question(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
 ) -> QuestionBankDetail:
-    """Replace editable fields on one permitted draft question."""
+    """Edit a Draft or create a new Draft revision of active content."""
     try:
         detail = edit_question_draft(
             session,
@@ -154,6 +151,11 @@ def edit_managed_question(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Question not found",
+        ) from exc
+    except QuestionPublishedRevisionForbiddenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
         ) from exc
     except QuestionDraftNotEditableError as exc:
         raise HTTPException(

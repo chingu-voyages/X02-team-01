@@ -11,6 +11,7 @@ from app.models.answer_option import AnswerOption
 from app.models.category import Category
 from app.models.certification import Certification
 from app.models.question import Question
+from app.models.question_image import QuestionImage
 from app.models.question_version import QuestionVersion
 from app.models.text_answer_key import TextAnswerKey
 from app.models.user import User
@@ -27,6 +28,10 @@ class QuestionBankNotFoundError(LookupError):
 
 class QuestionDraftNotEditableError(ValueError):
     """The current question version cannot be edited in place as a draft."""
+
+
+class QuestionPublishedRevisionForbiddenError(PermissionError):
+    """Only an Administrator may create a revision of published content."""
 
 
 @dataclass(frozen=True)
@@ -183,9 +188,23 @@ def edit_question_draft(
         raise QuestionBankNotFoundError("Question not found")
 
     version = _latest_version(session, question.id)
+
+    if version.publication_status == "active":
+        if actor.role != UserRole.ADMINISTRATOR:
+            raise QuestionPublishedRevisionForbiddenError(
+                "Only administrators can revise published questions"
+            )
+        return _create_published_revision(
+            session,
+            question=question,
+            active_version=version,
+            payload=payload,
+            actor=actor,
+        )
+
     if version.publication_status != "draft":
         raise QuestionDraftNotEditableError(
-            "Only draft questions can be edited directly"
+            "Only draft or active questions can be edited"
         )
 
     _validate_category_scope(
@@ -242,6 +261,90 @@ def edit_question_draft(
                 TextAnswerKey(
                     question_version_id=version.id,
                     expected_answer=payload.expected_answer,
+                )
+            )
+
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+    return get_question_bank_details(session, question.id, actor=actor)
+
+
+def _create_published_revision(
+    session: Session,
+    *,
+    question: Question,
+    active_version: QuestionVersion,
+    payload: QuestionDraftEdit,
+    actor: User,
+) -> QuestionBankDetails:
+    """Create a new pending/draft version while preserving the active version.
+
+    Category and difficulty live on the parent ``questions`` row in the current
+    schema. Changing either while an older version remains active would alter the
+    live question's management scope before approval, so published revisions must
+    preserve those parent-level values. Content, answer configuration, explanation,
+    and version-pinned image references are safely versioned here.
+    """
+    if (
+        payload.category_id != question.category_id
+        or payload.difficulty != question.difficulty
+    ):
+        raise QuestionDraftScopeError(
+            "Published revisions cannot change category or difficulty"
+        )
+
+    revision = QuestionVersion(
+        question_id=question.id,
+        version_number=active_version.version_number + 1,
+        question_text=payload.question_text,
+        question_type=payload.question_type,
+        allows_multiple_answers=payload.allows_multiple_answers,
+        explanation=payload.explanation,
+        review_status="pending",
+        publication_status="draft",
+        is_flagged=False,
+        submitted_by_id=actor.id,
+    )
+
+    try:
+        session.add(revision)
+        session.flush()
+
+        if payload.question_type == "multiple_choice":
+            for position, option in enumerate(payload.options, start=1):
+                session.add(
+                    AnswerOption(
+                        question_version_id=revision.id,
+                        option_text=option.option_text,
+                        is_correct=option.is_correct,
+                        position=position,
+                    )
+                )
+        else:
+            assert payload.expected_answer is not None
+            session.add(
+                TextAnswerKey(
+                    question_version_id=revision.id,
+                    expected_answer=payload.expected_answer,
+                )
+            )
+
+        images = session.exec(
+            select(QuestionImage)
+            .where(QuestionImage.question_version_id == active_version.id)
+            .order_by(QuestionImage.position)
+        ).all()
+        for image in images:
+            session.add(
+                QuestionImage(
+                    question_version_id=revision.id,
+                    storage_key=image.storage_key,
+                    alt_text=image.alt_text,
+                    media_type=image.media_type,
+                    position=image.position,
                 )
             )
 
