@@ -130,9 +130,10 @@ def test_register_happy_path_json_shape(register_api):
     body = response.json()
     assert body["role"] == "learner"
     assert body["is_verified"] is False
-    # Schema-level trim: the echoed full_name carries no surrounding spaces.
-    assert body["full_name"] == "Wired Learner"
-    assert body["full_name"] == body["full_name"].strip()
+    # JHEP-99 serialization: the display name is emitted as `fullName`
+    # (trimmed by the schema validator; the snake alias is input-only).
+    assert body["fullName"] == "  Wired Learner  ".strip()
+    assert "full_name" not in body
     assert body["status"] == "pending_verification"
     # AC3: password/credentials are never echoed or logged.
     assert "password" not in response.text.lower()
@@ -150,7 +151,7 @@ def test_register_duplicate_email_coded(register_api):
     assert client.post("/api/v1/auth/register", json=payload).status_code == 201
     response = client.post("/api/v1/auth/register", json=payload)
     assert response.status_code == 409
-    assert response.json()["detail"]["code"] == "EMAIL_TAKEN"
+    assert response.json()["code"] == "EMAIL_TAKEN"
 
 
 def test_register_weak_password_coded(register_api):
@@ -164,9 +165,9 @@ def test_register_weak_password_coded(register_api):
         },
     )
     assert response.status_code == 422
-    detail = response.json()["detail"]
-    assert detail["code"] == "WEAK_PASSWORD"
-    assert "uppercase" in detail["message"]
+    body = response.json()
+    assert body["code"] == "WEAK_PASSWORD"
+    assert "uppercase" in body["message"]
 
 
 def test_verify_consumes_one_time_token(register_api, sqlite_session):
@@ -185,7 +186,7 @@ def test_verify_consumes_one_time_token(register_api, sqlite_session):
     # One-time semantics: replay fails with a coded 400.
     replay = client.get("/api/v1/auth/verify", params={"token": str(token_raw)})
     assert replay.status_code == 400
-    assert replay.json()["detail"]["code"] == "INVALID_OR_EXPIRED_TOKEN"
+    assert replay.json()["code"] == "INVALID_OR_EXPIRED_TOKEN"
 
 
 def test_resend_is_rate_limited_enumeration_safe(register_api, sqlite_session):
@@ -199,7 +200,7 @@ def test_resend_is_rate_limited_enumeration_safe(register_api, sqlite_session):
         json={"email": "throttled@example.com"},
     )
     assert response.status_code == 429
-    assert response.json()["detail"]["code"] == "RATE_LIMITED"
+    assert response.json()["code"] == "RATE_LIMITED"
 
     # Unknown/unverified-agnostic responses (no enumeration).
     unknown = client.post(
