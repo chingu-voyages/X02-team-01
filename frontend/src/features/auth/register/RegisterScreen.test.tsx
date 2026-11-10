@@ -2,6 +2,16 @@ import { render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import RegisterScreen from "./RegisterScreen";
 
+const mockPush = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: mockPush,
+    replace: vi.fn(),
+    prefetch: vi.fn(),
+    back: vi.fn(),
+  }),
+}));
+
 describe('RegisterScreen Layout & Structure', () => {
   it('renders the main page header and step badge', () => {
     render(<RegisterScreen />);

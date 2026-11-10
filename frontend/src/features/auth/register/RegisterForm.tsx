@@ -3,9 +3,12 @@
 import { Button } from "@/components/ui/button";
 import FormInput from "@/components/ui/FormInput";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export default function RegisterForm() {
+  const router = useRouter();
+
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -117,6 +120,8 @@ export default function RegisterForm() {
       if (!response.ok) {
         throw new Error(data.message || "Registration failed");
       }
+
+      router.push("/login");
     } catch (error) {
       console.error(error);
     }

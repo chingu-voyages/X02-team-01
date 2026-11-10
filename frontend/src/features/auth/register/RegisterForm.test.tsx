@@ -3,6 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect } from "vitest";
 import RegisterScreen from "./RegisterScreen";
 
+const mockPush = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: mockPush,
+  }),
+}));
+
 describe("RegisterScreen Form Logic", () => {
   it("renders all registration fields and submit button", () => {
     render(<RegisterScreen />);
