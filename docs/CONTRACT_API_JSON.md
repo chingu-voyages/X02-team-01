@@ -42,6 +42,8 @@ All PR18 exam routes require `Authorization: Bearer <token>`.
   "full_name": "John Doe",
   "password": "Str0ngEn0ugh1"
 }
+
+The `full_name` key is dual: both `full_name` (canonical) and `fullName` (the wireframe form's camelCase) are accepted; unknown keys are rejected.
 ```
 
 **Password policy (board-confirmed)**: minimum length 8, at least one uppercase letter, at least one lowercase letter, at least one digit, maximum length 128, no trimming, special characters optional ("alphabetic characters" is implied by the upper+lower rules). Stored hashed with Argon2id (`pwdlib`); **never returned in any response and never logged**. Self-registration always creates `role: "learner"` (DB check constraint — no self-provisioned elevated roles).
@@ -53,13 +55,13 @@ All PR18 exam routes require `Authorization: Bearer <token>`.
 {
   "id": "11111111-1111-4111-8111-111111111111",
   "email": "learner@example.com",
-  "full_name": "John Doe",
+  "fullName": "John Doe",
   "role": "learner",
   "is_verified": false,
   "status": "pending_verification"
 }
 ```
-No access token is returned: only verified identities reach protected routes (AC2/AC3). **Errors:** `EMAIL_TAKEN` (409, duplicate — no second account created), `WEAK_PASSWORD` (422, names the first failed policy rule), plus standard 422 schema validation.
+No access token is returned: only verified identities reach protected routes (AC2/AC3). **Errors (JHEP-99 form-compat: `{code, message}` at the TOP level, so `data.message` reads the text directly):** `EMAIL_TAKEN` (409, duplicate — no second account created), `WEAK_PASSWORD` (422, names the first failed policy rule), `VALIDATION_ERROR` (422, malformed/missing keys summarised into one sentence). Application error details are never echoed — only these coded texts.
 
 **GET** `/api/v1/auth/verify?token={one_time_link_token}` — consumes the emailed verification link (TTL 24 h, single-use; the raw token is never stored — only its SHA-256 digest). Response: the learner object with `is_verified: true` and `status: "verified"`.
 
