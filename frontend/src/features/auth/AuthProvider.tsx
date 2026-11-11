@@ -18,14 +18,10 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-
 const tokenStorageKey = "jhep_demo_token";
-
-// Event listeners to notify React when sessionStorage updates in this tab
 const listeners = new Set<() => void>();
 
 function getStoredToken(): string | null {
-  if (typeof window === "undefined") return null;
   try {
     return sessionStorage.getItem(tokenStorageKey);
   } catch {
@@ -33,49 +29,65 @@ function getStoredToken(): string | null {
   }
 }
 
+function getServerToken(): undefined {
+  return undefined;
+}
+
 function subscribe(listener: () => void) {
   listeners.add(listener);
+
   return () => {
     listeners.delete(listener);
-  }
+  };
 }
+
+function notifyTokenChanged() {
+  listeners.forEach((listener) => listener());
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
-  // useSyncExternalStore safely reads sessionStorage for SSR and client hydration
-  const token = useSyncExternalStore(
+  // `undefined` exists only during SSR/hydration. Once the browser snapshot is
+  // available, the value becomes either a real token or null.
+  const tokenSnapshot = useSyncExternalStore(
     subscribe,
     getStoredToken,
-    () => null // Server snapshot defaults to null
+    getServerToken,
   );
 
-  const ready = true; // Always ready since useSyncExternalStore resolves synchronously on mount
+  const ready = tokenSnapshot !== undefined;
+  const token = tokenSnapshot ?? null;
 
-  const setToken = useCallback((newToken: string | null, redirectPath = "/categories") => {
-    try {
-      if (newToken) {
-        sessionStorage.setItem(tokenStorageKey, newToken);
-      } else {
-        sessionStorage.removeItem(tokenStorageKey);
-      }
-      // Notify listeners to trigger re-render
-      listeners.forEach((listener) => listener());
+  const setToken = useCallback(
+    (newToken: string | null, redirectPath = "/categories") => {
+      try {
+        if (newToken) {
+          sessionStorage.setItem(tokenStorageKey, newToken);
+        } else {
+          sessionStorage.removeItem(tokenStorageKey);
+        }
 
-      if (newToken) {
-        router.push(redirectPath);
+        notifyTokenChanged();
+
+        if (newToken) {
+          router.push(redirectPath);
+        }
+      } catch (error) {
+        console.error("Failed to update sessionStorage", error);
       }
-    } catch (e) {
-      console.error("Failed to update sessionStorage", e);
-    }
-  }, [router]);
+    },
+    [router],
+  );
 
   const logout = useCallback(() => {
     try {
       sessionStorage.removeItem(tokenStorageKey);
-      listeners.forEach((listener) => listener());
-    } catch (e) {
-      console.error("Failed to clear sessionStorage", e);
+      notifyTokenChanged();
+    } catch (error) {
+      console.error("Failed to clear sessionStorage", error);
     }
+
     router.replace("/access");
   }, [router]);
 
@@ -88,9 +100,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
+
   if (!context) {
     throw new Error("useAuth must be used within an AuthProvider");
   }
+
   return context;
 }
 
@@ -100,18 +114,23 @@ export function useDemoSession() {
   const pathname = usePathname();
 
   useEffect(() => {
-    if (ready && !token && pathname !== "/access") {
-      router.replace("/access");
-    }
+    if (!ready || token || pathname === "/access") return;
+
+    const redirect = encodeURIComponent(pathname);
+    router.replace(`/access?redirect=${redirect}`);
   }, [ready, token, pathname, router]);
 
-  const handleError = useCallback((error: unknown) => {
-    if (error instanceof ApiError && error.status === 401) {
-      logout();
-    } else {
+  const handleError = useCallback(
+    (error: unknown) => {
+      if (error instanceof ApiError && error.status === 401) {
+        logout();
+        return;
+      }
+
       throw error;
-    }
-  }, [logout]);
+    },
+    [logout],
+  );
 
   return { token, ready, handleError };
 }
