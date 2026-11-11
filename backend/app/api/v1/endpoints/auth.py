@@ -1,6 +1,6 @@
-"""Learner authentication endpoints (JHEP-24 + JHEP-25).
+"""Learner self-registration and account verification (JHEP-24).
 
-Registration/verification (JHEP-24):
+Endpoints:
 - POST /auth/register — create one Learner account (AC1), start the
   verification email flow (AC2). Top-level coded errors: EMAIL_TAKEN 409,
   WEAK_PASSWORD 422 (JHEP-99 form-compat: `data.message` reads the text).
@@ -10,40 +10,18 @@ Registration/verification (JHEP-24):
 - POST /auth/resend-verification — rate-limited (AC2), generic response
   so the endpoint never reveals whether an email exists.
 
-Login/logout (JHEP-25):
-- POST /auth/login — verify credentials against the Argon2id hash and
-  issue a learner-scoped JWT. Unknown email, wrong password, and
-  hash-less accounts all return the SAME generic 401 (no enumeration);
-  unverified accounts get a distinct coded 403.
-- POST /auth/logout — stateless semantics: the client discards the
-  token; the JWT expiry is the server-side bound (a server-side
-  invalidation store is a documented follow-up).
-
-Password/credential handling (AC3): passwords exist only as Argon2id
-hashes and never leave the service; tokens are never logged by this
-module.
+Password/credential handling (AC3): the Argon2id hash is written only
+inside the registration service and never returned, echoed or logged by
+this module.
 """
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func
-from sqlmodel import Session, select
+from fastapi import APIRouter, Depends, status
+from sqlmodel import Session
 
-from app.api.deps import get_current_subject
-from app.core.security import (
-    create_access_token_for_learner,
-    verify_password,
-)
 from app.db.session import get_session
-from app.models import User
-from app.schemas.auth import (
-    AuthTokenOut,
-    LearnerLoginIn,
-    LearnerOut,
-    ResendVerificationIn,
-    UserRegistrationIn,
-)
+from app.schemas.auth import LearnerOut, ResendVerificationIn, UserRegistrationIn
 from app.services.registration_service import (
     EmailTakenError,
     InvalidVerificationTokenError,
@@ -79,7 +57,7 @@ def get_registration_service(
     return RegistrationService(session)
 
 
-def _learner_out(user: User) -> LearnerOut:
+def _learner_out(user) -> LearnerOut:
     """Confirmed response shape (serialised as `fullName` for the JHEP-99
     form); never any password or hash."""
     return LearnerOut(
@@ -161,69 +139,4 @@ def resend_verification(
     return {
         "message": "If the account exists and is unverified, a verification "
         "email has been sent."
-    }
-
-
-@router.post("/login", response_model=AuthTokenOut)
-def login(
-    payload: LearnerLoginIn,
-    session: Annotated[Session, Depends(get_session)],
-) -> AuthTokenOut:
-    """AC1: establish an authenticated learner session.
-
-    Unknown email, wrong password, and hash-less accounts all produce the
-    SAME generic 401 (no account enumeration). Unverified accounts get a
-    distinct coded 403 guiding them to their pending verification email.
-    """
-    user = session.exec(
-        select(User).where(func.lower(User.email) == payload.email.lower().strip())
-    ).first()
-
-    if user is None or user.hashed_password is None:
-        raise CodedAuthError(
-            status.HTTP_401_UNAUTHORIZED,
-            "INVALID_CREDENTIALS",
-            "Invalid email or password",
-        )
-
-    if not verify_password(payload.password, user.hashed_password):
-        raise CodedAuthError(
-            status.HTTP_401_UNAUTHORIZED,
-            "INVALID_CREDENTIALS",
-            "Invalid email or password",
-        )
-
-    if not user.is_verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": "ACCOUNT_NOT_VERIFIED",
-                "message": "Verify your email before signing in — the "
-                "verification link was sent to your address.",
-            },
-        )
-
-    access_token = create_access_token_for_learner(user)
-
-    return AuthTokenOut(
-        access_token=access_token,
-        token_type="bearer",
-        learner=_learner_out(user),
-    )
-
-
-@router.post("/logout", status_code=status.HTTP_200_OK)
-def logout(
-    subject: Annotated[str, Depends(get_current_subject)],
-) -> dict:
-    """AC2: stateless logout — the client discards the token.
-
-    JWT expiry is the server-side bound for stale credentials; a
-    server-side invalidation store is a documented follow-up.
-    """
-    from datetime import UTC, datetime
-
-    return {
-        "message": "Logged out",
-        "logged_out_at": datetime.now(UTC).isoformat(),
     }

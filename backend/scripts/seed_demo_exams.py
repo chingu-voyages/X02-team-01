@@ -16,7 +16,6 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlmodel import Session
 
-from app.core.security import hash_password
 from app.db.session import engine
 from app.models import (
     AnswerOption,
@@ -52,8 +51,6 @@ def demo_uuid(value: str) -> UUID:
 
 DEMO_USER_ID = demo_uuid("learner")
 DEMO_USER_EMAIL = "jhep29-demo-learner@example.test"
-# JHEP-25: known demo password for the login journey (demo-only).
-DEMO_LEARNER_PASSWORD = "DemoL3arner!"
 
 PSM_QUESTIONS = (
     SampleQuestion(
@@ -364,21 +361,8 @@ def seed() -> dict[str, int]:
         "text_answer_keys": 0,
     }
     with Session(engine) as session, session.begin():
-        # JHEP-25: the demo learner gets a verified account + a known demo
-        # password so the login journey is demo-able with the seeded
-        # learner. The hash is Argon2id via the same security module the
-        # backend uses.
         inserted["users"] += ensure_row(
-            session,
-            User(
-                id=DEMO_USER_ID,
-                email=DEMO_USER_EMAIL,
-                full_name="Demo Learner",
-                hashed_password=hash_password(DEMO_LEARNER_PASSWORD),
-                role="learner",
-                is_verified=True,
-            ),
-            ("email", "full_name", "is_verified"),
+            session, User(id=DEMO_USER_ID, email=DEMO_USER_EMAIL), ("email",)
         )
         for cert in CERTIFICATIONS:
             cert_id = demo_uuid(f"{cert.slug}/certification")
