@@ -301,7 +301,7 @@ export default function RegisterForm() {
         </Button>
         <p className="text-sm text-gray-600">
           Already registered?{" "}
-          <Link href="#" className="text-primary hover:underline font-medium">
+          <Link href="/login" className="text-primary hover:underline font-medium">
             Sign in
           </Link>
         </p>
