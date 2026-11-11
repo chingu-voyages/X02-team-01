@@ -104,3 +104,10 @@ export interface AdminQuestionDraftCreated {
   review_status: "pending";
   publication_status: "draft";
 }
+
+export interface AdminQuestionRetirementResponse {
+  question_id: string;
+  retired_version_ids: string[];
+  publication_status: "retired";
+  already_retired: boolean;
+}

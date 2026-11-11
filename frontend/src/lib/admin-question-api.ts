@@ -6,6 +6,7 @@ import type {
   AdminQuestionDraftCreateRequest,
   AdminQuestionDraftCreated,
   AdminQuestionDraftEditRequest,
+  AdminQuestionRetirementResponse,
 } from "@/types/admin-question-api.types";
 
 export async function getManagedQuestions(
@@ -58,6 +59,22 @@ export async function editManagedQuestion(
     {
       method: "PATCH",
       body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function retireManagedQuestion(
+  token: string,
+  questionId: string,
+): Promise<AdminQuestionRetirementResponse> {
+  return apiRequest<AdminQuestionRetirementResponse>(
+    `/admin/questions/${encodeURIComponent(questionId)}/retire`,
+    token,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        confirm: true,
+      }),
     },
   );
 }

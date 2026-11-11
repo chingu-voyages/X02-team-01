@@ -6,7 +6,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 
-from app.api.deps import get_current_user, require_contributor_or_administrator
+from app.api.deps import (
+    get_current_user,
+    require_administrator,
+    require_contributor_or_administrator,
+)
 from app.db.session import get_session
 from app.models.user import User
 from app.schemas.admin_question import (
@@ -18,6 +22,10 @@ from app.schemas.admin_question import (
     QuestionDraftCreated,
     QuestionDraftEdit,
 )
+from app.schemas.question_retirement import (
+    QuestionRetirementRequest,
+    QuestionRetirementResponse,
+)
 from app.services.admin_question_service import (
     QuestionBankDetails,
     QuestionBankNotFoundError,
@@ -28,6 +36,11 @@ from app.services.admin_question_service import (
     edit_question_draft,
     get_question_bank_details,
     list_question_bank,
+)
+from app.services.question_retirement_service import (
+    QuestionNotRetirableError,
+    QuestionRetirementNotFoundError,
+    retire_question,
 )
 
 router = APIRouter(
@@ -169,6 +182,39 @@ def edit_managed_question(
         ) from exc
 
     return _question_detail_response(detail)
+
+
+@router.post(
+    "/questions/{question_id}/retire",
+    response_model=QuestionRetirementResponse,
+)
+def retire_managed_question(
+    question_id: UUID,
+    payload: QuestionRetirementRequest,
+    _administrator: Annotated[User, Depends(require_administrator)],
+    session: Annotated[Session, Depends(get_session)],
+) -> QuestionRetirementResponse:
+    """Retire an active published question after explicit confirmation."""
+    _ = payload.confirm
+
+    try:
+        result = retire_question(session, question_id)
+    except QuestionRetirementNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Question not found",
+        ) from exc
+    except QuestionNotRetirableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    return QuestionRetirementResponse(
+        question_id=result.question_id,
+        retired_version_ids=list(result.retired_version_ids),
+        already_retired=result.already_retired,
+    )
 
 
 @router.post(
