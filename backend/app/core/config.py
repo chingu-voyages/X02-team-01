@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     email_from: str = "no-reply@jobhackers.local"
     verification_link_base: str = "http://127.0.0.1:8010/api/v1/auth/verify"
 
+    # JHEP-25: learner session TTL. The default 30-minute token expires
+    # mid-exam, so learner sessions get a dedicated, longer lifetime.
+    # Logout is stateless (client discards; JWT expiry is the server-side
+    # bound) — server-side invalidation is a documented follow-up.
+    learner_access_token_hours: int = Field(default=12, ge=1, le=24 * 7)
+
     # Site deployments can enforce a smaller exam; hard ceiling remains 100.
     max_exam_questions: int = Field(default=100, ge=1, le=100)
 
