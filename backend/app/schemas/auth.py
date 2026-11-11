@@ -77,3 +77,30 @@ class ResendVerificationIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: EmailStr
+
+
+# --- JHEP-25: login/logout contracts ---
+
+
+class LearnerLoginIn(BaseModel):
+    """Credentials for the login endpoint; shape only — the generic-401
+    rule lives in the endpoint (no enumeration).
+
+    Email is a plain string (not EmailStr): login matches the stored
+    value case-insensitively; format validation happened at registration.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(min_length=3, max_length=255)
+    password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
+
+
+class AuthTokenOut(BaseModel):
+    """The OAuth2-ish token response consumed by the merged AuthProvider
+    (`setToken(data.access_token)`); the embedded learner mirrors
+    `LearnerOut` (serialised as `fullName` for the JHEP-99 form)."""
+
+    access_token: str
+    token_type: Literal["bearer"]
+    learner: LearnerOut
