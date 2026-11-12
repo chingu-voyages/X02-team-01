@@ -5,9 +5,12 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useAuth } from "../AuthProvider";
 
 export default function LoginForm() {
   const router = useRouter();
+
+  const {setToken} = useAuth();
 
   const [formData, setFormData] = useState({
     email: "",
@@ -83,8 +86,8 @@ export default function LoginForm() {
         );
       }
 
-      // Successful login -> redirect to learner dashboard/exams
-      router.push("/exams");
+      // Successful login -> save token and redirect learner to dashboard/exams
+      setToken(data.token, "/exams");
     } catch (error) {
       setAuthError(
         error instanceof Error
