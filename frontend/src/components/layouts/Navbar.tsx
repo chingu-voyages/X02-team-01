@@ -1,7 +1,12 @@
+"use client";
+
 import Link from "next/link";
 import { Button } from "../ui/button";
+import { useAuth } from "@/features/auth/AuthProvider";
 
 export default function Navbar() {
+  const { logout } = useAuth();
+
   return (
     <nav
       aria-label="Main navigation"
@@ -50,8 +55,11 @@ export default function Navbar() {
       </div>
 
       <div className="flex items-baseline gap-2">
-        <span>Hello, username!</span>
-        <Button variant="outline" className="hover:cursor-pointer">
+        <Button
+          onClick={logout}
+          variant="outline"
+          className="hover:cursor-pointer"
+        >
           Logout
         </Button>
       </div>
