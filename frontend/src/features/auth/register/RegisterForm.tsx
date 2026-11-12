@@ -1,6 +1,5 @@
 "use client";
 
-import Card from "@/components/ui/Card";
 import { Button } from "@/components/ui/button";
 import FormInput from "@/components/ui/FormInput";
 import Link from "next/link";
@@ -178,8 +177,8 @@ export default function RegisterForm() {
   // ALIGNMENT: pending-verification state (backend 201 contract)
   if (pendingEmail) {
     return (
-      <Card aria-live="polite">
-        <h2 className="text-xl font-semibold mb-2">Check your email</h2>
+      <div>
+        <h2 className="text-lg font-semibold mb-6">Check your email</h2>
         <p className="text-sm text-gray-700">
           We sent a one-time verification link to{" "}
           <strong>{pendingEmail}</strong>. The link expires in 24 hours —
@@ -187,12 +186,12 @@ export default function RegisterForm() {
         </p>
 
         {resendMessage ? (
-          <p className="mt-2 text-sm text-gray-600" role="status">
+          <p className="mt-6 text-sm text-gray-600" role="status">
             {resendMessage}
           </p>
         ) : null}
 
-        <div className="flex gap-2 mt-2">
+        <div className="flex gap-2 my-6">
           <Button
             type="button"
             variant="outline"
@@ -206,12 +205,12 @@ export default function RegisterForm() {
 
         <p className="text-sm text-gray-600 mt-4">
           Already registered?{" "}
-          <Link href="#" className="text-primary hover:underline font-medium">
+          <Link href="/login" className="text-primary hover:underline font-medium">
             Sign in
           </Link>{" "}
           once your account is verified.
         </p>
-      </Card>
+      </div>
     );
   }
 
