@@ -1,51 +1,132 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect } from "vitest";
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+
 import RegisterScreen from "./RegisterScreen";
 
-const mockPush = vi.fn();
+const mockLogout = vi.fn();
+
+vi.mock(
+  "@/features/auth/AuthProvider",
+  () => ({
+    useAuth: () => ({
+      token: null,
+      ready: true,
+      setToken: vi.fn(),
+      logout: mockLogout,
+    }),
+  }),
+);
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
-    push: mockPush,
+    push: vi.fn(),
+    replace: vi.fn(),
+    prefetch: vi.fn(),
+    back: vi.fn(),
   }),
 }));
 
-describe("RegisterScreen Form Logic", () => {
-  it("renders all registration fields and submit button", () => {
-    render(<RegisterScreen />);
+describe(
+  "RegisterScreen Form Logic",
+  () => {
+    it(
+      "renders all registration fields and submit button",
+      () => {
+        render(<RegisterScreen />);
 
-    expect(screen.getByLabelText(/full name/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/confirm email/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/create password/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/confirm password/i)).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /create account/i }),
-    ).toBeInTheDocument();
-  });
+        expect(
+          screen.getByLabelText(
+            /full name/i,
+          ),
+        ).toBeInTheDocument();
 
-  it("updates password strength indicator as user types", async () => {
-    render(<RegisterScreen />);
+        expect(
+          screen.getByLabelText(
+            /email address/i,
+          ),
+        ).toBeInTheDocument();
 
-    const passwordInput = screen.getByLabelText(/create password/i);
-    await userEvent.type(passwordInput, "Abc123xyz!");
+        expect(
+          screen.getByLabelText(
+            /confirm email/i,
+          ),
+        ).toBeInTheDocument();
 
-    // Verify strength indicator text appears
-    expect(screen.getByText(/weak|fair|good|strong/i)).toBeInTheDocument();
-  });
+        expect(
+          screen.getByLabelText(
+            /create password/i,
+          ),
+        ).toBeInTheDocument();
 
-  it("triggers validation errors when submitting empty required fields", async () => {
-    render(<RegisterScreen />);
+        expect(
+          screen.getByLabelText(
+            /confirm password/i,
+          ),
+        ).toBeInTheDocument();
 
-    const submitButton = screen.getByRole("button", {
-      name: /create account/i,
-    });
-    await userEvent.click(submitButton);
+        expect(
+          screen.getByRole("button", {
+            name: /create account/i,
+          }),
+        ).toBeInTheDocument();
+      },
+    );
 
-    await waitFor(() => {
-      expect(
-        screen.getAllByText(/required|invalid|match/i).length,
-      ).toBeGreaterThan(0);
-    });
-  });
-});
+    it(
+      "updates password strength indicator as user types",
+      async () => {
+        render(<RegisterScreen />);
+
+        const passwordInput =
+          screen.getByLabelText(
+            /create password/i,
+          );
+
+        await userEvent.type(
+          passwordInput,
+          "Abc123xyz!",
+        );
+
+        expect(
+          screen.getByText(
+            /weak|fair|good|strong/i,
+          ),
+        ).toBeInTheDocument();
+      },
+    );
+
+    it(
+      "triggers validation errors when submitting empty required fields",
+      async () => {
+        render(<RegisterScreen />);
+
+        const submitButton =
+          screen.getByRole("button", {
+            name: /create account/i,
+          });
+
+        await userEvent.click(
+          submitButton,
+        );
+
+        await waitFor(() => {
+          expect(
+            screen.getAllByText(
+              /required|invalid|match/i,
+            ).length,
+          ).toBeGreaterThan(0);
+        });
+      },
+    );
+  },
+);

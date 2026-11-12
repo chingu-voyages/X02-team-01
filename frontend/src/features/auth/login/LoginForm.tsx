@@ -6,85 +6,168 @@ import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "../AuthProvider";
 
+type UserRole =
+  | "learner"
+  | "contributor"
+  | "administrator";
+
+type LoginResponse = {
+  access_token: string;
+  token_type: "bearer";
+  learner: {
+    id: string;
+    email: string;
+    fullName: string;
+    role: UserRole;
+    is_verified: boolean;
+    status: "pending_verification" | "verified";
+    created_at: string;
+  };
+};
+
 export default function LoginForm() {
-  const {setToken} = useAuth();
+  const { setToken } = useAuth();
 
   const [formData, setFormData] = useState({
     email: "",
     password: "",
   });
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [touched, setTouched] = useState<Record<string, boolean>>({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
 
-  // Handle input changes
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+  const [errors, setErrors] = useState<
+    Record<string, string>
+  >({});
 
-    // Clear error when user starts typing again
+  const [touched, setTouched] = useState<
+    Record<string, boolean>
+  >({});
+
+  const [isSubmitting, setIsSubmitting] =
+    useState(false);
+
+  const [authError, setAuthError] = useState<
+    string | null
+  >(null);
+
+  const handleChange = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const { name, value } = event.target;
+
+    setFormData((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+
     if (errors[name]) {
-      setErrors((prev) => ({ ...prev, [name]: "" }));
+      setErrors((previous) => ({
+        ...previous,
+        [name]: "",
+      }));
     }
+
     if (authError) {
       setAuthError(null);
     }
   };
 
   const handleBlur = (field: string) => {
-    setTouched((prev) => ({ ...prev, [field]: true }));
+    setTouched((previous) => ({
+      ...previous,
+      [field]: true,
+    }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
 
-    // Mark fields as touched
     setTouched({
       email: true,
       password: true,
     });
 
-    // Client-side validation
     const newErrors: Record<string, string> = {};
-    if (!formData.email.trim()) newErrors.email = "Email is required.";
-    if (!formData.password.trim()) newErrors.password = "Password is required.";
+
+    if (!formData.email.trim()) {
+      newErrors.email = "Email is required.";
+    }
+
+    if (!formData.password.trim()) {
+      newErrors.password = "Password is required.";
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
     }
 
-    // Double-click guard
-    if (isSubmitting) return;
+    if (isSubmitting) {
+      return;
+    }
+
     setIsSubmitting(true);
     setAuthError(null);
 
     try {
-      const response = await fetch("/api/v1/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await fetch(
+        "/api/v1/auth/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email: formData.email.trim(),
+            password: formData.password,
+          }),
         },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-        }),
-      });
+      );
 
-      const data = await response.json();
+      const data: unknown = await response.json();
 
       if (!response.ok) {
-        // AC1: Secure error handling without leaking account existence
-        throw new Error(
-          typeof data.message === "string"
-            ? data.message
-            : "Invalid email or password.",
-        );
+        let message =
+          "Invalid email or password.";
+
+        if (
+          data !== null &&
+          typeof data === "object"
+        ) {
+          if (
+            "message" in data &&
+            typeof data.message === "string"
+          ) {
+            message = data.message;
+          } else if (
+            "detail" in data &&
+            data.detail !== null &&
+            typeof data.detail === "object" &&
+            "message" in data.detail &&
+            typeof data.detail.message === "string"
+          ) {
+            message = data.detail.message;
+          }
+        }
+
+        throw new Error(message);
       }
 
-      // Successful login -> save token and redirect learner to dashboard/exams
-      setToken(data.token, "/exams");
+      const loginData = data as LoginResponse;
+
+      const isStaff =
+        loginData.learner.role ===
+          "administrator" ||
+        loginData.learner.role === "contributor";
+
+      const destination = isStaff
+        ? "/admin/questions"
+        : "/categories";
+
+      setToken(
+        loginData.access_token,
+        destination,
+      );
     } catch (error) {
       setAuthError(
         error instanceof Error
@@ -98,7 +181,9 @@ export default function LoginForm() {
 
   return (
     <div>
-      <h2 className="font-bold text-2xl">Sign in to your account</h2>
+      <h2 className="font-bold text-2xl">
+        Sign in to your account
+      </h2>
 
       {authError && (
         <div
@@ -114,7 +199,6 @@ export default function LoginForm() {
         className="space-y-4"
         noValidate
       >
-        {/* Email address */}
         <FormInput
           label="Email address"
           id="email"
@@ -124,10 +208,13 @@ export default function LoginForm() {
           value={formData.email}
           onChange={handleChange}
           onBlur={() => handleBlur("email")}
-          error={touched.email ? errors.email : undefined}
+          error={
+            touched.email
+              ? errors.email
+              : undefined
+          }
         />
 
-        {/* Password */}
         <FormInput
           label="Password"
           id="password"
@@ -137,7 +224,11 @@ export default function LoginForm() {
           value={formData.password}
           onChange={handleChange}
           onBlur={() => handleBlur("password")}
-          error={touched.password ? errors.password : undefined}
+          error={
+            touched.password
+              ? errors.password
+              : undefined
+          }
         />
 
         <div className="flex flex-col gap-3">
@@ -146,8 +237,11 @@ export default function LoginForm() {
             disabled={isSubmitting}
             className="self-start py-6 px-4 text-base hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSubmitting ? "Signing in..." : "Sign in"}
+            {isSubmitting
+              ? "Signing in..."
+              : "Sign in"}
           </Button>
+
           <p className="text-sm text-gray-600">
             New to the platform?{" "}
             <Link
