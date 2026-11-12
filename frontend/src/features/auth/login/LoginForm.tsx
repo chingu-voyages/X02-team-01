@@ -3,13 +3,10 @@
 import FormInput from "@/components/ui/FormInput";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "../AuthProvider";
 
 export default function LoginForm() {
-  const router = useRouter();
-
   const {setToken} = useAuth();
 
   const [formData, setFormData] = useState({
