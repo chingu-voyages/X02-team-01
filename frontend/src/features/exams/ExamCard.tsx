@@ -15,6 +15,8 @@ import type {
   AnswerSubmission,
   ExamQuestionWithResponse,
 } from "@/types/exam-api.types";
+import Navbar from "@/components/layouts/Navbar";
+import PageHeader from "@/components/layouts/PageHeader";
 
 type LoadStatus = "loading" | "ready" | "error";
 
@@ -140,7 +142,11 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
   }
 
   if (!ready || !token) {
-    return <p role="status" className="p-6">Checking session...</p>;
+    return (
+      <p role="status" className="p-6">
+        Checking session...
+      </p>
+    );
   }
 
   if (loadStatus === "loading" || loadStatus === "error") {
@@ -182,7 +188,9 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
   const currentFeedback = feedbackMap[questionId];
   const textValue = textAnswersMap[questionId] ?? "";
   const isLastQuestion = currentQuestionIndex >= questions.length - 1;
-  const submittedCount = questions.filter((question) => submittedMap[question.id]).length;
+  const submittedCount = questions.filter(
+    (question) => submittedMap[question.id],
+  ).length;
   const allQuestionsSubmitted =
     questions.length > 0 &&
     questions.every((question) => submittedMap[question.id] === true);
@@ -191,7 +199,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
   );
   const optionFeedbackReleased = Boolean(
     currentFeedback?.feedback_released &&
-      currentFeedback.correct_option_ids.length > 0,
+    currentFeedback.correct_option_ids.length > 0,
   );
   const selectedLetters = currentQuestion.options
     .filter((option) => currentSelected.includes(option.id))
@@ -223,7 +231,13 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
   }
 
   function handleSubmit() {
-    if (!token || !currentQuestion || isSubmitting || isSubmitted || isFinishing) {
+    if (
+      !token ||
+      !currentQuestion ||
+      isSubmitting ||
+      isSubmitted ||
+      isFinishing
+    ) {
       return;
     }
 
@@ -275,14 +289,21 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           return;
         }
         setSubmitError(
-          error instanceof Error ? error.message : "Unable to submit the answer.",
+          error instanceof Error
+            ? error.message
+            : "Unable to submit the answer.",
         );
       })
       .finally(() => setIsSubmitting(false));
   }
 
   async function handleFinish() {
-    if (!token || !allQuestionsSubmitted || isSubmitting || finishingRef.current) {
+    if (
+      !token ||
+      !allQuestionsSubmitted ||
+      isSubmitting ||
+      finishingRef.current
+    ) {
       return;
     }
 
@@ -293,7 +314,10 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
 
     try {
       const response = await submitExam(attemptId, token);
-      if (response.status !== "submitted" || response.attempt_id !== attemptId) {
+      if (
+        response.status !== "submitted" ||
+        response.attempt_id !== attemptId
+      ) {
         throw new Error("Unexpected final submission response.");
       }
       navigating = true;
@@ -367,35 +391,26 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
 
   return (
     <div className="w-full space-y-6">
-      {/* Same global-style navigation treatment as Categories and Results. */}
-      <nav
-        aria-label="Main navigation"
-        className="flex flex-wrap items-center gap-x-7 gap-y-3 rounded-md border border-[#d4d8db] bg-white px-6 py-5"
-      >
-        <span className="text-sm font-extrabold tracking-tight">
-          THE JOB HACKERS
-        </span>
-        <div className="flex flex-wrap items-center gap-4 text-sm">
-          <span className="font-semibold text-[#303639]">Exams</span>
-          <span className="text-gray-300" aria-hidden="true">•</span>
-          <span className="text-gray-400" title="Coming soon">My History</span>
-          <span className="text-gray-300" aria-hidden="true">•</span>
-          <span className="text-gray-400" title="Coming soon">Journal</span>
-          <span className="text-gray-300" aria-hidden="true">•</span>
-          <span className="text-gray-400" title="Coming soon">Account</span>
-        </div>
-      </nav>
-
-      <header className="space-y-2">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-          Practice exam <span className="font-medium text-[#687178]">· In progress</span>
-        </h1>
-        <p className="text-sm text-[#687178]">
-          Question {currentQuestionIndex + 1} of {questions.length}
-          <span className="mx-2" aria-hidden="true">·</span>
-          {answeredStatus}
-        </p>
-      </header>
+      <Navbar />
+      <PageHeader
+        title={
+          <div>
+            Practice exam{" "}
+            <span className="font-medium text-[#687178]">· In progress</span>
+          </div>
+        }
+        subtitle={
+          <div>
+            <p className="text-sm text-[#687178]">
+              Question {currentQuestionIndex + 1} of {questions.length}
+              <span className="mx-2" aria-hidden="true">
+                ·
+              </span>
+              {answeredStatus}
+            </p>
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
         <section
@@ -403,7 +418,12 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           className="min-w-0 rounded-md border border-[#cbd0d3] bg-white p-5 sm:p-6"
         >
           <p className="text-xs font-semibold uppercase tracking-wider text-[#687178]">
-            Question {String(currentQuestionIndex + 1).padStart(2, "0")} / {isShortAnswer ? "Short answer" : isMultiple ? "Multiple select" : "Multiple choice"}
+            Question {String(currentQuestionIndex + 1).padStart(2, "0")} /{" "}
+            {isShortAnswer
+              ? "Short answer"
+              : isMultiple
+                ? "Multiple select"
+                : "Multiple choice"}
           </p>
           <h2
             id="question-heading"
@@ -422,7 +442,11 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
               className="min-h-32 w-full rounded-md border border-[#d4dadd] bg-white p-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
             />
           ) : isMultiple ? (
-            <div role="group" aria-labelledby="question-heading" className="flex flex-col gap-3">
+            <div
+              role="group"
+              aria-labelledby="question-heading"
+              className="flex flex-col gap-3"
+            >
               {optionsList}
             </div>
           ) : (
@@ -458,7 +482,8 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
               </p>
               {currentFeedback?.explanation ? (
                 <p className="mt-2 leading-5">
-                  <span className="font-semibold">Explanation:</span> {currentFeedback.explanation}
+                  <span className="font-semibold">Explanation:</span>{" "}
+                  {currentFeedback.explanation}
                 </p>
               ) : (
                 <p className="mt-2 leading-5">
@@ -471,7 +496,9 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           )}
 
           {submitError && (
-            <p role="alert" className="mt-3 text-sm text-red-700">{submitError}</p>
+            <p role="alert" className="mt-3 text-sm text-red-700">
+              {submitError}
+            </p>
           )}
 
           <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -481,7 +508,9 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
               onClick={() =>
                 setCurrentQuestionIndex((previous) => Math.max(previous - 1, 0))
               }
-              disabled={currentQuestionIndex === 0 || isSubmitting || isFinishing}
+              disabled={
+                currentQuestionIndex === 0 || isSubmitting || isFinishing
+              }
               className="h-10 rounded-md border-[#cbd0d3] px-4 text-sm"
             >
               Previous
@@ -490,7 +519,8 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
               isLastQuestion ? (
                 allQuestionsSubmitted ? (
                   <span className="text-sm text-[#56616a]">
-                    All answers submitted. Finish the exam in the progress panel.
+                    All answers submitted. Finish the exam in the progress
+                    panel.
                   </span>
                 ) : (
                   <Button
@@ -542,8 +572,12 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
             Attempt progress
           </h2>
           <div className="mt-4 space-y-3 text-sm text-[#56616a]">
-            <p>Question {currentQuestionIndex + 1} / {questions.length}</p>
-            <p>Submitted answers: {submittedCount} / {questions.length}</p>
+            <p>
+              Question {currentQuestionIndex + 1} / {questions.length}
+            </p>
+            <p>
+              Submitted answers: {submittedCount} / {questions.length}
+            </p>
             <p>
               {isSubmitted
                 ? isShortAnswer
