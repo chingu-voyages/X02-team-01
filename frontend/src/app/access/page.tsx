@@ -4,14 +4,21 @@ import { Suspense, useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/features/auth/AuthProvider";
 
+const examRoute =
+  /^\/exams\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/results)?$/i;
+
+const adminQuestionRoute =
+  /^\/admin\/questions(?:\/new|\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/edit)?)?$/i;
+
 // Only allow known internal destinations.
 function safeRedirect(value: string | null): string {
   if (value === "/categories") {
     return value;
   }
 
-  const examRoute =
-    /^\/exams\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\/results)?$/i;
+  if (value && adminQuestionRoute.test(value)) {
+    return value;
+  }
 
   if (value && examRoute.test(value)) {
     return value;
@@ -25,18 +32,15 @@ function AccessForm() {
   const { setToken } = useAuth();
   const searchParams = useSearchParams();
 
-  const redirectTo = safeRedirect(
-    searchParams.get("redirect"),
-  );
+  const redirectTo = safeRedirect(searchParams.get("redirect"));
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const token = tokenInput.trim();
+    // Accept either the raw JWT or a copied `Bearer <jwt>` value.
+    const token = tokenInput.trim().replace(/^Bearer\s+/i, "");
 
-    if (!token) {
-      return;
-    }
+    if (!token) return;
 
     setToken(token, redirectTo);
   }
@@ -44,21 +48,16 @@ function AccessForm() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-6">
       <div className="w-full max-w-md rounded-lg border p-6 shadow-sm">
-        <h1 className="mb-4 text-xl font-bold">
-          Demo Access Token
-        </h1>
+        <h1 className="mb-4 text-xl font-bold">Demo Access Token</h1>
 
         <p className="mb-6 text-sm text-gray-600">
-          Enter the short-lived bearer token supplied
-          by the backend owner for local development.
+          Enter the short-lived bearer token supplied by the backend owner for
+          local development.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label
-              htmlFor="token"
-              className="mb-1 block text-sm font-medium"
-            >
+            <label htmlFor="token" className="mb-1 block text-sm font-medium">
               Bearer access token
             </label>
 
@@ -68,9 +67,7 @@ function AccessForm() {
               autoComplete="off"
               spellCheck={false}
               value={tokenInput}
-              onChange={(event) =>
-                setTokenInput(event.target.value)
-              }
+              onChange={(event) => setTokenInput(event.target.value)}
               placeholder="Paste your JWT here..."
               className="w-full rounded border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               required

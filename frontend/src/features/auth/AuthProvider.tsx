@@ -68,6 +68,9 @@ export function AuthProvider({
 }) {
   const router = useRouter();
 
+  // `undefined` exists only during SSR/hydration.
+  // Once the browser snapshot is available, the
+  // value becomes either a real token or null.
   const tokenSnapshot = useSyncExternalStore(
     subscribe,
     getStoredToken,
