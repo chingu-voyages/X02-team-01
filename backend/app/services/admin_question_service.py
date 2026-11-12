@@ -38,6 +38,10 @@ class QuestionDraftNotPublishableError(ValueError):
     """The latest question version cannot be approved and published."""
 
 
+class QuestionDraftNotRejectableError(ValueError):
+    """The latest question version cannot be rejected."""
+
+
 @dataclass(frozen=True)
 class CreatedQuestionDraft:
     """Identifiers and server-controlled state for a newly created draft."""
@@ -416,6 +420,50 @@ def publish_question_draft(
         version.reviewed_by_id = actor.id
         version.reviewed_at = datetime.now(UTC)
         version.review_note = None
+
+        session.add(version)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+    return get_question_bank_details(
+        session,
+        question.id,
+        actor=actor,
+    )
+
+
+def reject_question_draft(
+    session: Session,
+    question_id: UUID,
+    *,
+    actor: User,
+    review_note: str,
+) -> QuestionBankDetails:
+    """Reject the latest pending draft without disturbing live content.
+
+    If the draft is a revision of an already published question, the older
+    active version remains active. Editing the rejected draft later resets it
+    to pending so it can be reviewed again.
+    """
+    question = session.get(Question, question_id)
+
+    if question is None:
+        raise QuestionBankNotFoundError("Question not found")
+
+    version = _latest_version(session, question.id)
+
+    if version.publication_status != "draft" or version.review_status != "pending":
+        raise QuestionDraftNotRejectableError(
+            "Only pending draft questions can be rejected"
+        )
+
+    try:
+        version.review_status = "rejected"
+        version.reviewed_by_id = actor.id
+        version.reviewed_at = datetime.now(UTC)
+        version.review_note = review_note
 
         session.add(version)
         session.commit()

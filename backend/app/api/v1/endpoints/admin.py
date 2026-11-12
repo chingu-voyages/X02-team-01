@@ -21,6 +21,7 @@ from app.schemas.admin_question import (
     QuestionDraftCreate,
     QuestionDraftCreated,
     QuestionDraftEdit,
+    QuestionRejectionRequest,
 )
 from app.schemas.question_retirement import (
     QuestionRetirementRequest,
@@ -31,6 +32,7 @@ from app.services.admin_question_service import (
     QuestionBankNotFoundError,
     QuestionDraftNotEditableError,
     QuestionDraftNotPublishableError,
+    QuestionDraftNotRejectableError,
     QuestionDraftScopeError,
     QuestionPublishedRevisionForbiddenError,
     create_question_draft,
@@ -38,6 +40,7 @@ from app.services.admin_question_service import (
     get_question_bank_details,
     list_question_bank,
     publish_question_draft,
+    reject_question_draft,
 )
 from app.services.question_retirement_service import (
     QuestionNotRetirableError,
@@ -64,7 +67,7 @@ def _question_detail_response(
         difficulty=detail.difficulty,
         question_text=detail.question_text,
         question_type=detail.question_type,
-        allows_multiple_answers=detail.allows_multiple_answers,
+        allows_multiple_answers=(detail.allows_multiple_answers),
         explanation=detail.explanation,
         review_status=detail.review_status,
         publication_status=detail.publication_status,
@@ -108,17 +111,17 @@ def list_managed_questions(
         items=[
             QuestionBankItem(
                 question_id=item.question_id,
-                question_version_id=item.question_version_id,
+                question_version_id=(item.question_version_id),
                 version_number=item.version_number,
-                question_preview=item.question_preview,
-                certification_id=item.certification_id,
-                certification_name=item.certification_name,
+                question_preview=(item.question_preview),
+                certification_id=(item.certification_id),
+                certification_name=(item.certification_name),
                 category_id=item.category_id,
                 category_name=item.category_name,
                 difficulty=item.difficulty,
                 question_type=item.question_type,
                 review_status=item.review_status,
-                publication_status=item.publication_status,
+                publication_status=(item.publication_status),
                 is_flagged=item.is_flagged,
                 created_by_id=item.created_by_id,
                 last_updated=item.last_updated,
@@ -153,7 +156,7 @@ def get_managed_question(
         )
     except QuestionBankNotFoundError as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=(status.HTTP_404_NOT_FOUND),
             detail="Question not found",
         ) from exc
 
@@ -184,24 +187,28 @@ def edit_managed_question(
             payload,
             actor=current_user,
         )
+
     except QuestionBankNotFoundError as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=(status.HTTP_404_NOT_FOUND),
             detail="Question not found",
         ) from exc
+
     except QuestionPublishedRevisionForbiddenError as exc:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=(status.HTTP_403_FORBIDDEN),
             detail=str(exc),
         ) from exc
+
     except QuestionDraftNotEditableError as exc:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=(status.HTTP_409_CONFLICT),
             detail=str(exc),
         ) from exc
+
     except QuestionDraftScopeError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=(status.HTTP_422_UNPROCESSABLE_CONTENT),
             detail=str(exc),
         ) from exc
 
@@ -230,14 +237,56 @@ def publish_managed_question(
             question_id,
             actor=administrator,
         )
+
     except QuestionBankNotFoundError as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=(status.HTTP_404_NOT_FOUND),
             detail="Question not found",
         ) from exc
+
     except QuestionDraftNotPublishableError as exc:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=(status.HTTP_409_CONFLICT),
+            detail=str(exc),
+        ) from exc
+
+    return _question_detail_response(detail)
+
+
+@router.post(
+    "/questions/{question_id}/reject",
+    response_model=QuestionBankDetail,
+)
+def reject_managed_question(
+    question_id: UUID,
+    payload: QuestionRejectionRequest,
+    administrator: Annotated[
+        User,
+        Depends(require_administrator),
+    ],
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
+) -> QuestionBankDetail:
+    """Reject the latest pending draft version with review feedback."""
+    try:
+        detail = reject_question_draft(
+            session,
+            question_id,
+            actor=administrator,
+            review_note=payload.review_note,
+        )
+
+    except QuestionBankNotFoundError as exc:
+        raise HTTPException(
+            status_code=(status.HTTP_404_NOT_FOUND),
+            detail="Question not found",
+        ) from exc
+
+    except QuestionDraftNotRejectableError as exc:
+        raise HTTPException(
+            status_code=(status.HTTP_409_CONFLICT),
             detail=str(exc),
         ) from exc
 
@@ -268,14 +317,16 @@ def retire_managed_question(
             session,
             question_id,
         )
+
     except QuestionRetirementNotFoundError as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=(status.HTTP_404_NOT_FOUND),
             detail="Question not found",
         ) from exc
+
     except QuestionNotRetirableError as exc:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=(status.HTTP_409_CONFLICT),
             detail=str(exc),
         ) from exc
 
@@ -309,16 +360,17 @@ def create_draft_question(
             payload,
             actor_id=current_user.id,
         )
+
     except QuestionDraftScopeError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=(status.HTTP_422_UNPROCESSABLE_CONTENT),
             detail=str(exc),
         ) from exc
 
     return QuestionDraftCreated(
         question_id=created.question_id,
-        question_version_id=created.question_version_id,
+        question_version_id=(created.question_version_id),
         version_number=created.version_number,
         review_status=created.review_status,
-        publication_status=created.publication_status,
+        publication_status=(created.publication_status),
     )
