@@ -34,6 +34,10 @@ class QuestionPublishedRevisionForbiddenError(PermissionError):
     """Only an Administrator may create a revision of published content."""
 
 
+class QuestionDraftNotPublishableError(ValueError):
+    """The latest question version cannot be approved and published."""
+
+
 @dataclass(frozen=True)
 class CreatedQuestionDraft:
     """Identifiers and server-controlled state for a newly created draft."""
@@ -194,6 +198,7 @@ def edit_question_draft(
             raise QuestionPublishedRevisionForbiddenError(
                 "Only administrators can revise published questions"
             )
+
         return _create_published_revision(
             session,
             question=question,
@@ -232,12 +237,14 @@ def edit_question_draft(
         existing_options = session.exec(
             select(AnswerOption).where(AnswerOption.question_version_id == version.id)
         ).all()
+
         for option in existing_options:
             session.delete(option)
 
         existing_key = session.exec(
             select(TextAnswerKey).where(TextAnswerKey.question_version_id == version.id)
         ).first()
+
         if existing_key is not None:
             session.delete(existing_key)
 
@@ -269,7 +276,11 @@ def edit_question_draft(
         session.rollback()
         raise
 
-    return get_question_bank_details(session, question.id, actor=actor)
+    return get_question_bank_details(
+        session,
+        question.id,
+        actor=actor,
+    )
 
 
 def _create_published_revision(
@@ -337,6 +348,7 @@ def _create_published_revision(
             .where(QuestionImage.question_version_id == active_version.id)
             .order_by(QuestionImage.position)
         ).all()
+
         for image in images:
             session.add(
                 QuestionImage(
@@ -353,7 +365,69 @@ def _create_published_revision(
         session.rollback()
         raise
 
-    return get_question_bank_details(session, question.id, actor=actor)
+    return get_question_bank_details(
+        session,
+        question.id,
+        actor=actor,
+    )
+
+
+def publish_question_draft(
+    session: Session,
+    question_id: UUID,
+    *,
+    actor: User,
+) -> QuestionBankDetails:
+    """Approve and activate the latest pending draft version.
+
+    If an older version is currently active, retire it before activating
+    the newer revision so only one active version exists per question.
+    """
+    question = session.get(Question, question_id)
+
+    if question is None:
+        raise QuestionBankNotFoundError("Question not found")
+
+    version = _latest_version(session, question.id)
+
+    if version.publication_status != "draft" or version.review_status != "pending":
+        raise QuestionDraftNotPublishableError(
+            "Only pending draft questions can be published"
+        )
+
+    active_version = session.exec(
+        select(QuestionVersion).where(
+            QuestionVersion.question_id == question.id,
+            QuestionVersion.publication_status == "active",
+        )
+    ).first()
+
+    try:
+        # A published revision replaces the previous active version.
+        # Flush the retirement first because the database enforces
+        # one active version per parent question.
+        if active_version is not None:
+            active_version.publication_status = "retired"
+            session.add(active_version)
+            session.flush()
+
+        version.review_status = "approved"
+        version.publication_status = "active"
+        version.reviewed_by_id = actor.id
+        version.reviewed_at = datetime.now(UTC)
+        version.review_note = None
+
+        session.add(version)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+    return get_question_bank_details(
+        session,
+        question.id,
+        actor=actor,
+    )
 
 
 def list_question_bank(
@@ -363,16 +437,25 @@ def list_question_bank(
 ) -> list[QuestionBankRecord]:
     """Return question-bank rows permitted by the manager's role."""
     statement = select(Question)
+
     if actor.role == UserRole.CONTRIBUTOR:
         statement = statement.where(Question.created_by_id == actor.id)
     elif actor.role != UserRole.ADMINISTRATOR:
         return []
 
     records = [
-        _question_bank_record(session, question)
+        _question_bank_record(
+            session,
+            question,
+        )
         for question in session.exec(statement).all()
     ]
-    records.sort(key=lambda item: item.last_updated, reverse=True)
+
+    records.sort(
+        key=lambda item: item.last_updated,
+        reverse=True,
+    )
+
     return records
 
 
@@ -383,16 +466,33 @@ def get_question_bank_details(
     actor: User,
 ) -> QuestionBankDetails:
     """Return latest-version management data within the actor's role scope."""
-    question = session.get(Question, question_id)
-    if question is None or not _question_visible_to_actor(question, actor):
+    question = session.get(
+        Question,
+        question_id,
+    )
+
+    if question is None or not _question_visible_to_actor(
+        question,
+        actor,
+    ):
         raise QuestionBankNotFoundError("Question not found")
 
-    version = _latest_version(session, question.id)
-    certification = session.get(Certification, question.certification_id)
+    version = _latest_version(
+        session,
+        question.id,
+    )
+
+    certification = session.get(
+        Certification,
+        question.certification_id,
+    )
     assert certification is not None
 
     category = (
-        session.get(Category, question.category_id)
+        session.get(
+            Category,
+            question.category_id,
+        )
         if question.category_id is not None
         else None
     )
@@ -406,6 +506,7 @@ def get_question_bank_details(
             .where(AnswerOption.question_version_id == version.id)
             .order_by(AnswerOption.position)
         ).all()
+
         options = [
             QuestionBankOption(
                 position=option.position,
@@ -414,10 +515,12 @@ def get_question_bank_details(
             )
             for option in option_rows
         ]
+
     else:
         answer_key = session.exec(
             select(TextAnswerKey).where(TextAnswerKey.question_version_id == version.id)
         ).first()
+
         if answer_key is not None:
             expected_answer = answer_key.expected_answer
 
@@ -428,14 +531,14 @@ def get_question_bank_details(
         certification_id=question.certification_id,
         certification_name=certification.name,
         category_id=question.category_id,
-        category_name=category.name if category is not None else None,
+        category_name=(category.name if category is not None else None),
         difficulty=question.difficulty,
         question_text=version.question_text,
         question_type=version.question_type,
-        allows_multiple_answers=version.allows_multiple_answers,
+        allows_multiple_answers=(version.allows_multiple_answers),
         explanation=version.explanation,
         review_status=version.review_status,
-        publication_status=version.publication_status,
+        publication_status=(version.publication_status),
         is_flagged=version.is_flagged,
         created_by_id=question.created_by_id,
         submitted_by_id=version.submitted_by_id,
@@ -449,7 +552,11 @@ def _validate_question_scope(
     session: Session,
     payload: QuestionDraftCreate,
 ) -> None:
-    certification = session.get(Certification, payload.certification_id)
+    certification = session.get(
+        Certification,
+        payload.certification_id,
+    )
+
     if certification is None:
         raise QuestionDraftScopeError("Certification not found")
 
@@ -469,7 +576,11 @@ def _validate_category_scope(
     if category_id is None:
         return
 
-    category = session.get(Category, category_id)
+    category = session.get(
+        Category,
+        category_id,
+    )
+
     if category is None:
         raise QuestionDraftScopeError("Category not found")
 
@@ -479,9 +590,13 @@ def _validate_category_scope(
         )
 
 
-def _question_visible_to_actor(question: Question, actor: User) -> bool:
+def _question_visible_to_actor(
+    question: Question,
+    actor: User,
+) -> bool:
     if actor.role == UserRole.ADMINISTRATOR:
         return True
+
     return actor.role == UserRole.CONTRIBUTOR and question.created_by_id == actor.id
 
 
@@ -489,12 +604,22 @@ def _question_bank_record(
     session: Session,
     question: Question,
 ) -> QuestionBankRecord:
-    version = _latest_version(session, question.id)
-    certification = session.get(Certification, question.certification_id)
+    version = _latest_version(
+        session,
+        question.id,
+    )
+
+    certification = session.get(
+        Certification,
+        question.certification_id,
+    )
     assert certification is not None
 
     category = (
-        session.get(Category, question.category_id)
+        session.get(
+            Category,
+            question.category_id,
+        )
         if question.category_id is not None
         else None
     )
@@ -504,32 +629,41 @@ def _question_bank_record(
         question_version_id=version.id,
         version_number=version.version_number,
         question_preview=_preview(version.question_text),
-        certification_id=question.certification_id,
+        certification_id=(question.certification_id),
         certification_name=certification.name,
         category_id=question.category_id,
-        category_name=category.name if category is not None else None,
+        category_name=(category.name if category is not None else None),
         difficulty=question.difficulty,
         question_type=version.question_type,
         review_status=version.review_status,
-        publication_status=version.publication_status,
+        publication_status=(version.publication_status),
         is_flagged=version.is_flagged,
         created_by_id=question.created_by_id,
         last_updated=version.submitted_at,
     )
 
 
-def _latest_version(session: Session, question_id: UUID) -> QuestionVersion:
+def _latest_version(
+    session: Session,
+    question_id: UUID,
+) -> QuestionVersion:
     version = session.exec(
         select(QuestionVersion)
         .where(QuestionVersion.question_id == question_id)
         .order_by(QuestionVersion.version_number.desc())
     ).first()
+
     if version is None:
         raise QuestionBankNotFoundError("Question not found")
+
     return version
 
 
-def _preview(question_text: str, limit: int = 160) -> str:
+def _preview(
+    question_text: str,
+    limit: int = 160,
+) -> str:
     if len(question_text) <= limit:
         return question_text
+
     return f"{question_text[: limit - 3]}..."

@@ -30,12 +30,14 @@ from app.services.admin_question_service import (
     QuestionBankDetails,
     QuestionBankNotFoundError,
     QuestionDraftNotEditableError,
+    QuestionDraftNotPublishableError,
     QuestionDraftScopeError,
     QuestionPublishedRevisionForbiddenError,
     create_question_draft,
     edit_question_draft,
     get_question_bank_details,
     list_question_bank,
+    publish_question_draft,
 )
 from app.services.question_retirement_service import (
     QuestionNotRetirableError,
@@ -87,11 +89,21 @@ def _question_detail_response(
     response_model=QuestionBankList,
 )
 def list_managed_questions(
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[
+        User,
+        Depends(get_current_user),
+    ],
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
 ) -> QuestionBankList:
     """Return question-bank rows permitted by the manager's role."""
-    records = list_question_bank(session, actor=current_user)
+    records = list_question_bank(
+        session,
+        actor=current_user,
+    )
+
     return QuestionBankList(
         items=[
             QuestionBankItem(
@@ -123,8 +135,14 @@ def list_managed_questions(
 )
 def get_managed_question(
     question_id: UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[
+        User,
+        Depends(get_current_user),
+    ],
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
 ) -> QuestionBankDetail:
     """Return trusted latest-version content for one permitted question."""
     try:
@@ -149,10 +167,16 @@ def get_managed_question(
 def edit_managed_question(
     question_id: UUID,
     payload: QuestionDraftEdit,
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[
+        User,
+        Depends(get_current_user),
+    ],
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
 ) -> QuestionBankDetail:
-    """Edit a Draft or create a new Draft revision of active content."""
+    """Edit a draft or create a new draft revision of active content."""
     try:
         detail = edit_question_draft(
             session,
@@ -185,20 +209,65 @@ def edit_managed_question(
 
 
 @router.post(
+    "/questions/{question_id}/publish",
+    response_model=QuestionBankDetail,
+)
+def publish_managed_question(
+    question_id: UUID,
+    administrator: Annotated[
+        User,
+        Depends(require_administrator),
+    ],
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
+) -> QuestionBankDetail:
+    """Approve and publish the latest pending draft version."""
+    try:
+        detail = publish_question_draft(
+            session,
+            question_id,
+            actor=administrator,
+        )
+    except QuestionBankNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Question not found",
+        ) from exc
+    except QuestionDraftNotPublishableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    return _question_detail_response(detail)
+
+
+@router.post(
     "/questions/{question_id}/retire",
     response_model=QuestionRetirementResponse,
 )
 def retire_managed_question(
     question_id: UUID,
     payload: QuestionRetirementRequest,
-    _administrator: Annotated[User, Depends(require_administrator)],
-    session: Annotated[Session, Depends(get_session)],
+    _administrator: Annotated[
+        User,
+        Depends(require_administrator),
+    ],
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
 ) -> QuestionRetirementResponse:
     """Retire an active published question after explicit confirmation."""
     _ = payload.confirm
 
     try:
-        result = retire_question(session, question_id)
+        result = retire_question(
+            session,
+            question_id,
+        )
     except QuestionRetirementNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -224,8 +293,14 @@ def retire_managed_question(
 )
 def create_draft_question(
     payload: QuestionDraftCreate,
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[
+        User,
+        Depends(get_current_user),
+    ],
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
 ) -> QuestionDraftCreated:
     """Create version 1 of a question in pending/draft state."""
     try:
