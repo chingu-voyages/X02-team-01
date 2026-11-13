@@ -12,6 +12,7 @@ by the mandatory uppercase + lowercase checks.
 """
 
 import hashlib
+import logging
 import re
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -75,6 +76,41 @@ def _verification_link(raw_token: str) -> str:
     return f"{settings.verification_link_base}?token={raw_token}"
 
 
+logger = logging.getLogger(__name__)
+
+
+def _send_verification_email(*, to: str, full_name: str | None, raw_token: str) -> None:
+    """Deliver the verification email, resilient to transport failures.
+
+    A broken or refused transport (missing credentials, provider outage,
+    Google throttling) must NOT turn registration into a 500: the account
+    exists and is pending, and the pending-verification card's resend is
+    the recovery path. Failures are logged loudly instead. A transport
+    misconfigured at the SETTINGS level is still surfaced at startup by
+    main.py's validation warning.
+    """
+    greeting = f"Welcome, {full_name}! " if full_name else ""
+    body = (
+        f"{greeting}Verify your account:\n"
+        f"{_verification_link(raw_token)}\n\n"
+        f"This link expires in {VERIFY_LINK_TTL_HOURS} hours."
+    )
+    try:
+        email_sender().send(
+            to=to,
+            subject="Verify your Job Hackers account",
+            body=body,
+        )
+    except Exception:  # noqa: BLE001 — delivery must never break registration
+        logger.exception(
+            "Verification email delivery FAILED for %s — the account is "
+            "registered and pending; the learner can retry via resend. "
+            "Check the email transport configuration (EMAIL_DELIVERY, "
+            "EMAIL_SMTP_* / EMAIL_API_KEY).",
+            to,
+        )
+
+
 class RegistrationService:
     """Create learner accounts, issue/verify one-time tokens, throttle
     resends. One session per construction; the endpoint maps domain
@@ -107,14 +143,8 @@ class RegistrationService:
         self._session.refresh(user)
 
         raw_token = self._issue_token(user)
-        email_sender().send(
-            to=user.email,
-            subject="Verify your Job Hackers account",
-            body=(
-                f"Welcome, {full_name}! Verify your account:\n"
-                f"{_verification_link(raw_token)}\n\n"
-                f"This link expires in {VERIFY_LINK_TTL_HOURS} hours."
-            ),
+        _send_verification_email(
+            to=user.email, full_name=full_name, raw_token=raw_token
         )
         return user
 
@@ -188,11 +218,4 @@ class RegistrationService:
                 )
 
         raw_token = self._issue_token(user)  # previous tokens become moot
-        email_sender().send(
-            to=user.email,
-            subject="Verify your Job Hackers account",
-            body=(
-                f"Verify your account:\n{_verification_link(raw_token)}\n\n"
-                f"This link expires in {VERIFY_LINK_TTL_HOURS} hours."
-            ),
-        )
+        _send_verification_email(to=user.email, full_name=None, raw_token=raw_token)
