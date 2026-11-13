@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     email_api_key: str = ""  # resend only; empty = not configured
     email_from: str = "no-reply@jobhackers.local"
     verification_link_base: str = "http://127.0.0.1:8010/api/v1/auth/verify"
+    # Where the emailed verification link sends the browser after
+    # activation (the login screen, with a verified/invalid flag).
+    frontend_base_url: str = "http://127.0.0.1:3030"
 
     # Env values copied from docs or dashboards often carry stray
     # whitespace/newlines, which would fail Literal validation and crash
@@ -62,6 +65,13 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             value = value.strip()
         return value or "http://127.0.0.1:8010/api/v1/auth/verify"
+
+    @field_validator("frontend_base_url", mode="before")
+    @classmethod
+    def _normalise_frontend_base_url(cls, value):  # noqa: N805
+        if isinstance(value, str):
+            value = value.strip().rstrip("/")
+        return value or "http://127.0.0.1:3030"
 
     # SMTP/API credentials pasted into a hosting dashboard with a trailing
     # newline would fail provider auth at send time (a confusing silent

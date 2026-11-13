@@ -178,16 +178,25 @@ def test_verify_consumes_one_time_token(register_api, sqlite_session):
     )
     token_raw = _captured_raw_token(sqlite_session)
 
-    response = client.get("/api/v1/auth/verify", params={"token": str(token_raw)})
-    assert response.status_code == 200
-    body = response.json()
-    assert body["is_verified"] is True
-    assert body["status"] == "verified"
+    response = client.get(
+        "/api/v1/auth/verify", params={"token": str(token_raw)}, follow_redirects=False
+    )
+    assert response.status_code == 303
+    assert response.headers["location"].endswith("/login?verified=1")
+    # the learner is actually verified
+    with Session(sqlite_session.get_bind()) as fresh:
+        stored = fresh.exec(
+            select(User).where(User.email == "verify-me@example.com")
+        ).one()
+        assert stored.is_verified is True
 
-    # One-time semantics: replay fails with a coded 400.
-    replay = client.get("/api/v1/auth/verify", params={"token": str(token_raw)})
-    assert replay.status_code == 400
-    assert replay.json()["code"] == "INVALID_OR_EXPIRED_TOKEN"
+    # One-time semantics: replay redirects to the login screen with an
+    # invalid flag (the emailed link is always human-clicked).
+    replay = client.get(
+        "/api/v1/auth/verify", params={"token": str(token_raw)}, follow_redirects=False
+    )
+    assert replay.status_code == 303
+    assert replay.headers["location"].endswith("/login?verification=invalid")
 
 
 def test_resend_is_rate_limited_enumeration_safe(register_api, sqlite_session):
