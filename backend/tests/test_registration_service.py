@@ -404,6 +404,10 @@ def test_resend_sender_posts_the_payload(monkeypatch):
     assert captured["url"] == "https://api.resend.com/emails"
     headers = {k.lower(): v for k, v in captured["headers"].items()}
     assert headers["authorization"] == "Bearer re_test_key"
+    # Resend's WAF bans the default Python-urllib signature (Cloudflare
+    # 1010 -> 403, seen live on Render) — an explicit UA is mandatory.
+    assert "python-urllib" not in headers.get("user-agent", "").lower()
+    assert "jhep-backend" in headers.get("user-agent", "").lower()
     payload = json.loads(captured["payload"])
     assert payload["to"] == ["learner@example.com"]
     assert payload["subject"] == "Verify your Job Hackers account"
