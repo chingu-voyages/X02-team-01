@@ -1,11 +1,18 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+)
 
 
 class CertificationCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
     name: str = Field(
         min_length=1,
@@ -54,6 +61,14 @@ class CertificationCreate(BaseModel):
         return normalized
 
 
+class CertificationPublicationUpdate(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    is_published: bool
+
+
 class CertificationOut(BaseModel):
     id: UUID
     name: str
@@ -65,7 +80,10 @@ class CertificationOut(BaseModel):
         "deferred",
     ]
 
+    is_published: bool
+
 
 class CertificationList(BaseModel):
     items: list[CertificationOut]
+
     count: int

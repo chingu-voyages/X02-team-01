@@ -6,8 +6,13 @@ from uuid import UUID
 from sqlalchemy import and_, func
 from sqlmodel import Session, select
 
-from app.models import Category, Certification
-from app.repositories.question_eligibility import eligible_exam_questions_statement
+from app.models import (
+    Category,
+    Certification,
+)
+from app.repositories.question_eligibility import (
+    eligible_exam_questions_statement,
+)
 
 
 @dataclass(frozen=True)
@@ -22,9 +27,12 @@ class AvailableCategory:
 
 
 class SQLModelCategoryRepository:
-    """Retrieve published categories with a threshold and an eligible pool."""
+    """Retrieve published learner-visible categories."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+    ) -> None:
         self._session = session
 
     def list_available(
@@ -32,16 +40,9 @@ class SQLModelCategoryRepository:
         *,
         certification_id: UUID | None = None,
     ) -> list[AvailableCategory]:
-        """List available categories without creating or modifying attempts.
-
-        Availability means at least one eligible question, not a guarantee
-        that an arbitrary requested exam length can be fulfilled. Exam
-        creation must recheck availability and the requested size.
-
-        The count is the full eligible pool, not limited by the maximum
-        number of questions permitted in a single exam.
-        """
+        """List categories that are currently available to learners."""
         eligible = eligible_exam_questions_statement().subquery()
+
         counts = (
             select(
                 eligible.c.certification_id,
@@ -51,7 +52,10 @@ class SQLModelCategoryRepository:
                 ),
             )
             .where(eligible.c.category_id.is_not(None))
-            .group_by(eligible.c.certification_id, eligible.c.category_id)
+            .group_by(
+                eligible.c.certification_id,
+                eligible.c.category_id,
+            )
             .subquery()
         )
 
@@ -64,7 +68,10 @@ class SQLModelCategoryRepository:
                 counts.c.available_question_count,
             )
             .select_from(Category)
-            .join(Certification, Certification.id == Category.certification_id)
+            .join(
+                Certification,
+                Certification.id == Category.certification_id,
+            )
             .join(
                 counts,
                 and_(
@@ -73,6 +80,7 @@ class SQLModelCategoryRepository:
                 ),
             )
             .where(
+                Certification.is_published.is_(True),
                 Category.is_published.is_(True),
                 Certification.passing_threshold_pct.is_not(None),
                 counts.c.available_question_count > 0,
@@ -84,21 +92,20 @@ class SQLModelCategoryRepository:
                 Category.id,
             )
         )
+
         if certification_id is not None:
             statement = statement.where(Category.certification_id == certification_id)
 
-        # Do not flush unrelated pending ORM changes during a catalog read.
-        # This method deliberately neither commits nor rolls back its caller.
         with self._session.no_autoflush:
             rows = self._session.exec(statement).all()
 
         return [
             AvailableCategory(
                 id=row.id,
-                certification_id=row.certification_id,
+                certification_id=(row.certification_id),
                 name=row.name,
-                certification_name=row.certification_name,
-                available_question_count=row.available_question_count,
+                certification_name=(row.certification_name),
+                available_question_count=(row.available_question_count),
             )
             for row in rows
         ]

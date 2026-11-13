@@ -3,7 +3,12 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    status,
+)
 from sqlmodel import Session
 
 from app.api.deps import (
@@ -17,6 +22,7 @@ from app.schemas.admin_certification import (
     CertificationCreate,
     CertificationList,
     CertificationOut,
+    CertificationPublicationUpdate,
 )
 from app.schemas.admin_question import (
     AdminAnswerOptionOut,
@@ -34,8 +40,10 @@ from app.schemas.question_retirement import (
 )
 from app.services.admin_certification_service import (
     CertificationCodeConflictError,
+    CertificationNotFoundError,
     create_certification,
     list_certifications,
+    set_certification_publication,
 )
 from app.services.admin_question_service import (
     QuestionBankDetails,
@@ -63,15 +71,28 @@ router = APIRouter(
 )
 
 
+def _certification_response(
+    certification,
+) -> CertificationOut:
+    return CertificationOut(
+        id=certification.id,
+        name=certification.name,
+        code=certification.code,
+        passing_threshold_pct=(certification.passing_threshold_pct),
+        feedback_mode=(certification.feedback_mode),
+        is_published=(certification.is_published),
+    )
+
+
 def _question_detail_response(
     detail: QuestionBankDetails,
 ) -> QuestionBankDetail:
     return QuestionBankDetail(
         question_id=detail.question_id,
-        question_version_id=detail.question_version_id,
+        question_version_id=(detail.question_version_id),
         version_number=detail.version_number,
-        certification_id=detail.certification_id,
-        certification_name=detail.certification_name,
+        certification_id=(detail.certification_id),
+        certification_name=(detail.certification_name),
         category_id=detail.category_id,
         category_name=detail.category_name,
         difficulty=detail.difficulty,
@@ -80,20 +101,20 @@ def _question_detail_response(
         allows_multiple_answers=(detail.allows_multiple_answers),
         explanation=detail.explanation,
         review_status=detail.review_status,
-        publication_status=detail.publication_status,
+        publication_status=(detail.publication_status),
         is_flagged=detail.is_flagged,
         created_by_id=detail.created_by_id,
-        submitted_by_id=detail.submitted_by_id,
+        submitted_by_id=(detail.submitted_by_id),
         last_updated=detail.last_updated,
         options=[
             AdminAnswerOptionOut(
                 position=option.position,
-                option_text=option.option_text,
-                is_correct=option.is_correct,
+                option_text=(option.option_text),
+                is_correct=(option.is_correct),
             )
             for option in detail.options
         ],
-        expected_answer=detail.expected_answer,
+        expected_answer=(detail.expected_answer),
     )
 
 
@@ -110,16 +131,7 @@ def list_managed_certifications(
     records = list_certifications(session)
 
     return CertificationList(
-        items=[
-            CertificationOut(
-                id=item.id,
-                name=item.name,
-                code=item.code,
-                passing_threshold_pct=(item.passing_threshold_pct),
-                feedback_mode=item.feedback_mode,
-            )
-            for item in records
-        ],
+        items=[_certification_response(item) for item in records],
         count=len(records),
     )
 
@@ -147,17 +159,42 @@ def create_managed_certification(
         )
     except CertificationCodeConflictError as exc:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=(status.HTTP_409_CONFLICT),
             detail=str(exc),
         ) from exc
 
-    return CertificationOut(
-        id=certification.id,
-        name=certification.name,
-        code=certification.code,
-        passing_threshold_pct=(certification.passing_threshold_pct),
-        feedback_mode=certification.feedback_mode,
-    )
+    return _certification_response(certification)
+
+
+@router.patch(
+    "/certifications/{certification_id}/publication",
+    response_model=CertificationOut,
+)
+def update_certification_publication(
+    certification_id: UUID,
+    payload: CertificationPublicationUpdate,
+    _administrator: Annotated[
+        User,
+        Depends(require_administrator),
+    ],
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
+) -> CertificationOut:
+    try:
+        certification = set_certification_publication(
+            session,
+            certification_id,
+            is_published=(payload.is_published),
+        )
+    except CertificationNotFoundError as exc:
+        raise HTTPException(
+            status_code=(status.HTTP_404_NOT_FOUND),
+            detail="Certification not found",
+        ) from exc
+
+    return _certification_response(certification)
 
 
 @router.get(
@@ -182,21 +219,21 @@ def list_managed_questions(
     return QuestionBankList(
         items=[
             QuestionBankItem(
-                question_id=item.question_id,
+                question_id=(item.question_id),
                 question_version_id=(item.question_version_id),
-                version_number=item.version_number,
+                version_number=(item.version_number),
                 question_preview=(item.question_preview),
                 certification_id=(item.certification_id),
                 certification_name=(item.certification_name),
-                category_id=item.category_id,
-                category_name=item.category_name,
+                category_id=(item.category_id),
+                category_name=(item.category_name),
                 difficulty=item.difficulty,
-                question_type=item.question_type,
-                review_status=item.review_status,
+                question_type=(item.question_type),
+                review_status=(item.review_status),
                 publication_status=(item.publication_status),
-                is_flagged=item.is_flagged,
-                created_by_id=item.created_by_id,
-                last_updated=item.last_updated,
+                is_flagged=(item.is_flagged),
+                created_by_id=(item.created_by_id),
+                last_updated=(item.last_updated),
             )
             for item in records
         ],
@@ -227,7 +264,7 @@ def get_managed_question(
         )
     except QuestionBankNotFoundError as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=(status.HTTP_404_NOT_FOUND),
             detail="Question not found",
         ) from exc
 
@@ -260,25 +297,25 @@ def edit_managed_question(
 
     except QuestionBankNotFoundError as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=(status.HTTP_404_NOT_FOUND),
             detail="Question not found",
         ) from exc
 
     except QuestionPublishedRevisionForbiddenError as exc:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=(status.HTTP_403_FORBIDDEN),
             detail=str(exc),
         ) from exc
 
     except QuestionDraftNotEditableError as exc:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=(status.HTTP_409_CONFLICT),
             detail=str(exc),
         ) from exc
 
     except QuestionDraftScopeError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=(status.HTTP_422_UNPROCESSABLE_CONTENT),
             detail=str(exc),
         ) from exc
 
@@ -309,13 +346,13 @@ def publish_managed_question(
 
     except QuestionBankNotFoundError as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=(status.HTTP_404_NOT_FOUND),
             detail="Question not found",
         ) from exc
 
     except QuestionDraftNotPublishableError as exc:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=(status.HTTP_409_CONFLICT),
             detail=str(exc),
         ) from exc
 
@@ -343,18 +380,18 @@ def reject_managed_question(
             session,
             question_id,
             actor=administrator,
-            review_note=payload.review_note,
+            review_note=(payload.review_note),
         )
 
     except QuestionBankNotFoundError as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=(status.HTTP_404_NOT_FOUND),
             detail="Question not found",
         ) from exc
 
     except QuestionDraftNotRejectableError as exc:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=(status.HTTP_409_CONFLICT),
             detail=str(exc),
         ) from exc
 
@@ -387,20 +424,20 @@ def retire_managed_question(
 
     except QuestionRetirementNotFoundError as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=(status.HTTP_404_NOT_FOUND),
             detail="Question not found",
         ) from exc
 
     except QuestionNotRetirableError as exc:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=(status.HTTP_409_CONFLICT),
             detail=str(exc),
         ) from exc
 
     return QuestionRetirementResponse(
-        question_id=result.question_id,
+        question_id=(result.question_id),
         retired_version_ids=list(result.retired_version_ids),
-        already_retired=result.already_retired,
+        already_retired=(result.already_retired),
     )
 
 
@@ -429,14 +466,14 @@ def create_draft_question(
 
     except QuestionDraftScopeError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=(status.HTTP_422_UNPROCESSABLE_CONTENT),
             detail=str(exc),
         ) from exc
 
     return QuestionDraftCreated(
-        question_id=created.question_id,
+        question_id=(created.question_id),
         question_version_id=(created.question_version_id),
-        version_number=created.version_number,
-        review_status=created.review_status,
+        version_number=(created.version_number),
+        review_status=(created.review_status),
         publication_status=(created.publication_status),
     )
