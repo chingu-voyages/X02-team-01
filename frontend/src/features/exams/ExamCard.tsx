@@ -7,6 +7,7 @@ import { getExam, submitAnswer } from "@/lib/exam-api";
 import { submitExam } from "@/lib/exam-submission";
 import { useDemoSession } from "@/features/auth/AuthProvider";
 import QuestionRenderer from "./QuestionRenderer";
+import PageHeader from "@/components/layouts/PageHeader";
 
 import type { AnswerSubmission, ExamQuestionWithResponse, FeedbackEntry } from "@/types/exam-api.types";
 import { Button } from "@/components/ui/button";
@@ -340,6 +341,17 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     }
   }
 
+  const answeredStatus = isSubmitted
+    ? typeof currentFeedback?.is_correct === "boolean" ||
+      Boolean(currentFeedback?.explanation)
+      ? "Answer submitted. Feedback shown below."
+      : "Answer submitted. Answer locked for this attempt."
+    : isMultiple
+      ? "Choose all that apply, then submit your answer."
+      : isShortAnswer
+        ? "Type your answer, then submit."
+        : "Choose an answer, then submit.";
+
   return (
     <div className="w-full space-y-6">
       {/* Same global-style navigation treatment as Categories and Results. */}
@@ -373,19 +385,12 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         </div>
       </nav>
 
-      <header className="space-y-2">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-          Practice exam{" "}
-          <span className="font-medium text-[#687178]">· In progress</span>
-        </h1>
-        <p className="text-sm text-[#687178]">
-          Question {currentQuestionIndex + 1} of {questions.length}
-          <span className="mx-2" aria-hidden="true">
-            ·
-          </span>
-          {answeredStatus}
-        </p>
-      </header>
+      <PageHeader
+        title="Practice exam"
+        status="In progress"
+        stepLabel={`Question ${currentQuestionIndex + 1} of ${questions.length}`}
+        subtitle={answeredStatus}
+      />
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
         <QuestionRenderer
