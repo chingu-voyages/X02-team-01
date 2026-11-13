@@ -1,14 +1,16 @@
 import type { NextConfig } from "next";
 
 // Browser login/registration requests use the same-origin
-// `/api/v1/...` path. Next proxies them to FastAPI.
+// `/api/v1/...` path. The same-origin proxy lives in
+// src/app/api/v1/[...path]/route.ts, which reads BACKEND_PROXY_TARGET
+// per request (defaults to the local FastAPI port).
 //
-// Keep the default aligned with NEXT_PUBLIC_API_URL so both
-// authentication requests and authenticated API requests use
-// the same local backend port.
-const backendProxyTarget =
-  process.env.BACKEND_PROXY_TARGET ??
-  "http://127.0.0.1:8000";
+// Why not next.config rewrites: their destinations are baked into the
+// build's routes manifest. A deployment whose build environment lacks
+// BACKEND_PROXY_TARGET (e.g. Render's docker runtime does not pass env
+// vars into builds) permanently proxies to the localhost fallback —
+// the runtime env var is never consulted. The route handler reads the
+// env at request time, so the target is genuinely runtime-configurable.
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -25,17 +27,6 @@ const nextConfig: NextConfig = {
         as: "*.css",
       },
     },
-  },
-
-  async rewrites() {
-    return [
-      {
-        source:
-          "/api/v1/:path*",
-        destination:
-          `${backendProxyTarget}/api/v1/:path*`,
-      },
-    ];
   },
 };
 
