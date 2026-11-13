@@ -424,3 +424,25 @@ def test_settings_tolerate_env_values_with_stray_whitespace(monkeypatch):
 
         env.setenv("EMAIL_DELIVERY", "")
         assert Settings(_env_file=None).email_delivery == "console"
+
+
+def test_settings_strip_email_credentials_with_stray_whitespace(monkeypatch):
+    """Regression: SMTP credentials pasted with a trailing newline must not
+    fail provider auth at send time."""
+    from app.core.config import Settings
+
+    with monkeypatch.context() as env:
+        for key in (
+            "POSTGRES_DB",
+            "POSTGRES_USER",
+            "POSTGRES_PASSWORD",
+            "JWT_SECRET_KEY",
+        ):
+            env.setenv(key, "ci")
+        env.setenv("EMAIL_SMTP_PASSWORD", "app-password-16\n")
+        env.setenv("EMAIL_SMTP_USER", "sender@gmail.com\n")
+        env.setenv("EMAIL_FROM", "sender@gmail.com\n")
+        settings = Settings(_env_file=None)
+        assert settings.email_smtp_password == "app-password-16"
+        assert settings.email_smtp_user == "sender@gmail.com"
+        assert settings.email_from == "sender@gmail.com"

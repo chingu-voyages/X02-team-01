@@ -63,6 +63,22 @@ class Settings(BaseSettings):
             value = value.strip()
         return value or "http://127.0.0.1:8010/api/v1/auth/verify"
 
+    # SMTP/API credentials pasted into a hosting dashboard with a trailing
+    # newline would fail provider auth at send time (a confusing silent
+    # failure) — strip them the same way.
+    @field_validator(
+        "email_from",
+        "email_smtp_user",
+        "email_smtp_password",
+        "email_api_key",
+        mode="before",
+    )
+    @classmethod
+    def _strip_email_credential_whitespace(cls, value):  # noqa: N805
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
     # JHEP-24: verification-link TTL + resend throttle (env-configurable
     # rather than hardcoded — the board's policy table drives the values).
     verify_token_ttl_hours: int = Field(default=24, ge=1, le=168)
