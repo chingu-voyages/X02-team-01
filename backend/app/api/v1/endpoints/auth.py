@@ -27,10 +27,12 @@ module.
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.api.deps import get_current_subject
+from app.core.config import settings
 from app.core.security import (
     create_access_token_for_learner,
     verify_password,
@@ -125,22 +127,30 @@ def register(
     return _learner_out(user)
 
 
-@router.get("/verify", response_model=LearnerOut)
+@router.get("/verify")
 def verify(
     token: str,
     service: Annotated[RegistrationService, Depends(get_registration_service)],
-) -> LearnerOut:
-    """Consume the emailed one-time activation link (AC2)."""
-    try:
-        user = service.activate(raw_token=token)
-    except InvalidVerificationTokenError as exc:
-        raise CodedAuthError(
-            status.HTTP_400_BAD_REQUEST,
-            "INVALID_OR_EXPIRED_TOKEN",
-            str(exc),
-        ) from exc
+) -> RedirectResponse:
+    """Consume the emailed one-time activation link (AC2).
 
-    return _learner_out(user)
+    The link is opened by a human in a browser, so both outcomes land on
+    the login screen: `?verified=1` on success, `?verification=invalid`
+    for unknown/expired/already-used tokens.
+    """
+    login_screen = f"{settings.frontend_base_url}/login"
+    try:
+        service.activate(raw_token=token)
+    except InvalidVerificationTokenError:
+        return RedirectResponse(
+            f"{login_screen}?verification=invalid",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    return RedirectResponse(
+        f"{login_screen}?verified=1",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.post("/resend-verification", status_code=status.HTTP_200_OK)
