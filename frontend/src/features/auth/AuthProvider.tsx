@@ -113,6 +113,8 @@ export function AuthProvider({
   );
 
   const logout = useCallback(() => {
+    const stored = getStoredToken();
+
     try {
       sessionStorage.removeItem(
         tokenStorageKey,
@@ -124,6 +126,21 @@ export function AuthProvider({
         "Failed to clear sessionStorage",
         error,
       );
+    }
+
+    // JHEP-25 AC2: acknowledge the logout with the backend
+    // (stateless — the server keeps no session, so the
+    // client-side clear above is the source of truth).
+    // Fire-and-forget: the redirect must never wait on
+    // the call, and a failed ack is not an error for the
+    // learner.
+    if (stored) {
+      void fetch("/api/v1/auth/logout", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${stored}`,
+        },
+      }).catch(() => undefined);
     }
 
     router.replace("/login");

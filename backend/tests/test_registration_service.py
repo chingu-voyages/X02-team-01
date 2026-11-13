@@ -511,3 +511,61 @@ def test_resend_survives_a_failing_email_transport(
     )
     assert response.status_code == 200
     assert "has been sent" in response.json()["message"]
+
+
+def _login_token(client, email: str) -> str:
+    response = client.post(
+        "/api/v1/auth/login", json={"email": email, "password": "Str0ngEn0ugh1"}
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["access_token"]
+
+
+def test_logout_returns_stateless_ack(register_api, sqlite_session):
+    """JHEP-25 AC2: a valid learner session gets the stateless ack."""
+    from app.db.session import get_session
+
+    client, service = register_api
+    # login reads users through the app's session dependency — point it
+    # at the same SQLite session the service wrote to.
+    client.app.dependency_overrides[get_session] = lambda: sqlite_session
+    try:
+        service.register(
+            email="logout-ack@example.com",
+            full_name="Logout",
+            password="Str0ngEn0ugh1",
+        )
+        # login requires a verified account — activate the learner the
+        # same way the emailed link would.
+        learner = sqlite_session.exec(
+            select(User).where(User.email == "logout-ack@example.com")
+        ).one()
+        learner.is_verified = True
+        sqlite_session.add(learner)
+        sqlite_session.commit()
+        token = _login_token(client, "logout-ack@example.com")
+    finally:
+        client.app.dependency_overrides.pop(get_session, None)
+
+    response = client.post(
+        "/api/v1/auth/logout",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["message"] == "Logged out"
+    assert "logged_out_at" in body
+
+
+def test_logout_requires_a_valid_session(register_api):
+    """No token / a junk token -> the coded 401, like every auth path."""
+    client, _ = register_api
+
+    no_token = client.post("/api/v1/auth/logout")
+    assert no_token.status_code == 401
+
+    junk = client.post(
+        "/api/v1/auth/logout",
+        headers={"Authorization": "Bearer not-a-real-token"},
+    )
+    assert junk.status_code == 401
