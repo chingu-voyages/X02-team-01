@@ -11,6 +11,7 @@ import PageHeader from "@/components/layouts/PageHeader";
 
 import type { AnswerSubmission, ExamQuestionWithResponse, FeedbackEntry } from "@/types/exam-api.types";
 import { Button } from "@/components/ui/button";
+import Navbar from "@/components/layouts/Navbar";
 
 type LoadStatus = "loading" | "ready" | "error";
 
@@ -354,37 +355,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
 
   return (
     <div className="w-full space-y-6">
-      {/* Same global-style navigation treatment as Categories and Results. */}
-      <nav
-        aria-label="Main navigation"
-        className="flex flex-wrap items-center gap-x-7 gap-y-3 rounded-md border border-[#d4d8db] bg-white px-6 py-5"
-      >
-        <span className="text-sm font-extrabold tracking-tight">
-          THE JOB HACKERS
-        </span>
-        <div className="flex flex-wrap items-center gap-4 text-sm">
-          <span className="font-semibold text-[#303639]">Exams</span>
-          <span className="text-gray-300" aria-hidden="true">
-            •
-          </span>
-          <span className="text-gray-400" title="Coming soon">
-            My History
-          </span>
-          <span className="text-gray-300" aria-hidden="true">
-            •
-          </span>
-          <span className="text-gray-400" title="Coming soon">
-            Journal
-          </span>
-          <span className="text-gray-300" aria-hidden="true">
-            •
-          </span>
-          <span className="text-gray-400" title="Coming soon">
-            Account
-          </span>
-        </div>
-      </nav>
-
+      <Navbar />
       <PageHeader
         title="Practice exam"
         status="In progress"
