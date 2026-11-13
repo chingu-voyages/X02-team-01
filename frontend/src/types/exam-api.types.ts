@@ -97,3 +97,10 @@ export type AnswerSubmission = {
   selected_option_ids?: string[] | null;
   text_response?: string | null;
 };
+
+export interface FeedbackEntry {
+  feedback_released: boolean;
+  is_correct: boolean | null;
+  correct_option_ids: string[];
+  explanation?: string | null;
+}
