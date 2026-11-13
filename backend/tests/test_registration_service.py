@@ -455,3 +455,55 @@ def test_settings_strip_email_credentials_with_stray_whitespace(monkeypatch):
         assert settings.email_smtp_password == "app-password-16"
         assert settings.email_smtp_user == "sender@gmail.com"
         assert settings.email_from == "sender@gmail.com"
+
+
+def test_register_survives_a_failing_email_transport(
+    register_api, sqlite_session, monkeypatch
+):
+    """Regression (Render live incident): a refused/broken transport must
+    NOT turn registration into a 500 — the account is created and pending,
+    and the failure is logged for operators."""
+    client, service = register_api
+
+    class ExplodingSender:
+        def send(self, *, to: str, subject: str, body: str) -> None:
+            raise RuntimeError("smtp refused (simulated provider outage)")
+
+    monkeypatch.setattr(registration_module, "email_sender", ExplodingSender)
+    monkeypatch.setattr(registration_module, "RESEND_MIN_INTERVAL_SECONDS", 0)
+
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "resilient@example.com",
+            "full_name": "Resilient",
+            "password": "Str0ngEn0ugh1",
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["status"] == "pending_verification"
+
+
+def test_resend_survives_a_failing_email_transport(
+    register_api, sqlite_session, monkeypatch
+):
+    client, service = register_api
+    service.register(
+        email="resend-fail@example.com",
+        full_name="Resend",
+        password="Str0ngEn0ugh1",
+    )
+
+    class ExplodingSender:
+        def send(self, *, to: str, subject: str, body: str) -> None:
+            raise RuntimeError("smtp refused")
+
+    monkeypatch.setattr(registration_module, "email_sender", ExplodingSender)
+    monkeypatch.setattr(registration_module, "RESEND_MIN_INTERVAL_SECONDS", 0)
+
+    response = client.post(
+        "/api/v1/auth/resend-verification",
+        json={"email": "resend-fail@example.com"},
+    )
+    assert response.status_code == 200
+    assert "has been sent" in response.json()["message"]
