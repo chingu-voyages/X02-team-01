@@ -18,6 +18,12 @@ from app.api.deps import (
 )
 from app.db.session import get_session
 from app.models.user import User
+from app.schemas.admin_category import (
+    AdminCategoryList,
+    AdminCategoryOut,
+    CategoryCreate,
+    CategoryPublicationUpdate,
+)
 from app.schemas.admin_certification import (
     CertificationCreate,
     CertificationList,
@@ -37,6 +43,14 @@ from app.schemas.admin_question import (
 from app.schemas.question_retirement import (
     QuestionRetirementRequest,
     QuestionRetirementResponse,
+)
+from app.services.admin_category_service import (
+    AdminCategoryNotFoundError,
+    CategoryCertificationNotFoundError,
+    CategoryNameConflictError,
+    create_category,
+    list_categories,
+    set_category_publication,
 )
 from app.services.admin_certification_service import (
     CertificationCodeConflictError,
@@ -69,6 +83,18 @@ from app.services.question_retirement_service import (
 router = APIRouter(
     dependencies=[Depends(require_contributor_or_administrator)],
 )
+
+
+def _category_response(
+    category,
+) -> AdminCategoryOut:
+    return AdminCategoryOut(
+        id=category.id,
+        certification_id=(category.certification_id),
+        certification_name=(category.certification_name),
+        name=category.name,
+        is_published=(category.is_published),
+    )
 
 
 def _certification_response(
@@ -198,6 +224,103 @@ def update_certification_publication(
 
 
 @router.get(
+    "/categories",
+    response_model=AdminCategoryList,
+)
+def list_managed_categories(
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
+    certification_id: UUID | None = None,
+) -> AdminCategoryList:
+    records = list_categories(
+        session,
+        certification_id=(certification_id),
+    )
+
+    return AdminCategoryList(
+        items=[_category_response(item) for item in records],
+        count=len(records),
+    )
+
+
+@router.post(
+    "/categories",
+    response_model=AdminCategoryOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_managed_category(
+    payload: CategoryCreate,
+    _administrator: Annotated[
+        User,
+        Depends(require_administrator),
+    ],
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
+) -> AdminCategoryOut:
+    try:
+        category = create_category(
+            session,
+            payload,
+        )
+
+    except CategoryCertificationNotFoundError as exc:
+        raise HTTPException(
+            status_code=(status.HTTP_404_NOT_FOUND),
+            detail="Certification not found",
+        ) from exc
+
+    except CategoryNameConflictError as exc:
+        raise HTTPException(
+            status_code=(status.HTTP_409_CONFLICT),
+            detail=str(exc),
+        ) from exc
+
+    return _category_response(category)
+
+
+@router.patch(
+    "/categories/{category_id}/publication",
+    response_model=AdminCategoryOut,
+)
+def update_category_publication(
+    category_id: UUID,
+    payload: CategoryPublicationUpdate,
+    _administrator: Annotated[
+        User,
+        Depends(require_administrator),
+    ],
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
+) -> AdminCategoryOut:
+    try:
+        category = set_category_publication(
+            session,
+            category_id,
+            is_published=(payload.is_published),
+        )
+
+    except AdminCategoryNotFoundError as exc:
+        raise HTTPException(
+            status_code=(status.HTTP_404_NOT_FOUND),
+            detail="Category not found",
+        ) from exc
+
+    except CategoryCertificationNotFoundError as exc:
+        raise HTTPException(
+            status_code=(status.HTTP_404_NOT_FOUND),
+            detail="Certification not found",
+        ) from exc
+
+    return _category_response(category)
+
+
+@router.get(
     "/questions",
     response_model=QuestionBankList,
 )
@@ -262,6 +385,7 @@ def get_managed_question(
             question_id,
             actor=current_user,
         )
+
     except QuestionBankNotFoundError as exc:
         raise HTTPException(
             status_code=(status.HTTP_404_NOT_FOUND),
