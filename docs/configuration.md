@@ -67,3 +67,30 @@ network.
    merge conflicts.
 3. Document it in the table above.
 4. If it's a secret, give it **no default** so missing values fail loudly.
+
+## Email delivery (JHEP-24)
+
+Registration verification emails are configured entirely through the
+environment — no code changes are needed when the provider's credentials
+arrive.
+
+| Variable | Used by | Values | Notes |
+|---|---|---|---|
+| `EMAIL_DELIVERY` | backend | `console` / `mailpit` / `smtp` / `resend` | **Required to change the transport.** `console` = the link logged (tests/CI). `mailpit` = the local catcher. `smtp` = a real external transport. `resend` = Resend's API. |
+| `EMAIL_FROM` | backend | any address | The From header. |
+| `EMAIL_SMTP_HOST` / `EMAIL_SMTP_PORT` | backend | hostname:port | `mailpit` and `smtp` use these. Gmail SMTP: `smtp.gmail.com:587`. |
+| `EMAIL_SMTP_USER` / `EMAIL_SMTP_PASSWORD` | backend | credentials | `smtp` auth — for Gmail, an **app password** (never the account password). Never committed. |
+| `EMAIL_SMTP_STARTTLS` | backend | `true`/`false` | `smtp` security: STARTTLS (587) vs SSL (465). |
+| `EMAIL_API_KEY` | backend | API key | `resend` only. Never committed. |
+| `VERIFICATION_LINK_BASE` | backend | URL | The verification link's domain (the backend's own verify endpoint). |
+| `VERIFY_TOKEN_TTL_HOURS` | backend | 1–168 (default 24) | The verification link's lifetime. |
+| `RESEND_INTERVAL_SECONDS` | backend | 1–86400 (default 60) | The resend throttle. |
+
+**Fail-fast:** a transport selected in `EMAIL_DELIVERY` whose credentials
+are missing raises at startup — a misconfigured production email blocks
+launch rather than silently logging links.
+
+**The Job Hackers' onboarding:** when their SMTP credentials arrive, set
+`EMAIL_DELIVERY=smtp` + their host/port/user/password in `.env` and
+restart — every verification email flows to real inboxes with zero code
+changes.

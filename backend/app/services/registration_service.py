@@ -25,8 +25,8 @@ from app.services.email_delivery import email_sender
 
 MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 128
-VERIFY_LINK_TTL_HOURS = 24
-RESEND_MIN_INTERVAL_SECONDS = 60
+VERIFY_LINK_TTL_HOURS = settings.verify_token_ttl_hours
+RESEND_MIN_INTERVAL_SECONDS = settings.resend_interval_seconds
 
 
 class EmailTakenError(Exception):

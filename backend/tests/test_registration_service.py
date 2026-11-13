@@ -1,5 +1,6 @@
 """JHEP-24 registration service: policy, roles, verification semantics."""
 
+import json
 import re
 
 import pytest
@@ -241,3 +242,161 @@ def test_full_name_is_trimmed_and_required(sqlite_session):
         UserRegistrationIn(
             full_name="   ", email="x@example.com", password="Str0ngEn0ugh1"
         )
+
+
+# --- JHEP-24: the email architecture (adapters, env matrix, fail-fast) ---
+
+
+def test_console_sender_logs_without_a_mail_server(caplog):
+    """The default transport: the link is logged deterministically."""
+    import logging
+
+    from app.services.email_delivery import ConsoleSender
+
+    with caplog.at_level(logging.INFO):
+        ConsoleSender().send(
+            to="learner@example.com",
+            subject="Verify your account",
+            body="http://link/token",
+        )
+    assert "learner@example.com" in caplog.text
+    assert "http://link/token" in caplog.text
+    assert "password" not in caplog.text.lower()
+
+
+def test_factory_selects_by_settings(monkeypatch):
+    """The env matrix: EMAIL_DELIVERY drives the adapter selection."""
+    from app.core.config import settings
+    from app.services.email_delivery import (
+        ConsoleSender,
+        MailpitSender,
+        email_sender,
+    )
+
+    monkeypatch.setattr(settings, "email_delivery", "console")
+    assert isinstance(email_sender(), ConsoleSender)
+
+    monkeypatch.setattr(settings, "email_delivery", "mailpit")
+    assert isinstance(email_sender(), MailpitSender)
+
+
+def test_fail_fast_on_missing_smtp_credentials(monkeypatch):
+    """Fail-fast: EMAIL_DELIVERY=smtp without credentials raises at factory
+    time (a misconfigured production email blocks launch)."""
+    import pytest as _pytest
+
+    from app.core.config import settings
+    from app.services.email_delivery import email_sender
+
+    monkeypatch.setattr(settings, "email_delivery", "smtp")
+    monkeypatch.setattr(settings, "email_smtp_user", "")
+    monkeypatch.setattr(settings, "email_smtp_password", "")
+    with _pytest.raises(RuntimeError, match="EMAIL_SMTP_USER"):
+        email_sender()
+
+    # credentials present -> the adapter constructs (no send attempted)
+    monkeypatch.setattr(settings, "email_smtp_user", "demo@example.com")
+    monkeypatch.setattr(settings, "email_smtp_password", "app-password")
+    sender = email_sender()
+    assert type(sender).__name__ == "SmtpSender"
+
+
+def test_fail_fast_on_missing_resend_key(monkeypatch):
+    from app.core.config import settings
+    from app.services.email_delivery import email_sender
+
+    monkeypatch.setattr(settings, "email_delivery", "resend")
+    monkeypatch.setattr(settings, "email_api_key", "")
+    with pytest.raises(RuntimeError, match="EMAIL_API_KEY"):
+        email_sender()
+
+
+def test_smtp_sender_uses_starttls_and_auth(monkeypatch):
+    """The SMTP adapter: STARTTLS + login by settings (no real send)."""
+    from app.services import email_delivery as ed
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout=None):
+            self.host = host
+            self.port = port
+            self.calls = []
+
+        def ehlo(self):
+            self.calls.append("ehlo")
+
+        def starttls(self):
+            self.calls.append("starttls")
+
+        def login(self, user, password):
+            self.calls.append(("login", user))
+
+        def send_message(self, message):
+            self.calls.append(("send", message["To"], message["Subject"]))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(ed.settings, "email_smtp_starttls", True)
+    monkeypatch.setattr(ed.settings, "email_smtp_user", "sender@gmail.com")
+    monkeypatch.setattr(ed.settings, "email_smtp_password", "app-password-16")
+    fake = FakeSMTP("smtp.gmail.com", 587)
+    monkeypatch.setattr(ed.smtplib, "SMTP", lambda *a, **k: fake)
+
+    ed.SmtpSender().send(
+        to="learner@example.com",
+        subject="Verify your Job Hackers account",
+        body="Welcome!",
+    )
+    assert "ehlo" in fake.calls
+    assert "starttls" in fake.calls
+    assert ("login", "sender@gmail.com") in fake.calls
+    sent = [c for c in fake.calls if c[0] == "send"][0]
+    assert sent[1] == "learner@example.com"
+    assert sent[2] == "Verify your Job Hackers account"
+    # the password never appears in the message payload
+    assert "app-password" not in str(fake.calls)
+
+
+def test_resend_sender_posts_the_payload(monkeypatch):
+    """The Resend adapter: one HTTPS POST with the API key; the payload
+    carries from/to/subject/text (never the credentials)."""
+    import io
+
+    from app.services import email_delivery as ed
+
+    class FakeResponse(io.BytesIO):
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    captured = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["url"] = request.full_url
+        captured["headers"] = dict(request.header_items())
+        captured["payload"] = request.data
+        return FakeResponse(b'{"id":"re_123"}')
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(ed.settings, "email_api_key", "re_test_key")
+
+    ed.ResendSender().send(
+        to="learner@example.com",
+        subject="Verify your Job Hackers account",
+        body="Welcome, John Doe!",
+    )
+    assert captured["url"] == "https://api.resend.com/emails"
+    headers = {k.lower(): v for k, v in captured["headers"].items()}
+    assert headers["authorization"] == "Bearer re_test_key"
+    payload = json.loads(captured["payload"])
+    assert payload["to"] == ["learner@example.com"]
+    assert payload["subject"] == "Verify your Job Hackers account"
+    assert payload["text"] == "Welcome, John Doe!"
+    assert "re_test_key" not in captured["payload"].decode()
