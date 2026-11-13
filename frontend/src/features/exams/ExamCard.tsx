@@ -9,20 +9,19 @@ import { useDemoSession } from "@/features/auth/AuthProvider";
 import QuestionRenderer from "./QuestionRenderer";
 import PageHeader from "@/components/layouts/PageHeader";
 
-import type { AnswerSubmission, ExamQuestionWithResponse, FeedbackEntry } from "@/types/exam-api.types";
+import type {
+  AnswerSubmission,
+  ExamQuestionWithResponse,
+  FeedbackEntry,
+} from "@/types/exam-api.types";
 import { Button } from "@/components/ui/button";
 import Navbar from "@/components/layouts/Navbar";
+import ExamSidebar from "./ExamSidebar";
 
 type LoadStatus = "loading" | "ready" | "error";
 
 interface ExamCardProps {
   attemptId: string;
-}
-
-function letterForPosition(position: number) {
-  return position >= 1 && position <= 26
-    ? String.fromCharCode(64 + position)
-    : String(position);
 }
 
 export default function ExamCard({ attemptId }: ExamCardProps) {
@@ -175,7 +174,6 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
   const isSubmitted = submittedMap[questionId] || false;
   const currentFeedback = feedbackMap[questionId];
   const textValue = textAnswersMap[questionId] ?? "";
-  const isLastQuestion = currentQuestionIndex >= questions.length - 1;
   const submittedCount = questions.filter(
     (question) => submittedMap[question.id],
   ).length;
@@ -185,10 +183,6 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
   const firstUnsubmittedIndex = questions.findIndex(
     (question) => !submittedMap[question.id],
   );
-  const selectedLetters = currentQuestion.options
-    .filter((option) => currentSelected.includes(option.id))
-    .map((option) => letterForPosition(option.position))
-    .join(", ");
 
   function handleSelect(optionId: string) {
     if (isSubmitted || isSubmitting || isFinishing) return;
@@ -228,7 +222,6 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     const answer: AnswerSubmission = isShortAnswer
       ? { selected_option_ids: null, text_response: textValue.trim() || null }
       : { selected_option_ids: currentSelected, text_response: null };
-   
 
     if (
       !answer.text_response &&
@@ -395,61 +388,20 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           }}
         />
 
-        <aside
-          aria-labelledby="attempt-progress-heading"
-          className="rounded-md border border-[#cbd0d3] bg-white p-5 sm:p-6"
-        >
-          <h2 id="attempt-progress-heading" className="text-base font-bold">
-            Attempt progress
-          </h2>
-          <div className="mt-4 space-y-3 text-sm text-[#56616a]">
-            <p>
-              Question {currentQuestionIndex + 1} / {questions.length}
-            </p>
-            <p>
-              Submitted answers: {submittedCount} / {questions.length}
-            </p>
-            <p>
-              {isSubmitted
-                ? isShortAnswer
-                  ? "Submitted: short answer"
-                  : `Submitted answer${isMultiple ? "s" : ""}: ${selectedLetters || "recorded"}`
-                : "Current question not yet submitted"}
-            </p>
-          </div>
-          <div className="my-5 border-t border-[#e2e5e7]" />
-
-          {isLastQuestion && allQuestionsSubmitted ? (
-            <Button
-              type="button"
-              onClick={handleFinish}
-              disabled={isFinishing || isSubmitting}
-              className="h-10 rounded-md bg-[#343a3e] px-5 text-sm text-white hover:bg-[#1e2427] disabled:opacity-50"
-            >
-              {isFinishing ? "Finishing exam..." : "Finish Exam"}
-            </Button>
-          ) : (
-            <p className="text-sm text-[#687178]">
-              Submit all questions to enable Finish Exam.
-            </p>
-          )}
-
-          {finishError && (
-            <p role="alert" className="mt-3 text-sm text-red-700">
-              {finishError}
-            </p>
-          )}
-
-          {isSubmitted && (
-            <p className="mt-4 text-xs leading-5 text-[#687178]">
-              {typeof currentFeedback?.is_correct === "boolean"
-                ? currentFeedback.is_correct
-                  ? "✓ Correct · Answer locked for this attempt."
-                  : "× Incorrect · Answer locked for this attempt."
-                : "✓ Answer saved · Locked for this attempt."}
-            </p>
-          )}
-        </aside>
+        <ExamSidebar
+          currentQuestion={currentQuestion}
+          currentQuestionIndex={currentQuestionIndex}
+          totalQuestions={questions.length}
+          submittedCount={submittedCount}
+          selectedOptionIds={currentSelected}
+          isSubmitted={isSubmitted}
+          isSubmitting={isSubmitting}
+          isFinishing={isFinishing}
+          allQuestionsSubmitted={allQuestionsSubmitted}
+          finishError={finishError}
+          feedback={currentFeedback}
+          onFinish={handleFinish}
+        />
       </div>
     </div>
   );
