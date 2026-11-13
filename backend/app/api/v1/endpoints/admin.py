@@ -13,6 +13,11 @@ from app.api.deps import (
 )
 from app.db.session import get_session
 from app.models.user import User
+from app.schemas.admin_certification import (
+    CertificationCreate,
+    CertificationList,
+    CertificationOut,
+)
 from app.schemas.admin_question import (
     AdminAnswerOptionOut,
     QuestionBankDetail,
@@ -26,6 +31,11 @@ from app.schemas.admin_question import (
 from app.schemas.question_retirement import (
     QuestionRetirementRequest,
     QuestionRetirementResponse,
+)
+from app.services.admin_certification_service import (
+    CertificationCodeConflictError,
+    create_certification,
+    list_certifications,
 )
 from app.services.admin_question_service import (
     QuestionBankDetails,
@@ -88,6 +98,69 @@ def _question_detail_response(
 
 
 @router.get(
+    "/certifications",
+    response_model=CertificationList,
+)
+def list_managed_certifications(
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
+) -> CertificationList:
+    records = list_certifications(session)
+
+    return CertificationList(
+        items=[
+            CertificationOut(
+                id=item.id,
+                name=item.name,
+                code=item.code,
+                passing_threshold_pct=(item.passing_threshold_pct),
+                feedback_mode=item.feedback_mode,
+            )
+            for item in records
+        ],
+        count=len(records),
+    )
+
+
+@router.post(
+    "/certifications",
+    response_model=CertificationOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_managed_certification(
+    payload: CertificationCreate,
+    _administrator: Annotated[
+        User,
+        Depends(require_administrator),
+    ],
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
+) -> CertificationOut:
+    try:
+        certification = create_certification(
+            session,
+            payload,
+        )
+    except CertificationCodeConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    return CertificationOut(
+        id=certification.id,
+        name=certification.name,
+        code=certification.code,
+        passing_threshold_pct=(certification.passing_threshold_pct),
+        feedback_mode=certification.feedback_mode,
+    )
+
+
+@router.get(
     "/questions",
     response_model=QuestionBankList,
 )
@@ -101,7 +174,6 @@ def list_managed_questions(
         Depends(get_session),
     ],
 ) -> QuestionBankList:
-    """Return question-bank rows permitted by the manager's role."""
     records = list_question_bank(
         session,
         actor=current_user,
@@ -147,7 +219,6 @@ def get_managed_question(
         Depends(get_session),
     ],
 ) -> QuestionBankDetail:
-    """Return trusted latest-version content for one permitted question."""
     try:
         detail = get_question_bank_details(
             session,
@@ -156,7 +227,7 @@ def get_managed_question(
         )
     except QuestionBankNotFoundError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_404_NOT_FOUND),
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Question not found",
         ) from exc
 
@@ -179,7 +250,6 @@ def edit_managed_question(
         Depends(get_session),
     ],
 ) -> QuestionBankDetail:
-    """Edit a draft or create a new draft revision of active content."""
     try:
         detail = edit_question_draft(
             session,
@@ -190,25 +260,25 @@ def edit_managed_question(
 
     except QuestionBankNotFoundError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_404_NOT_FOUND),
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Question not found",
         ) from exc
 
     except QuestionPublishedRevisionForbiddenError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_403_FORBIDDEN),
+            status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         ) from exc
 
     except QuestionDraftNotEditableError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_409_CONFLICT),
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
 
     except QuestionDraftScopeError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_422_UNPROCESSABLE_CONTENT),
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
@@ -230,7 +300,6 @@ def publish_managed_question(
         Depends(get_session),
     ],
 ) -> QuestionBankDetail:
-    """Approve and publish the latest pending draft version."""
     try:
         detail = publish_question_draft(
             session,
@@ -240,13 +309,13 @@ def publish_managed_question(
 
     except QuestionBankNotFoundError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_404_NOT_FOUND),
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Question not found",
         ) from exc
 
     except QuestionDraftNotPublishableError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_409_CONFLICT),
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
 
@@ -269,7 +338,6 @@ def reject_managed_question(
         Depends(get_session),
     ],
 ) -> QuestionBankDetail:
-    """Reject the latest pending draft version with review feedback."""
     try:
         detail = reject_question_draft(
             session,
@@ -280,13 +348,13 @@ def reject_managed_question(
 
     except QuestionBankNotFoundError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_404_NOT_FOUND),
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Question not found",
         ) from exc
 
     except QuestionDraftNotRejectableError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_409_CONFLICT),
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
 
@@ -309,7 +377,6 @@ def retire_managed_question(
         Depends(get_session),
     ],
 ) -> QuestionRetirementResponse:
-    """Retire an active published question after explicit confirmation."""
     _ = payload.confirm
 
     try:
@@ -320,13 +387,13 @@ def retire_managed_question(
 
     except QuestionRetirementNotFoundError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_404_NOT_FOUND),
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Question not found",
         ) from exc
 
     except QuestionNotRetirableError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_409_CONFLICT),
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
 
@@ -353,7 +420,6 @@ def create_draft_question(
         Depends(get_session),
     ],
 ) -> QuestionDraftCreated:
-    """Create version 1 of a question in pending/draft state."""
     try:
         created = create_question_draft(
             session,
@@ -363,7 +429,7 @@ def create_draft_question(
 
     except QuestionDraftScopeError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_422_UNPROCESSABLE_CONTENT),
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
