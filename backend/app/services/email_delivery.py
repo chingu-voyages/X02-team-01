@@ -96,6 +96,7 @@ class ResendSender:
 
     def send(self, *, to: str, subject: str, body: str) -> None:
         import json
+        import urllib.error
         import urllib.request
 
         request = urllib.request.Request(
@@ -111,12 +112,21 @@ class ResendSender:
             headers={
                 "Authorization": f"Bearer {settings.email_api_key}",
                 "Content-Type": "application/json",
+                # api.resend.com sits behind a WAF that bans the default
+                # "Python-urllib/x.y" signature (Cloudflare error 1010 ->
+                # HTTP 403 on every send, verified live on Render).
+                # An explicit app User-Agent passes.
+                "User-Agent": "JHEP-backend/1.0 (resend adapter)",
             },
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=15) as response:
-            if response.status >= 400:
-                raise RuntimeError(f"Resend delivery failed: {response.status}")
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                if response.status >= 400:
+                    raise RuntimeError(f"Resend delivery failed: {response.status}")
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:300]
+            raise RuntimeError(f"Resend delivery failed: {exc.code} {detail}") from exc
 
 
 def email_sender() -> EmailSender:
