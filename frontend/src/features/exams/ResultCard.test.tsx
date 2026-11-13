@@ -1,7 +1,31 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+} from "@testing-library/react";
+import {
+  afterEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import ResultCard from "./ResultCard";
+
+const mockLogout = vi.fn();
+
+vi.mock(
+  "@/features/auth/AuthProvider",
+  () => ({
+    useAuth: () => ({
+      token: "test-token",
+      ready: true,
+      setToken: vi.fn(),
+      logout: mockLogout,
+    }),
+  }),
+);
 
 afterEach(() => {
   cleanup();
@@ -19,10 +43,21 @@ describe("ResultCard", () => {
       />,
     );
 
-    expect(screen.getByText("85%")).toBeTruthy();
-    expect(screen.getByText("Passed")).toBeTruthy();
-    expect(screen.getByText("17")).toBeTruthy();
-    expect(screen.getByText("3")).toBeTruthy();
+    expect(
+      screen.getByText("85%"),
+    ).toBeTruthy();
+
+    expect(
+      screen.getByText("Passed"),
+    ).toBeTruthy();
+
+    expect(
+      screen.getByText("17"),
+    ).toBeTruthy();
+
+    expect(
+      screen.getByText("3"),
+    ).toBeTruthy();
   });
 
   it("displays a failing result", () => {
@@ -36,55 +71,85 @@ describe("ResultCard", () => {
       />,
     );
 
-    expect(screen.getByText("40%")).toBeTruthy();
-    expect(screen.getByText("Not passed")).toBeTruthy();
-  });
-
-  it("handles an exam without a gradable score", () => {
-    render(
-      <ResultCard
-        scorePercent={null}
-        correctCount={0}
-        incorrectCount={0}
-        isPassed={null}
-        passingScorePercent={65}
-      />,
-    );
-
-    expect(screen.getByText("Not assessed")).toBeTruthy();
     expect(
-      screen.getByText(/No automatically graded score/i),
+      screen.getByText("40%"),
+    ).toBeTruthy();
+
+    expect(
+      screen.getByText("Not passed"),
     ).toBeTruthy();
   });
 
-  it("displays the passing threshold", () => {
-    render(
-      <ResultCard
-        scorePercent={70}
-        correctCount={7}
-        incorrectCount={3}
-        isPassed={true}
-        passingScorePercent={65}
-      />,
-    );
+  it(
+    "handles an exam without a gradable score",
+    () => {
+      render(
+        <ResultCard
+          scorePercent={null}
+          correctCount={0}
+          incorrectCount={0}
+          isPassed={null}
+          passingScorePercent={65}
+        />,
+      );
 
-    expect(
-      screen.getByText("65% required to pass"),
-    ).toBeTruthy();
-  });
-});
+      expect(
+        screen.getByText(
+          "Not assessed",
+        ),
+      ).toBeTruthy();
 
-it("rounds fractional scores for display", () => {
-  render(
-    <ResultCard
-      scorePercent={66.6667}
-      correctCount={2}
-      incorrectCount={1}
-      isPassed={false}
-      passingScorePercent={70}
-    />,
+      expect(
+        screen.getByText(
+          /No automatically graded score/i,
+        ),
+      ).toBeTruthy();
+    },
   );
 
-  expect(screen.getByText("67%")).toBeTruthy();
-  expect(screen.getByText("Not passed")).toBeTruthy();
+  it(
+    "displays the passing threshold",
+    () => {
+      render(
+        <ResultCard
+          scorePercent={70}
+          correctCount={7}
+          incorrectCount={3}
+          isPassed={true}
+          passingScorePercent={65}
+        />,
+      );
+
+      expect(
+        screen.getByText(
+          "65% required to pass",
+        ),
+      ).toBeTruthy();
+    },
+  );
+
+  it(
+    "rounds fractional scores for display",
+    () => {
+      render(
+        <ResultCard
+          scorePercent={66.6667}
+          correctCount={2}
+          incorrectCount={1}
+          isPassed={false}
+          passingScorePercent={70}
+        />,
+      );
+
+      expect(
+        screen.getByText("67%"),
+      ).toBeTruthy();
+
+      expect(
+        screen.getByText(
+          "Not passed",
+        ),
+      ).toBeTruthy();
+    },
+  );
 });

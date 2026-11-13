@@ -14,43 +14,63 @@ export async function apiRequest<T>(
   token: string | null,
   init: RequestInit = {},
 ): Promise<T> {
-  const base = process.env.NEXT_PUBLIC_API_URL;
+  const base =
+    process.env.NEXT_PUBLIC_API_URL;
 
   if (!base) {
-    throw new Error("NEXT_PUBLIC_API_URL is not configured");
+    throw new Error(
+      "NEXT_PUBLIC_API_URL is not configured",
+    );
   }
 
   if (!token) {
-    throw new ApiError(401, "Access token is required");
+    throw new ApiError(
+      401,
+      "Authentication is required",
+    );
   }
 
-  const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${token}`);
+  const headers = new Headers(
+    init.headers,
+  );
+
+  headers.set(
+    "Authorization",
+    `Bearer ${token}`,
+  );
 
   if (init.body) {
-    headers.set("Content-Type", "application/json");
+    headers.set(
+      "Content-Type",
+      "application/json",
+    );
   }
 
-  const cleanBase = base.replace(/\/$/, "");
+  const cleanBase = base.replace(
+    /\/$/,
+    "",
+  );
+
   const cleanPath = path.startsWith("/")
     ? path
     : `/${path}`;
 
-  const res = await fetch(`${cleanBase}${cleanPath}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
+  const response = await fetch(
+    `${cleanBase}${cleanPath}`,
+    {
+      ...init,
+      headers,
+      cache: "no-store",
+    },
+  );
 
-  if (!res.ok) {
+  if (!response.ok) {
     let detail: unknown = null;
 
-    // Preserve structured conflict details so the UI
-    // can distinguish an existing unfinished attempt
-    // from an unavailable category.
-    if (res.status === 409) {
+    if (response.status === 409) {
       try {
-        const body: unknown = await res.json();
+        const body: unknown =
+          await response.json();
 
         if (
           body !== null &&
@@ -60,19 +80,21 @@ export async function apiRequest<T>(
           detail = body.detail;
         }
       } catch {
-        // Empty or invalid JSON should still produce
-        // the original HTTP error.
+        // Preserve the original HTTP
+        // failure if no JSON body exists.
       }
     }
 
     throw new ApiError(
-      res.status,
-      res.status === 401
-        ? "Your session has expired. Please enter a new token."
-        : `API request failed (${res.status})`,
+      response.status,
+      response.status === 401
+        ? "Your session has expired. Please sign in again."
+        : response.status === 403
+          ? "You do not have permission to perform this action."
+          : `API request failed (${response.status})`,
       detail,
     );
   }
 
-  return (await res.json()) as T;
+  return (await response.json()) as T;
 }

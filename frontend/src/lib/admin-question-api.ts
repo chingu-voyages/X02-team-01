@@ -63,6 +63,36 @@ export async function editManagedQuestion(
   );
 }
 
+export async function publishManagedQuestion(
+  token: string,
+  questionId: string,
+): Promise<AdminQuestionDetail> {
+  return apiRequest<AdminQuestionDetail>(
+    `/admin/questions/${encodeURIComponent(questionId)}/publish`,
+    token,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function rejectManagedQuestion(
+  token: string,
+  questionId: string,
+  reviewNote: string,
+): Promise<AdminQuestionDetail> {
+  return apiRequest<AdminQuestionDetail>(
+    `/admin/questions/${encodeURIComponent(questionId)}/reject`,
+    token,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        review_note: reviewNote,
+      }),
+    },
+  );
+}
+
 export async function retireManagedQuestion(
   token: string,
   questionId: string,
