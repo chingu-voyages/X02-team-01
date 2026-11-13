@@ -400,3 +400,27 @@ def test_resend_sender_posts_the_payload(monkeypatch):
     assert payload["subject"] == "Verify your Job Hackers account"
     assert payload["text"] == "Welcome, John Doe!"
     assert "re_test_key" not in captured["payload"].decode()
+
+
+def test_settings_tolerate_env_values_with_stray_whitespace(monkeypatch):
+    """Regression (Render live incident): a value pasted with a trailing
+    newline ('smtp\\n') must not crash startup, and an empty value falls
+    back to console."""
+    from app.core.config import Settings
+
+    with monkeypatch.context() as env:
+        for key in (
+            "POSTGRES_DB",
+            "POSTGRES_USER",
+            "POSTGRES_PASSWORD",
+            "JWT_SECRET_KEY",
+        ):
+            env.setenv(key, "ci")
+        env.setenv("EMAIL_DELIVERY", "smtp\n")
+        env.setenv("VERIFICATION_LINK_BASE", "https://backend.example.com/verify\n")
+        settings = Settings(_env_file=None)
+        assert settings.email_delivery == "smtp"
+        assert settings.verification_link_base == "https://backend.example.com/verify"
+
+        env.setenv("EMAIL_DELIVERY", "")
+        assert Settings(_env_file=None).email_delivery == "console"

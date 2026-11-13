@@ -43,15 +43,25 @@ class Settings(BaseSettings):
     email_from: str = "no-reply@jobhackers.local"
     verification_link_base: str = "http://127.0.0.1:8010/api/v1/auth/verify"
 
-    # An env var present but empty (e.g. a template .env copied verbatim,
-    # or a hosting dashboard placeholder) means "not chosen" -> the console
-    # default, instead of failing Settings validation.
+    # Env values copied from docs or dashboards often carry stray
+    # whitespace/newlines, which would fail Literal validation and crash
+    # startup (seen live on Render: 'smtp\n'). Strip strings first; an
+    # email_delivery left empty after stripping means "not chosen" -> the
+    # console default. Same stripping for the link base (a trailing
+    # newline would silently corrupt the verification URL).
     @field_validator("email_delivery", mode="before")
     @classmethod
-    def _empty_email_delivery_means_console(cls, value):  # noqa: N805
-        if value is None or (isinstance(value, str) and value.strip() == ""):
-            return "console"
-        return value
+    def _normalise_email_delivery(cls, value):  # noqa: N805
+        if isinstance(value, str):
+            value = value.strip()
+        return value or "console"
+
+    @field_validator("verification_link_base", mode="before")
+    @classmethod
+    def _normalise_verification_link_base(cls, value):  # noqa: N805
+        if isinstance(value, str):
+            value = value.strip()
+        return value or "http://127.0.0.1:8010/api/v1/auth/verify"
 
     # JHEP-24: verification-link TTL + resend throttle (env-configurable
     # rather than hardcoded — the board's policy table drives the values).
