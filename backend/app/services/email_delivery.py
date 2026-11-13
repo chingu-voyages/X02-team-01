@@ -79,18 +79,14 @@ class SmtpSender:
                 smtp.ehlo()
                 smtp.starttls()
                 if settings.email_smtp_user:
-                    smtp.login(
-                        settings.email_smtp_user, settings.email_smtp_password
-                    )
+                    smtp.login(settings.email_smtp_user, settings.email_smtp_password)
                 smtp.send_message(message)
         else:
             with smtplib.SMTP_SSL(
                 settings.email_smtp_host, settings.email_smtp_port, timeout=15
             ) as smtp:
                 if settings.email_smtp_user:
-                    smtp.login(
-                        settings.email_smtp_user, settings.email_smtp_password
-                    )
+                    smtp.login(settings.email_smtp_user, settings.email_smtp_password)
                 smtp.send_message(message)
 
 
@@ -120,9 +116,7 @@ class ResendSender:
         )
         with urllib.request.urlopen(request, timeout=15) as response:
             if response.status >= 400:
-                raise RuntimeError(
-                    f"Resend delivery failed: {response.status}"
-                )
+                raise RuntimeError(f"Resend delivery failed: {response.status}")
 
 
 def email_sender() -> EmailSender:
@@ -149,8 +143,7 @@ def email_sender() -> EmailSender:
     if delivery == "resend":
         if not settings.email_api_key:
             raise RuntimeError(
-                "EMAIL_DELIVERY=resend requires EMAIL_API_KEY in the "
-                "environment"
+                "EMAIL_DELIVERY=resend requires EMAIL_API_KEY in the environment"
             )
         return ResendSender()
 
