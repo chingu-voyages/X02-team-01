@@ -2,20 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import OptionItem from "@/features/questions/OptionItem";
-import { Button } from "@/components/ui/button";
-import { RadioGroup } from "@/components/ui/radio-group";
 import { ApiError } from "@/lib/api-client";
 import { getExam, submitAnswer } from "@/lib/exam-api";
 import { submitExam } from "@/lib/exam-submission";
 import { useDemoSession } from "@/features/auth/AuthProvider";
-import FeedbackCard from "./FeedbackCard";
+import QuestionRenderer from "./QuestionRenderer";
 
-import type {
-  AnswerSubmission,
-  ExamQuestionWithResponse,
-  FeedbackEntry,
-} from "@/types/exam-api.types";
+import type { AnswerSubmission, ExamQuestionWithResponse, FeedbackEntry } from "@/types/exam-api.types";
+import { Button } from "@/components/ui/button";
 
 type LoadStatus = "loading" | "ready" | "error";
 
@@ -189,10 +183,6 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
   const firstUnsubmittedIndex = questions.findIndex(
     (question) => !submittedMap[question.id],
   );
-  const optionFeedbackReleased = Boolean(
-    currentFeedback?.feedback_released &&
-    currentFeedback.correct_option_ids.length > 0,
-  );
   const selectedLetters = currentQuestion.options
     .filter((option) => currentSelected.includes(option.id))
     .map((option) => letterForPosition(option.position))
@@ -236,6 +226,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     const answer: AnswerSubmission = isShortAnswer
       ? { selected_option_ids: null, text_response: textValue.trim() || null }
       : { selected_option_ids: currentSelected, text_response: null };
+   
 
     if (
       !answer.text_response &&
@@ -349,38 +340,6 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     }
   }
 
-  const optionsList = currentQuestion.options.map((option) => (
-    <OptionItem
-      key={option.id}
-      id={option.id}
-      position={option.position}
-      option={option.option_text}
-      questionType={isMultiple ? "multiple" : "single"}
-      isSelected={currentSelected.includes(option.id)}
-      onSelect={() => handleSelect(option.id)}
-      isSubmitted={isSubmitted}
-      disabled={isSubmitting || isFinishing}
-      feedbackReleased={optionFeedbackReleased}
-      correctOptionIds={
-        optionFeedbackReleased ? currentFeedback.correct_option_ids : []
-      }
-    />
-  ));
-
-  const selectedCount = isShortAnswer
-    ? textValue.trim().length
-    : currentSelected.length;
-  const answeredStatus = isSubmitted
-    ? typeof currentFeedback?.is_correct === "boolean" ||
-      Boolean(currentFeedback?.explanation)
-      ? "Answer submitted. Feedback shown below."
-      : "Answer submitted. Answer locked for this attempt."
-    : isMultiple
-      ? "Choose all that apply, then submit your answer."
-      : isShortAnswer
-        ? "Type your answer, then submit."
-        : "Choose an answer, then submit.";
-
   return (
     <div className="w-full space-y-6">
       {/* Same global-style navigation treatment as Categories and Results. */}
@@ -429,128 +388,36 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
       </header>
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-        <section
-          aria-labelledby="question-heading"
-          className="min-w-0 rounded-md border border-[#cbd0d3] bg-white p-5 sm:p-6"
-        >
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#687178]">
-            Question {String(currentQuestionIndex + 1).padStart(2, "0")} /{" "}
-            {isShortAnswer
-              ? "Short answer"
-              : isMultiple
-                ? "Multiple select"
-                : "Multiple choice"}
-          </p>
-          <h2
-            id="question-heading"
-            className="mb-5 mt-4 text-lg font-bold leading-7 sm:text-xl"
-          >
-            {currentQuestion.question_text}
-          </h2>
-
-          {isShortAnswer ? (
-            <textarea
-              aria-label="Your answer"
-              value={textValue}
-              onChange={(event) => handleTextChange(event.target.value)}
-              disabled={isSubmitted || isSubmitting || isFinishing}
-              placeholder="Type your answer..."
-              className="min-h-32 w-full rounded-md border border-[#d4dadd] bg-white p-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
-            />
-          ) : isMultiple ? (
-            <div
-              role="group"
-              aria-labelledby="question-heading"
-              className="flex flex-col gap-3"
-            >
-              {optionsList}
-            </div>
-          ) : (
-            <RadioGroup
-              value={currentSelected[0] || ""}
-              onValueChange={handleSelect}
-              aria-labelledby="question-heading"
-              className="flex flex-col gap-3"
-            >
-              {optionsList}
-            </RadioGroup>
-          )}
-
-          {isSubmitted && (
-            <FeedbackCard
-              isShortAnswer={isShortAnswer}
-              feedback={currentFeedback}
-            />
-          )}
-
-          {submitError && (
-            <p role="alert" className="mt-3 text-sm text-red-700">
-              {submitError}
-            </p>
-          )}
-
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() =>
-                setCurrentQuestionIndex((previous) => Math.max(previous - 1, 0))
-              }
-              disabled={
-                currentQuestionIndex === 0 || isSubmitting || isFinishing
-              }
-              className="h-10 rounded-md border-[#cbd0d3] px-4 text-sm"
-            >
-              Previous
-            </Button>
-            {isSubmitted ? (
-              isLastQuestion ? (
-                allQuestionsSubmitted ? (
-                  <span className="text-sm text-[#56616a]">
-                    All answers submitted. Finish the exam in the progress
-                    panel.
-                  </span>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      if (firstUnsubmittedIndex >= 0) {
-                        setCurrentQuestionIndex(firstUnsubmittedIndex);
-                      }
-                    }}
-                    disabled={isFinishing}
-                    className="h-10 rounded-md border-[#cbd0d3] px-4 text-sm"
-                  >
-                    Review unanswered questions
-                  </Button>
-                )
-              ) : (
-                <Button
-                  type="button"
-                  onClick={() =>
-                    setCurrentQuestionIndex((previous) =>
-                      Math.min(previous + 1, questions.length - 1),
-                    )
-                  }
-                  disabled={isFinishing}
-                  className="h-10 rounded-md bg-[#343a3e] px-4 text-sm text-white hover:bg-[#1e2427]"
-                >
-                  Next question
-                </Button>
-              )
-            ) : (
-              <Button
-                type="button"
-                disabled={selectedCount === 0 || isSubmitting || isFinishing}
-                onClick={handleSubmit}
-                className="h-10 rounded-md bg-[#343a3e] px-4 text-sm text-white hover:bg-[#1e2427] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isSubmitting ? "Submitting..." : "Submit answer"}
-              </Button>
-            )}
-          </div>
-        </section>
+        <QuestionRenderer
+          question={currentQuestion}
+          questionIndex={currentQuestionIndex}
+          totalQuestions={questions.length}
+          selectedOptionIds={currentSelected}
+          textValue={textValue}
+          isSubmitted={isSubmitted}
+          isSubmitting={isSubmitting}
+          isFinishing={isFinishing}
+          submitError={submitError}
+          feedback={currentFeedback}
+          allQuestionsSubmitted={allQuestionsSubmitted}
+          firstUnsubmittedIndex={firstUnsubmittedIndex}
+          onSelectOption={handleSelect}
+          onTextChange={handleTextChange}
+          onSubmit={handleSubmit}
+          onPrevious={() =>
+            setCurrentQuestionIndex((previous) => Math.max(previous - 1, 0))
+          }
+          onNext={() =>
+            setCurrentQuestionIndex((previous) =>
+              Math.min(previous + 1, questions.length - 1),
+            )
+          }
+          onReviewUnsubmitted={() => {
+            if (firstUnsubmittedIndex >= 0) {
+              setCurrentQuestionIndex(firstUnsubmittedIndex);
+            }
+          }}
+        />
 
         <aside
           aria-labelledby="attempt-progress-heading"
