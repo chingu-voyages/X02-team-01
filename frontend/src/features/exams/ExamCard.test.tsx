@@ -10,9 +10,10 @@ import { ApiError } from "@/lib/api-client";
 import type { FinalExamSubmissionResponse } from "@/types/exam-submission.types";
 import type { ExamAttempt } from "@/types/exam-api.types";
 
-const { mockHandleError, mockReplace } = vi.hoisted(() => ({
+const { mockHandleError, mockReplace, mockLogout } = vi.hoisted(() => ({
   mockHandleError: vi.fn(),
   mockReplace: vi.fn(),
+  mockLogout: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -34,6 +35,9 @@ vi.mock("@/features/auth/AuthProvider", () => ({
     ready: true,
     handleError: mockHandleError,
   }),
+  useAuth: () => ({
+    logout: mockLogout,
+  })
 }));
 
 vi.mock("@/components/ui/radio-group", () => ({
