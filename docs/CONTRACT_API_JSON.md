@@ -183,7 +183,15 @@ Learner category discovery additionally requires:
 
 \* Contributors can edit permitted drafts they own. Only Administrators can create a new draft revision from already-published content.
 
-### 2.5 Operational
+
+### 2.5 Admin — users (JHEP-125)
+
+| Method | Route | State | Auth |
+|---|---|---|---|
+| GET | `/api/v1/admin/users?q=&limit=&offset=` | CURRENT | Bearer + administrator |
+| PATCH | `/api/v1/admin/users/{user_id}/role` | CURRENT | Bearer + administrator |
+
+### 2.6 Operational
 
 | Method | Route | Status |
 |---|---|---|
@@ -197,7 +205,7 @@ Response:
 }
 ```
 
-### 2.6 Not implemented
+### 2.7 Not implemented
 
 | Method | Route | Status |
 |---|---|---|
@@ -287,28 +295,19 @@ The verification token:
 - is single-use;
 - is stored only as a SHA-256 digest.
 
-**200 response**
+**Redirect response (since JHEP-24/PR #47)** — the link is opened by a
+human in a browser, so both outcomes return `303 See Other` to the login
+screen (hosted on `FRONTEND_BASE_URL`, default `http://127.0.0.1:3030`):
 
-```json
-{
-  "id": "11111111-1111-4111-8111-111111111111",
-  "email": "learner@example.com",
-  "fullName": "John Doe",
-  "role": "learner",
-  "is_verified": true,
-  "status": "verified",
-  "created_at": "2026-11-12T18:00:00Z"
-}
-```
+| Outcome | Redirect target |
+|---|---|
+| Activation succeeded | `{FRONTEND_BASE_URL}/login?verified=1` |
+| Invalid, expired, or already-used token | `{FRONTEND_BASE_URL}/login?verification=invalid` |
 
-Invalid, expired, and already-used links all fail through the same coded class:
-
-```json
-{
-  "code": "INVALID_OR_EXPIRED_TOKEN",
-  "message": "Verification link is invalid"
-}
-```
+The login screen reads the query flag and shows the matching banner
+(success: "Email verified — sign in"; failure: "link invalid, expired or
+already used"). The verified learner payload remains available through
+the login and register responses.
 
 ---
 
@@ -1835,3 +1834,95 @@ backend/app/services/question_retirement_service.py
 ```
 
 When this Markdown file and the code disagree, the route decorators, Pydantic response/request models, authorization dependencies, repository eligibility rules, and service behavior above are the implementation source of truth.
+
+
+## 3.6 Admin Users & Access — CURRENT (JHEP-125)
+
+### GET `/api/v1/admin/users`
+
+Locates accounts for the Users & Access screen. **Administrator only**
+(otherwise 403 `Insufficient permissions`).
+
+Query parameters: `q` (substring match on email or full name),
+`limit` (default 50), `offset`. Results are ordered by email; the
+response carries a `total` for pagination.
+
+```json
+{
+  "items": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "email": "learner@example.com",
+      "fullName": "John Doe",
+      "role": "learner",
+      "is_verified": true,
+      "created_at": "2026-11-13T10:00:00Z"
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+Responses never contain a password or hash.
+
+### PATCH `/api/v1/admin/users/{user_id}/role`
+
+Administrator only. Moves an account between Learner and Contributor;
+this screen can never elevate an account to Administrator
+(`administrator` is not an accepted value — 422). The UI confirms every
+change before sending (client-side concern); the server is
+authoritative.
+
+Request:
+
+```json
+{ "role": "contributor" }
+```
+
+Success — the changed account plus the before/after audit metadata:
+
+```json
+{
+  "user": {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "email": "learner@example.com",
+    "fullName": "John Doe",
+    "role": "contributor",
+    "is_verified": true,
+    "created_at": "2026-11-13T10:00:00Z"
+  },
+  "action": "promoted",
+  "role_before": "learner",
+  "role_after": "contributor",
+  "changed_at": "2026-11-13T11:00:00Z"
+}
+```
+
+Error table:
+
+| Status | Code | When |
+|---|---|---|
+| 404 | `USER_NOT_FOUND` | the account does not exist |
+| 409 | `CANNOT_CHANGE_ADMIN_ROLE` | the target account is an Administrator (provisioning is separately governed) |
+| 409 | `CANNOT_CHANGE_OWN_ROLE` | the Administrator targets themselves (lockout protection) |
+| 422 | — | role is not `learner`/`contributor`, or a malformed body |
+| 403 | — | the caller is not an Administrator |
+
+Behavioral guarantees (the story's ACs):
+
+- **Immediate effect:** roles are read from the database row on every
+  request, so a revoked Contributor's existing session is rejected with
+  403 on the next admin call — no token re-issue or session store.
+- **Content integrity:** role changes never mutate questions, versions,
+  statuses, feedback or history; authored questions keep their
+  `created_by_id`. Administrators can still manage those records; a
+  reassigned Contributor sees them only per the current
+  ownership/status rules.
+- **Audit:** every accepted change writes a `role_change_audit` row
+  (actor, target, action `promoted`/`revoked`, before/after roles,
+  timestamp). Publishing to the central audit pipeline is JHEP-111 and
+  is deliberately non-blocking.
+- **Learner-facing access** for a changed account is unaffected when
+  independently eligible for exams.
