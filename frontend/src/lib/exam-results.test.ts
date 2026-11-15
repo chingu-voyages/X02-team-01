@@ -120,19 +120,25 @@ describe("getExamResults", () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it("rejects requests when the API URL is missing", async () => {
+  it("falls back to the same-origin /api/v1 base when the API URL is unset", async () => {
+    // JHEP-125: deployments that bake no NEXT_PUBLIC_API_URL (e.g.
+    // Render's docker runtime) must keep working — the relative base
+    // rides the runtime same-origin proxy instead of throwing.
     vi.stubEnv("NEXT_PUBLIC_API_URL", "");
 
-    const mockFetch = vi.fn<typeof fetch>();
+    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    } as Response);
 
     vi.stubGlobal("fetch", mockFetch);
 
-    await expect(
-      getExamResults(attemptId, "test-token"),
-    ).rejects.toThrow(
-      "NEXT_PUBLIC_API_URL is not configured",
-    );
+    await getExamResults(attemptId, "test-token");
 
-    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockFetch).toHaveBeenCalledWith(
+      `/api/v1/exams/${attemptId}/results`,
+      expect.objectContaining({ method: "GET" }),
+    );
   });
 });
