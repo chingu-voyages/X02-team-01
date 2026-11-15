@@ -69,7 +69,7 @@ const navItems = [
     icon:
       Users,
     enabled:
-      false,
+      true,
   },
   {
     label:

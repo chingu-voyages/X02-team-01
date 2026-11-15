@@ -40,6 +40,12 @@ from app.schemas.admin_question import (
     QuestionDraftEdit,
     QuestionRejectionRequest,
 )
+from app.schemas.admin_user import (
+    AdminUserOut,
+    UserRoleChangeIn,
+    UserRoleChangeOut,
+    UsersPageOut,
+)
 from app.schemas.question_retirement import (
     QuestionRetirementRequest,
     QuestionRetirementResponse,
@@ -73,6 +79,13 @@ from app.services.admin_question_service import (
     list_question_bank,
     publish_question_draft,
     reject_question_draft,
+)
+from app.services.admin_user_service import (
+    AdministratorRoleChangeError,
+    SelfRoleChangeError,
+    UserNotFoundError,
+    change_role,
+    list_users,
 )
 from app.services.question_retirement_service import (
     QuestionNotRetirableError,
@@ -600,4 +613,85 @@ def create_draft_question(
         version_number=(created.version_number),
         review_status=(created.review_status),
         publication_status=(created.publication_status),
+    )
+
+
+def _admin_user_response(user: User) -> AdminUserOut:
+    return AdminUserOut(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        role=user.role,
+        is_verified=user.is_verified,
+        created_at=user.created_at,
+    )
+
+
+@router.get("/users", response_model=UsersPageOut)
+def list_accounts(
+    actor: Annotated[User, Depends(require_administrator)],
+    session: Annotated[Session, Depends(get_session)],
+    q: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> UsersPageOut:
+    """Locate accounts for the Users & Access screen (JHEP-125 AC1)."""
+    users, total = list_users(session, actor=actor, q=q, limit=limit, offset=offset)
+    return UsersPageOut(
+        items=[_admin_user_response(user) for user in users],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.patch("/users/{user_id}/role", response_model=UserRoleChangeOut)
+def change_account_role(
+    user_id: UUID,
+    payload: UserRoleChangeIn,
+    actor: Annotated[User, Depends(require_administrator)],
+    session: Annotated[Session, Depends(get_session)],
+) -> UserRoleChangeOut:
+    """Move one account between Learner and Contributor (JHEP-125).
+
+    Administrator-target and self-changes are refused before any
+    mutation; every accepted change writes the audit row atomically
+    (AC4). The role is read from the database by every subsequent
+    request, so revocation takes effect on the stale session's next
+    admin call (AC2).
+    """
+    try:
+        target, audit = change_role(
+            session,
+            actor=actor,
+            target_id=user_id,
+            new_role=payload.role,
+        )
+    except UserNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "USER_NOT_FOUND", "message": str(exc)},
+        ) from exc
+    except AdministratorRoleChangeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "CANNOT_CHANGE_ADMIN_ROLE", "message": str(exc)},
+        ) from exc
+    except SelfRoleChangeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "CANNOT_CHANGE_OWN_ROLE", "message": str(exc)},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    return UserRoleChangeOut(
+        user=_admin_user_response(target),
+        action=audit.action,
+        role_before=audit.role_before,
+        role_after=audit.role_after,
+        changed_at=audit.created_at,
     )

@@ -10,5 +10,6 @@ from .exam_result import ExamResult as ExamResult
 from .question import Question as Question
 from .question_image import QuestionImage as QuestionImage
 from .question_version import QuestionVersion as QuestionVersion
+from .role_change_audit import RoleChangeAudit as RoleChangeAudit
 from .text_answer_key import TextAnswerKey as TextAnswerKey
 from .user import User as User
