@@ -36,6 +36,12 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/features/auth/AuthProvider", () => ({
+  useAuth: () => ({
+    token: "demo-token",
+    ready: true,
+    setToken: vi.fn(),
+    logout: vi.fn(),
+  }),
   useDemoSession: () => ({
     token: "demo-token",
     ready: true,
