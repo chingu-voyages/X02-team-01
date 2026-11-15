@@ -73,15 +73,33 @@ export default function AdminUsersPage() {
 
     let cancelled = false;
 
-    if (!cancelled) {
-      void load(query, token);
-    }
+    // The initial load resolves asynchronously; state updates happen
+    // only after the await (no synchronous setState in the effect).
+    getAdminUsers(token, query)
+      .then((data) => {
+        if (cancelled) return;
+        setPage(data);
+        setStatus("ready");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        if (
+          error instanceof ApiError &&
+          (error.status === 401 || error.status === 403)
+        ) {
+          handleError(error);
+          return;
+        }
+        setLoadError(
+          error instanceof Error ? error.message : "Unable to load accounts",
+        );
+        setStatus("error");
+      });
 
     return () => {
       cancelled = true;
     };
-    // Reload when the search term settles.
-  }, [ready, token, query, load]);
+  }, [ready, token, query, handleError]);
 
   if (!ready || !token || status === "loading") {
     return (
