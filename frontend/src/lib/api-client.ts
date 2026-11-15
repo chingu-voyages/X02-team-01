@@ -14,14 +14,17 @@ export async function apiRequest<T>(
   token: string | null,
   init: RequestInit = {},
 ): Promise<T> {
-  const base =
-    process.env.NEXT_PUBLIC_API_URL;
-
-  if (!base) {
-    throw new Error(
-      "NEXT_PUBLIC_API_URL is not configured",
-    );
-  }
+  // Default to the same-origin proxy (`/api/v1/*` -> the backend via
+  // BACKEND_PROXY_TARGET, read at request time by the catch-all route
+  // handler). NEXT_PUBLIC_API_URL stays as an optional absolute override
+  // — but it is a BUILD-TIME variable in Next, so deployments that bake
+  // no value (e.g. Render's docker runtime) must keep working: the
+  // relative base always does. (JHEP-125: the admin screens died on
+  // Render with "NEXT_PUBLIC_API_URL is not configured" because a
+  // localhost dev value was baked instead.)
+    // An env var present but EMPTY also means "not configured" (the
+  // project-wide convention, cf. the email settings validators).
+  const base = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
 
   if (!token) {
     throw new ApiError(

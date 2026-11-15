@@ -5,7 +5,7 @@ import { Button } from "../ui/button";
 import { useAuth } from "@/features/auth/AuthProvider";
 
 export default function Navbar() {
-  const { logout } = useAuth();
+  const { token, logout } = useAuth();
 
   return (
     <nav
@@ -55,13 +55,16 @@ export default function Navbar() {
       </div>
 
       <div className="flex items-baseline gap-2">
-        <Button
-          onClick={logout}
-          variant="outline"
-          className="hover:cursor-pointer"
-        >
-          Logout
-        </Button>
+        {/* A signed-out visitor has nothing to log out of. */}
+        {token && (
+          <Button
+            onClick={logout}
+            variant="outline"
+            className="hover:cursor-pointer"
+          >
+            Logout
+          </Button>
+        )}
       </div>
     </nav>
   );

@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +21,34 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix="/api/v1")
+
+
+@app.on_event("startup")
+def validate_email_transport() -> None:
+    """Surface a misconfigured email transport at startup, loudly.
+
+    Per-request delivery is resilient (a failed send never 500s
+    registration), so the ONLY place a broken transport configuration is
+    named is this log line — check it first when verification emails do
+    not arrive.
+    """
+    from app.services.email_delivery import email_sender
+
+    try:
+        sender = email_sender()
+        logging.getLogger(__name__).info(
+            "Email transport ready: %s (EMAIL_DELIVERY=%s)",
+            type(sender).__name__,
+            settings.email_delivery,
+        )
+    except Exception:  # noqa: BLE001 — warn, never block the deploy
+        logging.getLogger(__name__).critical(
+            "Email transport is MISCONFIGURED (EMAIL_DELIVERY=%s): "
+            "verification emails will not be sent until the environment "
+            "provides the required variables. Registration itself keeps "
+            "working. See docs/configuration.md.",
+            settings.email_delivery,
+        )
 
 
 # Auth-family error rendering (JHEP-24): CodedAuthError bodies land at the

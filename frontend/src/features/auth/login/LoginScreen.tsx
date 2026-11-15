@@ -1,4 +1,5 @@
 import PageHeader from "@/components/layouts/PageHeader";
+import VerifiedNotice from "./VerifiedNotice";
 import LoginForm from "./LoginForm";
 import Navbar from "@/components/layouts/Navbar";
 import Card from "@/components/ui/Card";
@@ -11,6 +12,7 @@ export default function LoginScreen() {
         title="Your practice workspace"
         subtitle="Sign in to access exams and retain your attempt history."
       />
+      <VerifiedNotice />
       <div className="grid grid-cols-2 mt-6">
         <Card className="p-6">
           <h2 className="font-bold text-2xl">Practice, learn, repeat.</h2>
