@@ -1,146 +1,52 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-
-import OptionItem from "@/features/questions/OptionItem";
+import QuestionRenderer from "./QuestionRenderer";
+import PageHeader from "@/components/layouts/PageHeader";
 import { Button } from "@/components/ui/button";
-import { RadioGroup } from "@/components/ui/radio-group";
-import { ApiError } from "@/lib/api-client";
-import { getExam, submitAnswer } from "@/lib/exam-api";
-import { submitExam } from "@/lib/exam-submission";
-import { useDemoSession } from "@/features/auth/AuthProvider";
-
-import type {
-  AnswerSubmission,
-  ExamQuestionWithResponse,
-} from "@/types/exam-api.types";
-
-type LoadStatus = "loading" | "ready" | "error";
+import Navbar from "@/components/layouts/Navbar";
+import ExamSidebar from "./ExamSidebar";
+import { useExamAttempt } from "@/hooks/useExamAttempt";
 
 interface ExamCardProps {
   attemptId: string;
 }
 
-interface FeedbackEntry {
-  feedback_released: boolean;
-  is_correct: boolean | null;
-  correct_option_ids: string[];
-  explanation?: string | null;
-}
-
-function letterForPosition(position: number) {
-  return position >= 1 && position <= 26
-    ? String.fromCharCode(64 + position)
-    : String(position);
-}
-
 export default function ExamCard({ attemptId }: ExamCardProps) {
-  const router = useRouter();
-  const { token, ready, handleError } = useDemoSession();
-
-  const [questions, setQuestions] = useState<ExamQuestionWithResponse[]>([]);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [loadStatus, setLoadStatus] = useState<LoadStatus>("loading");
-  const [loadError, setLoadError] = useState("");
-  const [reloadKey, setReloadKey] = useState(0);
-
-  const [selectedValuesMap, setSelectedValuesMap] = useState<
-    Record<string, string[]>
-  >({});
-  const [textAnswersMap, setTextAnswersMap] = useState<Record<string, string>>(
-    {},
-  );
-  const [submittedMap, setSubmittedMap] = useState<Record<string, boolean>>({});
-  const [feedbackMap, setFeedbackMap] = useState<Record<string, FeedbackEntry>>(
-    {},
-  );
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState("");
-  const [isFinishing, setIsFinishing] = useState(false);
-  const [finishError, setFinishError] = useState("");
-  const finishingRef = useRef(false);
-
-  useEffect(() => {
-    if (!ready || !token) return;
-
-    let cancelled = false;
-
-    getExam(attemptId, token)
-      .then((data) => {
-        if (cancelled) return;
-
-        const restoredSubmitted: Record<string, boolean> = {};
-        const restoredSelection: Record<string, string[]> = {};
-        const restoredText: Record<string, string> = {};
-        const restoredFeedback: Record<string, FeedbackEntry> = {};
-
-        for (const question of data.questions) {
-          if (!question.response) continue;
-
-          const response = question.response;
-          restoredSubmitted[question.id] = response.is_submitted;
-
-          if (response.selected_option_ids) {
-            restoredSelection[question.id] = response.selected_option_ids;
-          }
-          if (response.text_response) {
-            restoredText[question.id] = response.text_response;
-          }
-          // Resume data does not expose correct-option IDs. Leave options
-          // visually neutral even if a result verdict is available.
-          if (typeof response.is_correct === "boolean") {
-            restoredFeedback[question.id] = {
-              feedback_released: false,
-              is_correct: response.is_correct,
-              correct_option_ids: [],
-              explanation: null,
-            };
-          }
-        }
-
-        setQuestions(data.questions);
-        setSubmittedMap(restoredSubmitted);
-        setSelectedValuesMap(restoredSelection);
-        setTextAnswersMap(restoredText);
-        setFeedbackMap(restoredFeedback);
-        setCurrentQuestionIndex(
-          Math.max(
-            0,
-            Math.min(data.current_position - 1, data.questions.length - 1),
-          ),
-        );
-        setSubmitError("");
-        setFinishError("");
-        setLoadError("");
-        setLoadStatus("ready");
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        if (error instanceof ApiError && error.status === 401) {
-          handleError(error);
-          return;
-        }
-        setLoadError(
-          error instanceof Error ? error.message : "Unable to load the exam.",
-        );
-        setLoadStatus("error");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [ready, token, attemptId, reloadKey, handleError]);
-
-  function retryLoading() {
-    setLoadStatus("loading");
-    setLoadError("");
-    setReloadKey((value) => value + 1);
-  }
+  const {
+    ready,
+    token,
+    questions,
+    currentQuestionIndex,
+    setCurrentQuestionIndex,
+    loadStatus,
+    loadError,
+    retryLoading,
+    currentQuestion,
+    isShortAnswer,
+    isMultiple,
+    currentSelected,
+    isSubmitted,
+    currentFeedback,
+    textValue,
+    submittedCount,
+    allQuestionsSubmitted,
+    firstUnsubmittedIndex,
+    isSubmitting,
+    submitError,
+    isFinishing,
+    finishError,
+    handleSelect,
+    handleTextChange,
+    handleSubmit,
+    handleFinish,
+  } = useExamAttempt(attemptId);
 
   if (!ready || !token) {
-    return <p role="status" className="p-6">Checking session...</p>;
+    return (
+      <p role="status" className="p-6">
+        Checking session...
+      </p>
+    );
   }
 
   if (loadStatus === "loading" || loadStatus === "error") {
@@ -163,8 +69,6 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     );
   }
 
-  const currentQuestion = questions[currentQuestionIndex];
-
   if (!currentQuestion) {
     return (
       <section className="rounded-md border border-[#d4d8db] bg-white p-6">
@@ -174,186 +78,6 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     );
   }
 
-  const questionId = currentQuestion.id;
-  const isShortAnswer = currentQuestion.question_type === "short_answer";
-  const isMultiple = currentQuestion.allows_multiple_answers;
-  const currentSelected = selectedValuesMap[questionId] || [];
-  const isSubmitted = submittedMap[questionId] || false;
-  const currentFeedback = feedbackMap[questionId];
-  const textValue = textAnswersMap[questionId] ?? "";
-  const isLastQuestion = currentQuestionIndex >= questions.length - 1;
-  const submittedCount = questions.filter((question) => submittedMap[question.id]).length;
-  const allQuestionsSubmitted =
-    questions.length > 0 &&
-    questions.every((question) => submittedMap[question.id] === true);
-  const firstUnsubmittedIndex = questions.findIndex(
-    (question) => !submittedMap[question.id],
-  );
-  const optionFeedbackReleased = Boolean(
-    currentFeedback?.feedback_released &&
-      currentFeedback.correct_option_ids.length > 0,
-  );
-  const selectedLetters = currentQuestion.options
-    .filter((option) => currentSelected.includes(option.id))
-    .map((option) => letterForPosition(option.position))
-    .join(", ");
-
-  function handleSelect(optionId: string) {
-    if (isSubmitted || isSubmitting || isFinishing) return;
-
-    if (isMultiple) {
-      setSelectedValuesMap((previous) => {
-        const existing = previous[questionId] || [];
-        const updated = existing.includes(optionId)
-          ? existing.filter((id) => id !== optionId)
-          : [...existing, optionId];
-        return { ...previous, [questionId]: updated };
-      });
-    } else {
-      setSelectedValuesMap((previous) => ({
-        ...previous,
-        [questionId]: [optionId],
-      }));
-    }
-  }
-
-  function handleTextChange(value: string) {
-    if (isSubmitted || isSubmitting || isFinishing) return;
-    setTextAnswersMap((previous) => ({ ...previous, [questionId]: value }));
-  }
-
-  function handleSubmit() {
-    if (!token || !currentQuestion || isSubmitting || isSubmitted || isFinishing) {
-      return;
-    }
-
-    const answer: AnswerSubmission = isShortAnswer
-      ? { selected_option_ids: null, text_response: textValue.trim() || null }
-      : { selected_option_ids: currentSelected, text_response: null };
-
-    if (
-      !answer.text_response &&
-      !(answer.selected_option_ids && answer.selected_option_ids.length > 0)
-    ) {
-      setSubmitError("Choose an answer before submitting.");
-      return;
-    }
-
-    setIsSubmitting(true);
-    setSubmitError("");
-
-    submitAnswer(attemptId, questionId, answer, token)
-      .then((feedback) => {
-        // FastAPI owns correctness and release timing; never grade locally.
-        setFeedbackMap((previous) => ({
-          ...previous,
-          [questionId]: {
-            feedback_released: feedback.feedback_released,
-            is_correct:
-              feedback.feedback_released &&
-              typeof feedback.is_correct === "boolean"
-                ? feedback.is_correct
-                : null,
-            correct_option_ids: feedback.feedback_released
-              ? (feedback.correct_option_ids ?? [])
-              : [],
-            explanation: feedback.feedback_released
-              ? (feedback.explanation ?? null)
-              : null,
-          },
-        }));
-        setSubmittedMap((previous) => ({ ...previous, [questionId]: true }));
-      })
-      .catch((error: unknown) => {
-        if (error instanceof ApiError && error.status === 401) {
-          handleError(error);
-          return;
-        }
-        if (error instanceof ApiError && error.status === 409) {
-          setSubmitError("This question was already submitted. Reloading...");
-          setReloadKey((value) => value + 1);
-          return;
-        }
-        setSubmitError(
-          error instanceof Error ? error.message : "Unable to submit the answer.",
-        );
-      })
-      .finally(() => setIsSubmitting(false));
-  }
-
-  async function handleFinish() {
-    if (!token || !allQuestionsSubmitted || isSubmitting || finishingRef.current) {
-      return;
-    }
-
-    finishingRef.current = true;
-    setIsFinishing(true);
-    setFinishError("");
-    let navigating = false;
-
-    try {
-      const response = await submitExam(attemptId, token);
-      if (response.status !== "submitted" || response.attempt_id !== attemptId) {
-        throw new Error("Unexpected final submission response.");
-      }
-      navigating = true;
-      router.replace(`/exams/${encodeURIComponent(attemptId)}/results`);
-    } catch (error: unknown) {
-      if (error instanceof ApiError && error.status === 401) {
-        handleError(error);
-        return;
-      }
-      if (error instanceof ApiError && error.status === 409) {
-        // The request may already have succeeded in another tab.
-        try {
-          const current = await getExam(attemptId, token);
-          if (current.status === "submitted") {
-            navigating = true;
-            router.replace(`/exams/${encodeURIComponent(attemptId)}/results`);
-            return;
-          }
-        } catch (lookupError: unknown) {
-          if (lookupError instanceof ApiError && lookupError.status === 401) {
-            handleError(lookupError);
-            return;
-          }
-        }
-        setFinishError("Unable to finalize this attempt. Please try again.");
-        return;
-      }
-      setFinishError(
-        error instanceof Error ? error.message : "Unable to finish the exam.",
-      );
-    } finally {
-      // Keep the Finish action disabled after navigation begins.
-      if (!navigating) {
-        finishingRef.current = false;
-        setIsFinishing(false);
-      }
-    }
-  }
-
-  const optionsList = currentQuestion.options.map((option) => (
-    <OptionItem
-      key={option.id}
-      id={option.id}
-      position={option.position}
-      option={option.option_text}
-      questionType={isMultiple ? "multiple" : "single"}
-      isSelected={currentSelected.includes(option.id)}
-      onSelect={() => handleSelect(option.id)}
-      isSubmitted={isSubmitted}
-      disabled={isSubmitting || isFinishing}
-      feedbackReleased={optionFeedbackReleased}
-      correctOptionIds={
-        optionFeedbackReleased ? currentFeedback.correct_option_ids : []
-      }
-    />
-  ));
-
-  const selectedCount = isShortAnswer
-    ? textValue.trim().length
-    : currentSelected.length;
   const answeredStatus = isSubmitted
     ? typeof currentFeedback?.is_correct === "boolean" ||
       Boolean(currentFeedback?.explanation)
@@ -367,224 +91,60 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
 
   return (
     <div className="w-full space-y-6">
-      {/* Same global-style navigation treatment as Categories and Results. */}
-      <nav
-        aria-label="Main navigation"
-        className="flex flex-wrap items-center gap-x-7 gap-y-3 rounded-md border border-[#d4d8db] bg-white px-6 py-5"
-      >
-        <span className="text-sm font-extrabold tracking-tight">
-          THE JOB HACKERS
-        </span>
-        <div className="flex flex-wrap items-center gap-4 text-sm">
-          <span className="font-semibold text-[#303639]">Exams</span>
-          <span className="text-gray-300" aria-hidden="true">•</span>
-          <span className="text-gray-400" title="Coming soon">My History</span>
-          <span className="text-gray-300" aria-hidden="true">•</span>
-          <span className="text-gray-400" title="Coming soon">Journal</span>
-          <span className="text-gray-300" aria-hidden="true">•</span>
-          <span className="text-gray-400" title="Coming soon">Account</span>
-        </div>
-      </nav>
-
-      <header className="space-y-2">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-          Practice exam <span className="font-medium text-[#687178]">· In progress</span>
-        </h1>
-        <p className="text-sm text-[#687178]">
-          Question {currentQuestionIndex + 1} of {questions.length}
-          <span className="mx-2" aria-hidden="true">·</span>
-          {answeredStatus}
-        </p>
-      </header>
+      <Navbar />
+      <PageHeader
+        title="Practice exam"
+        status="In progress"
+        stepLabel={`Question ${currentQuestionIndex + 1} of ${questions.length}`}
+        subtitle={answeredStatus}
+      />
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-        <section
-          aria-labelledby="question-heading"
-          className="min-w-0 rounded-md border border-[#cbd0d3] bg-white p-5 sm:p-6"
-        >
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#687178]">
-            Question {String(currentQuestionIndex + 1).padStart(2, "0")} / {isShortAnswer ? "Short answer" : isMultiple ? "Multiple select" : "Multiple choice"}
-          </p>
-          <h2
-            id="question-heading"
-            className="mb-5 mt-4 text-lg font-bold leading-7 sm:text-xl"
-          >
-            {currentQuestion.question_text}
-          </h2>
+        <QuestionRenderer
+          question={currentQuestion}
+          questionIndex={currentQuestionIndex}
+          totalQuestions={questions.length}
+          selectedOptionIds={currentSelected}
+          textValue={textValue}
+          isSubmitted={isSubmitted}
+          isSubmitting={isSubmitting}
+          isFinishing={isFinishing}
+          submitError={submitError}
+          feedback={currentFeedback}
+          allQuestionsSubmitted={allQuestionsSubmitted}
+          firstUnsubmittedIndex={firstUnsubmittedIndex}
+          onSelectOption={handleSelect}
+          onTextChange={handleTextChange}
+          onSubmit={handleSubmit}
+          onPrevious={() =>
+            setCurrentQuestionIndex((previous) => Math.max(previous - 1, 0))
+          }
+          onNext={() =>
+            setCurrentQuestionIndex((previous) =>
+              Math.min(previous + 1, questions.length - 1),
+            )
+          }
+          onReviewUnsubmitted={() => {
+            if (firstUnsubmittedIndex >= 0) {
+              setCurrentQuestionIndex(firstUnsubmittedIndex);
+            }
+          }}
+        />
 
-          {isShortAnswer ? (
-            <textarea
-              aria-label="Your answer"
-              value={textValue}
-              onChange={(event) => handleTextChange(event.target.value)}
-              disabled={isSubmitted || isSubmitting || isFinishing}
-              placeholder="Type your answer..."
-              className="min-h-32 w-full rounded-md border border-[#d4dadd] bg-white p-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
-            />
-          ) : isMultiple ? (
-            <div role="group" aria-labelledby="question-heading" className="flex flex-col gap-3">
-              {optionsList}
-            </div>
-          ) : (
-            <RadioGroup
-              value={currentSelected[0] || ""}
-              onValueChange={handleSelect}
-              aria-labelledby="question-heading"
-              className="flex flex-col gap-3"
-            >
-              {optionsList}
-            </RadioGroup>
-          )}
-
-          {isSubmitted && (
-            <div
-              role="status"
-              className={`mt-5 rounded-md border p-4 text-sm ${
-                typeof currentFeedback?.is_correct === "boolean"
-                  ? currentFeedback.is_correct
-                    ? "border-[#9fcfad] bg-[#e7f5ea] text-[#225c38]"
-                    : "border-[#e8abb2] bg-[#fff0f1] text-[#933443]"
-                  : "border-[#d4dadd] bg-[#f7f8f9] text-[#56616a]"
-              }`}
-            >
-              <p className="font-semibold">
-                {isShortAnswer
-                  ? "Answer recorded."
-                  : typeof currentFeedback?.is_correct === "boolean"
-                    ? currentFeedback.is_correct
-                      ? "Correct answer."
-                      : "Incorrect answer."
-                    : "Answer submitted."}
-              </p>
-              {currentFeedback?.explanation ? (
-                <p className="mt-2 leading-5">
-                  <span className="font-semibold">Explanation:</span> {currentFeedback.explanation}
-                </p>
-              ) : (
-                <p className="mt-2 leading-5">
-                  {isShortAnswer
-                    ? "Short answers are not automatically graded."
-                    : "Your submitted answer is locked for this attempt."}
-                </p>
-              )}
-            </div>
-          )}
-
-          {submitError && (
-            <p role="alert" className="mt-3 text-sm text-red-700">{submitError}</p>
-          )}
-
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() =>
-                setCurrentQuestionIndex((previous) => Math.max(previous - 1, 0))
-              }
-              disabled={currentQuestionIndex === 0 || isSubmitting || isFinishing}
-              className="h-10 rounded-md border-[#cbd0d3] px-4 text-sm"
-            >
-              Previous
-            </Button>
-            {isSubmitted ? (
-              isLastQuestion ? (
-                allQuestionsSubmitted ? (
-                  <span className="text-sm text-[#56616a]">
-                    All answers submitted. Finish the exam in the progress panel.
-                  </span>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      if (firstUnsubmittedIndex >= 0) {
-                        setCurrentQuestionIndex(firstUnsubmittedIndex);
-                      }
-                    }}
-                    disabled={isFinishing}
-                    className="h-10 rounded-md border-[#cbd0d3] px-4 text-sm"
-                  >
-                    Review unanswered questions
-                  </Button>
-                )
-              ) : (
-                <Button
-                  type="button"
-                  onClick={() =>
-                    setCurrentQuestionIndex((previous) =>
-                      Math.min(previous + 1, questions.length - 1),
-                    )
-                  }
-                  disabled={isFinishing}
-                  className="h-10 rounded-md bg-[#343a3e] px-4 text-sm text-white hover:bg-[#1e2427]"
-                >
-                  Next question
-                </Button>
-              )
-            ) : (
-              <Button
-                type="button"
-                disabled={selectedCount === 0 || isSubmitting || isFinishing}
-                onClick={handleSubmit}
-                className="h-10 rounded-md bg-[#343a3e] px-4 text-sm text-white hover:bg-[#1e2427] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isSubmitting ? "Submitting..." : "Submit answer"}
-              </Button>
-            )}
-          </div>
-        </section>
-
-        <aside
-          aria-labelledby="attempt-progress-heading"
-          className="rounded-md border border-[#cbd0d3] bg-white p-5 sm:p-6"
-        >
-          <h2 id="attempt-progress-heading" className="text-base font-bold">
-            Attempt progress
-          </h2>
-          <div className="mt-4 space-y-3 text-sm text-[#56616a]">
-            <p>Question {currentQuestionIndex + 1} / {questions.length}</p>
-            <p>Submitted answers: {submittedCount} / {questions.length}</p>
-            <p>
-              {isSubmitted
-                ? isShortAnswer
-                  ? "Submitted: short answer"
-                  : `Submitted answer${isMultiple ? "s" : ""}: ${selectedLetters || "recorded"}`
-                : "Current question not yet submitted"}
-            </p>
-          </div>
-          <div className="my-5 border-t border-[#e2e5e7]" />
-
-          {isLastQuestion && allQuestionsSubmitted ? (
-            <Button
-              type="button"
-              onClick={handleFinish}
-              disabled={isFinishing || isSubmitting}
-              className="h-10 rounded-md bg-[#343a3e] px-5 text-sm text-white hover:bg-[#1e2427] disabled:opacity-50"
-            >
-              {isFinishing ? "Finishing exam..." : "Finish Exam"}
-            </Button>
-          ) : (
-            <p className="text-sm text-[#687178]">
-              Submit all questions to enable Finish Exam.
-            </p>
-          )}
-
-          {finishError && (
-            <p role="alert" className="mt-3 text-sm text-red-700">
-              {finishError}
-            </p>
-          )}
-
-          {isSubmitted && (
-            <p className="mt-4 text-xs leading-5 text-[#687178]">
-              {typeof currentFeedback?.is_correct === "boolean"
-                ? currentFeedback.is_correct
-                  ? "✓ Correct · Answer locked for this attempt."
-                  : "× Incorrect · Answer locked for this attempt."
-                : "✓ Answer saved · Locked for this attempt."}
-            </p>
-          )}
-        </aside>
+        <ExamSidebar
+          currentQuestion={currentQuestion}
+          currentQuestionIndex={currentQuestionIndex}
+          totalQuestions={questions.length}
+          submittedCount={submittedCount}
+          selectedOptionIds={currentSelected}
+          isSubmitted={isSubmitted}
+          isSubmitting={isSubmitting}
+          isFinishing={isFinishing}
+          allQuestionsSubmitted={allQuestionsSubmitted}
+          finishError={finishError}
+          feedback={currentFeedback}
+          onFinish={handleFinish}
+        />
       </div>
     </div>
   );
