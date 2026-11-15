@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
+import Navbar from "@/components/layouts/Navbar";
 import { useDemoSession } from "@/features/auth/AuthProvider";
 import { ApiError } from "@/lib/api-client";
 import {
@@ -196,38 +197,7 @@ export default function CategoriesPage() {
       style={{ fontFamily: "Arial, Helvetica, sans-serif" }}
     >
       <div className="mx-auto max-w-7xl space-y-6">
-        <nav
-          aria-label="Main navigation"
-          className="flex flex-wrap items-center gap-x-7 gap-y-3 rounded-md border border-[#d4d8db] bg-white px-6 py-5"
-        >
-          <span className="text-sm font-extrabold tracking-tight">
-            THE JOB HACKERS
-          </span>
-
-          <div className="flex flex-wrap items-center gap-4 text-sm">
-            <span className="font-semibold text-[#303639]">
-              Exams
-            </span>
-            <span className="text-gray-300" aria-hidden="true">
-              •
-            </span>
-            <span className="text-gray-400" title="Coming soon">
-              My History
-            </span>
-            <span className="text-gray-300" aria-hidden="true">
-              •
-            </span>
-            <span className="text-gray-400" title="Coming soon">
-              Journal
-            </span>
-            <span className="text-gray-300" aria-hidden="true">
-              •
-            </span>
-            <span className="text-gray-400" title="Coming soon">
-              Account
-            </span>
-          </div>
-        </nav>
+        <Navbar />
 
         <header className="space-y-2">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
