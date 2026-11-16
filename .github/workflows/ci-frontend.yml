@@ -7,9 +7,9 @@ on:
       - "frontend/**"
       - ".github/workflows/ci-frontend.yml"
   pull_request:
-    paths:
-      - "frontend/**"
-      - ".github/workflows/ci-frontend.yml"
+    # No path filter: these provide required status checks, so
+    # they must report on every PR — path-filtered PRs (e.g.
+    # docs/config-only) would block merges forever.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
