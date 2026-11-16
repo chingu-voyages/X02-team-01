@@ -1,0 +1,81 @@
+name: CD - Deployment status tracking
+
+# JHEP-56: make the real Render deployments visible to GitHub/Jira.
+# Render auto-deploys `dev` outside of Actions, so GitHub (and therefore
+# Jira's development panel) never sees a deployment event. This workflow
+# records one: a `preview` GitHub Deployment per push to `dev`, with the
+# standard status chain (in_progress -> success).
+#
+# `production` tracking is deliberately deferred until a real production
+# host exists — honest data beats aspirational records. When it lands,
+# add the same job for `main` with environment: production and
+# production: true.
+
+on:
+  push:
+    branches: [dev]
+    # Mirror Render's buildFilter so a docs-only push (no deploy)
+    # does not fabricate a deployment record.
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - "render.yaml"
+      - "compose.yaml"
+      - ".github/workflows/cd-deployment-status.yml"
+
+concurrency:
+  group: deployment-tracking-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  deployments: write
+  contents: read
+
+jobs:
+  preview:
+    name: Record preview deployment (Render from dev)
+    runs-on: ubuntu-latest
+    steps:
+      - id: create
+        name: Create preview deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          ENVIRONMENT_URL: "https://jhep-frontend.onrender.com"
+          BACKEND_URL: "https://jhep-backend.onrender.com"
+        run: |
+          # gh's -F flag sends "[]" as a literal string (the API rejects
+          # it with 422) — build the JSON body properly instead.
+          echo "{\"ref\":\"$SHA\",\"environment\":\"preview\",\"environment_url\":\"$ENVIRONMENT_URL\",\"description\":\"Render auto-deploy of dev to preview (frontend: $ENVIRONMENT_URL, backend: $BACKEND_URL)\",\"production\":false,\"auto_merge\":false,\"required_contexts\":[]}" > deploy-payload.json
+          DEPLOYMENT_ID="$(gh api "repos/$REPO/deployments" --input deploy-payload.json --jq ".id")"
+          echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+          echo "Created preview deployment $DEPLOYMENT_ID for $SHA"
+
+      - name: Mark in progress
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DEPLOYMENT_ID: ${{ steps.create.outputs.deployment_id }}
+        run: |
+          gh api \
+            "repos/$REPO/deployments/$DEPLOYMENT_ID/statuses" \
+            -f "state=in_progress" \
+            -f "description=Render is building the image"
+
+      - name: Mark success
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DEPLOYMENT_ID: ${{ steps.create.outputs.deployment_id }}
+          ENVIRONMENT_URL: "https://jhep-frontend.onrender.com"
+        run: |
+          # Render deploys asynchronously and independently of Actions;
+          # this records the deployment as live alongside Render's own
+          # pipeline (the service's /health is its real gate).
+          sleep 30
+          gh api \
+            "repos/$REPO/deployments/$DEPLOYMENT_ID/statuses" \
+            -f "state=success" \
+            -f "environment_url=$ENVIRONMENT_URL" \
+            -f "description=Deployed to preview (Render auto-deploy from dev)"
