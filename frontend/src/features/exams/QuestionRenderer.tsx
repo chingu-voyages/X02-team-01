@@ -2,6 +2,7 @@ import OptionItem from "@/features/questions/OptionItem";
 import { Button } from "@/components/ui/button";
 import { RadioGroup } from "@/components/ui/radio-group";
 import FeedbackCard from "./FeedbackCard";
+import QuestionMedia from "./QuestionMedia";
 import {
   FeedbackEntry,
   ExamQuestionWithResponse,
@@ -97,6 +98,8 @@ export default function QuestionRenderer({
       >
         {question.question_text}
       </h2>
+
+      <QuestionMedia images={question.images} />
 
       {isShortAnswer ? (
         <textarea

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 
@@ -17,7 +23,9 @@ const { mockHandleError, mockReplace, mockLogout } = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: mockReplace }),
+  useRouter: () => ({
+    replace: mockReplace,
+  }),
 }));
 
 vi.mock("@/lib/exam-api", () => ({
@@ -37,11 +45,13 @@ vi.mock("@/features/auth/AuthProvider", () => ({
   }),
   useAuth: () => ({
     logout: mockLogout,
-  })
+  }),
 }));
 
 vi.mock("@/components/ui/radio-group", () => ({
-  RadioGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  RadioGroup: ({ children }: { children: ReactNode }) => (
+    <div>{children}</div>
+  ),
 }));
 
 vi.mock("@/features/questions/OptionItem", () => ({
@@ -115,8 +125,16 @@ function attempt(response?: ReturnType<typeof storedResponse>): ExamAttempt {
         difficulty: "easy" as const,
         images: [],
         options: [
-          { id: optionA, position: 1, option_text: "Choice A" },
-          { id: optionB, position: 2, option_text: "Choice B" },
+          {
+            id: optionA,
+            position: 1,
+            option_text: "Choice A",
+          },
+          {
+            id: optionB,
+            position: 2,
+            option_text: "Choice B",
+          },
         ],
         ...(response ? { response } : {}),
       },
@@ -126,28 +144,106 @@ function attempt(response?: ReturnType<typeof storedResponse>): ExamAttempt {
 
 async function selectAndSubmit() {
   const user = userEvent.setup();
+
   await screen.findByText("Select the correct answer");
-  await user.click(screen.getByRole("button", { name: "Choice A" }));
-  await user.click(screen.getByRole("button", { name: "Submit answer" }));
+
+  await user.click(
+    screen.getByRole("button", {
+      name: "Choice A",
+    }),
+  );
+
+  await user.click(
+    screen.getByRole("button", {
+      name: "Submit answer",
+    }),
+  );
+
   await waitFor(() => {
-    expect(screen.getByTestId("option-Choice A")).toBeDisabled();
+    expect(
+      screen.getByTestId("option-Choice A"),
+    ).toBeDisabled();
   });
 }
 
 async function loadStoredAnswer() {
-  vi.mocked(getExam).mockResolvedValue(attempt(storedResponse()));
-  render(<ExamCard attemptId={attemptId} />);
-  return screen.findByRole("button", { name: "Finish Exam" });
+  vi.mocked(getExam).mockResolvedValue(
+    attempt(storedResponse()),
+  );
+
+  render(
+    <ExamCard attemptId={attemptId} />,
+  );
+
+  return screen.findByRole("button", {
+    name: "Finish Exam",
+  });
 }
 
 describe("ExamCard feedback and final submission", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.mocked(getExam).mockResolvedValue(attempt());
+
+    vi.mocked(getExam).mockResolvedValue(
+      attempt(),
+    );
   });
 
   afterEach(() => {
     cleanup();
+  });
+
+  it("renders a hosted question image without blocking answer submission", async () => {
+    const data = attempt();
+
+    data.questions[0].images = [
+      {
+        id: "77777777-7777-4777-8777-777777777777",
+        position: 1,
+        alt_text:
+          "Agile workflow diagram showing an iterative planning and delivery process.",
+        media_type: "image/png",
+        url:
+          "https://pub-example.r2.dev/questions/demo/agile.png",
+      },
+    ];
+
+    vi.mocked(getExam).mockResolvedValue(
+      data,
+    );
+
+    vi.mocked(submitAnswer).mockResolvedValue({
+      question_version_id: questionId,
+      is_submitted: true,
+      feedback_released: false,
+    });
+
+    render(
+      <ExamCard attemptId={attemptId} />,
+    );
+
+    const renderedImage =
+      await screen.findByRole("img", {
+        name:
+          "Agile workflow diagram showing an iterative planning and delivery process.",
+      });
+
+    expect(renderedImage).toHaveAttribute(
+      "src",
+      "https://pub-example.r2.dev/questions/demo/agile.png",
+    );
+
+    await selectAndSubmit();
+
+    expect(submitAnswer).toHaveBeenCalledWith(
+      attemptId,
+      questionId,
+      {
+        selected_option_ids: [optionA],
+        text_response: null,
+      },
+      "test-token",
+    );
   });
 
   it("displays released immediate feedback", async () => {
@@ -159,11 +255,21 @@ describe("ExamCard feedback and final submission", () => {
       correct_option_ids: [optionB],
     });
 
-    render(<ExamCard attemptId={attemptId} />);
+    render(
+      <ExamCard attemptId={attemptId} />,
+    );
+
     await selectAndSubmit();
 
-    expect(screen.getByTestId("option-Choice A").getAttribute("data-feedback-released")).toBe("true");
-    expect(screen.getByText("Incorrect answer.")).toBeTruthy();
+    expect(
+      screen
+        .getByTestId("option-Choice A")
+        .getAttribute("data-feedback-released"),
+    ).toBe("true");
+
+    expect(
+      screen.getByText("Incorrect answer."),
+    ).toBeTruthy();
   });
 
   it("does not reveal correctness in deferred mode", async () => {
@@ -173,19 +279,41 @@ describe("ExamCard feedback and final submission", () => {
       feedback_released: false,
     });
 
-    render(<ExamCard attemptId={attemptId} />);
+    render(
+      <ExamCard attemptId={attemptId} />,
+    );
+
     await selectAndSubmit();
 
-    expect(screen.getByTestId("option-Choice A").getAttribute("data-feedback-released")).toBe("false");
-    expect(screen.queryByText("Incorrect answer.")).toBeNull();
+    expect(
+      screen
+        .getByTestId("option-Choice A")
+        .getAttribute("data-feedback-released"),
+    ).toBe("false");
+
+    expect(
+      screen.queryByText("Incorrect answer."),
+    ).toBeNull();
   });
 
   it("restores locked answers without inventing option coloring", async () => {
     await loadStoredAnswer();
-    const selected = screen.getByTestId("option-Choice A");
+
+    const selected =
+      screen.getByTestId("option-Choice A");
+
     expect(selected).toBeDisabled();
-    expect(selected.getAttribute("aria-pressed")).toBe("true");
-    expect(selected.getAttribute("data-feedback-released")).toBe("false");
+
+    expect(
+      selected.getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    expect(
+      selected.getAttribute(
+        "data-feedback-released",
+      ),
+    ).toBe("false");
+
     expect(submitAnswer).not.toHaveBeenCalled();
   });
 
@@ -197,49 +325,95 @@ describe("ExamCard feedback and final submission", () => {
       is_correct: false,
     });
 
-    render(<ExamCard attemptId={attemptId} />);
+    render(
+      <ExamCard attemptId={attemptId} />,
+    );
+
     await selectAndSubmit();
 
-    expect(screen.getByTestId("option-Choice A").getAttribute("data-feedback-released")).toBe("false");
+    expect(
+      screen
+        .getByTestId("option-Choice A")
+        .getAttribute("data-feedback-released"),
+    ).toBe("false");
   });
 
   it("finalizes a completed exam and navigates to results", async () => {
-    vi.mocked(submitExam).mockResolvedValue(submissionResponse);
+    vi.mocked(submitExam).mockResolvedValue(
+      submissionResponse,
+    );
+
     const user = userEvent.setup();
+
     await loadStoredAnswer();
 
-    await user.click(screen.getByRole("button", { name: "Finish Exam" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "Finish Exam",
+      }),
+    );
 
     await waitFor(() => {
       expect(submitExam).toHaveBeenCalledTimes(1);
-      expect(submitExam).toHaveBeenCalledWith(attemptId, "test-token");
-      expect(mockReplace).toHaveBeenCalledWith(`/exams/${attemptId}/results`);
+
+      expect(submitExam).toHaveBeenCalledWith(
+        attemptId,
+        "test-token",
+      );
+
+      expect(mockReplace).toHaveBeenCalledWith(
+        `/exams/${attemptId}/results`,
+      );
     });
   });
 
   it("prevents duplicate requests while the final submission is pending", async () => {
-    let resolveSubmit!: (value: FinalExamSubmissionResponse) => void;
+    let resolveSubmit!: (
+      value: FinalExamSubmissionResponse,
+    ) => void;
+
     vi.mocked(submitExam).mockImplementation(
-      () => new Promise((resolve) => { resolveSubmit = resolve; }),
+      () =>
+        new Promise((resolve) => {
+          resolveSubmit = resolve;
+        }),
     );
 
     const user = userEvent.setup();
-    await loadStoredAnswer();
-    await user.click(screen.getByRole("button", { name: "Finish Exam" }));
 
-    const finishingButton = screen.getByRole("button", { name: "Finishing exam..." });
+    await loadStoredAnswer();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Finish Exam",
+      }),
+    );
+
+    const finishingButton =
+      screen.getByRole("button", {
+        name: "Finishing exam...",
+      });
+
     expect(finishingButton).toBeDisabled();
+
     await user.click(finishingButton);
+
     expect(submitExam).toHaveBeenCalledTimes(1);
 
-    await act(async () => { resolveSubmit(submissionResponse); });
+    await act(async () => {
+      resolveSubmit(submissionResponse);
+    });
+
     await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith(`/exams/${attemptId}/results`);
+      expect(mockReplace).toHaveBeenCalledWith(
+        `/exams/${attemptId}/results`,
+      );
     });
   });
 
   it("does not finish if an earlier question is unanswered", async () => {
     const data = attempt();
+
     data.questions.push({
       ...data.questions[0],
       id: otherQuestionId,
@@ -247,67 +421,157 @@ describe("ExamCard feedback and final submission", () => {
       question_text: "Second question",
       response: {
         ...storedResponse(),
-        question_version_id: otherQuestionId,
+        question_version_id:
+          otherQuestionId,
       },
     });
+
     data.question_count = 2;
     data.current_position = 2;
-    vi.mocked(getExam).mockResolvedValue(data);
+
+    vi.mocked(getExam).mockResolvedValue(
+      data,
+    );
 
     const user = userEvent.setup();
-    render(<ExamCard attemptId={attemptId} />);
-    await screen.findByText("Second question");
 
-    expect(screen.queryByRole("button", { name: "Finish Exam" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Review unanswered questions" }));
-    expect(screen.getByText("Select the correct answer")).toBeTruthy();
+    render(
+      <ExamCard attemptId={attemptId} />,
+    );
+
+    await screen.findByText(
+      "Second question",
+    );
+
+    expect(
+      screen.queryByRole("button", {
+        name: "Finish Exam",
+      }),
+    ).toBeNull();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Review unanswered questions",
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Select the correct answer",
+      ),
+    ).toBeTruthy();
+
     expect(submitExam).not.toHaveBeenCalled();
   });
 
   it("clears the session when final submission returns 401", async () => {
-    vi.mocked(submitExam).mockRejectedValue(new ApiError(401, "Expired"));
+    vi.mocked(submitExam).mockRejectedValue(
+      new ApiError(401, "Expired"),
+    );
+
     const user = userEvent.setup();
+
     await loadStoredAnswer();
-    await user.click(screen.getByRole("button", { name: "Finish Exam" }));
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Finish Exam",
+      }),
+    );
 
     await waitFor(() => {
-      expect(mockHandleError).toHaveBeenCalledWith(
-        expect.objectContaining({ status: 401 }),
+      expect(
+        mockHandleError,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 401,
+        }),
       );
     });
-    expect(mockReplace).not.toHaveBeenCalled();
+
+    expect(
+      mockReplace,
+    ).not.toHaveBeenCalled();
   });
 
   it("recovers when the server says an attempt was already submitted", async () => {
-    const saved = attempt(storedResponse());
+    const saved = attempt(
+      storedResponse(),
+    );
+
     vi.mocked(getExam)
       .mockResolvedValueOnce(saved)
-      .mockResolvedValueOnce({ ...saved, status: "submitted" });
-    vi.mocked(submitExam).mockRejectedValue(new ApiError(409, "Already submitted"));
+      .mockResolvedValueOnce({
+        ...saved,
+        status: "submitted",
+      });
+
+    vi.mocked(submitExam).mockRejectedValue(
+      new ApiError(
+        409,
+        "Already submitted",
+      ),
+    );
 
     const user = userEvent.setup();
-    render(<ExamCard attemptId={attemptId} />);
-    await user.click(await screen.findByRole("button", { name: "Finish Exam" }));
+
+    render(
+      <ExamCard attemptId={attemptId} />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Finish Exam",
+      }),
+    );
 
     await waitFor(() => {
       expect(getExam).toHaveBeenCalledTimes(2);
-      expect(mockReplace).toHaveBeenCalledWith(`/exams/${attemptId}/results`);
+
+      expect(mockReplace).toHaveBeenCalledWith(
+        `/exams/${attemptId}/results`,
+      );
     });
   });
 
   it("displays a retryable error when final submission fails", async () => {
-    vi.mocked(submitExam).mockRejectedValueOnce(new ApiError(500, "Server error"))
-      .mockResolvedValueOnce(submissionResponse);
+    vi.mocked(submitExam)
+      .mockRejectedValueOnce(
+        new ApiError(
+          500,
+          "Server error",
+        ),
+      )
+      .mockResolvedValueOnce(
+        submissionResponse,
+      );
 
     const user = userEvent.setup();
-    await loadStoredAnswer();
-    await user.click(screen.getByRole("button", { name: "Finish Exam" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Server error");
 
-    await user.click(screen.getByRole("button", { name: "Finish Exam" }));
+    await loadStoredAnswer();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Finish Exam",
+      }),
+    );
+
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent("Server error");
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Finish Exam",
+      }),
+    );
+
     await waitFor(() => {
       expect(submitExam).toHaveBeenCalledTimes(2);
-      expect(mockReplace).toHaveBeenCalledWith(`/exams/${attemptId}/results`);
+
+      expect(mockReplace).toHaveBeenCalledWith(
+        `/exams/${attemptId}/results`,
+      );
     });
   });
 });
