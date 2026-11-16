@@ -3,7 +3,7 @@ name: CD - Deployment status tracking
 # JHEP-56: make the real Render deployments visible to GitHub/Jira.
 # Render auto-deploys `dev` outside of Actions, so GitHub (and therefore
 # Jira's development panel) never sees a deployment event. This workflow
-# records one: a `preview` GitHub Deployment per push to `dev`, with the
+# records one: a `dev`-environment GitHub Deployment per push to `dev`, with the
 # standard status chain (in_progress -> success).
 #
 # `production` tracking is deliberately deferred until a real production
@@ -32,12 +32,12 @@ permissions:
   contents: read
 
 jobs:
-  preview:
-    name: Record preview deployment (Render from dev)
+  dev:
+    name: Record dev-environment deployment (Render from dev)
     runs-on: ubuntu-latest
     steps:
       - id: create
-        name: Create preview deployment
+        name: Create dev deployment
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -47,10 +47,10 @@ jobs:
         run: |
           # gh's -F flag sends "[]" as a literal string (the API rejects
           # it with 422) — build the JSON body properly instead.
-          echo "{\"ref\":\"$SHA\",\"environment\":\"preview\",\"environment_url\":\"$ENVIRONMENT_URL\",\"description\":\"Render auto-deploy of dev to preview (frontend: $ENVIRONMENT_URL, backend: $BACKEND_URL)\",\"production\":false,\"auto_merge\":false,\"required_contexts\":[]}" > deploy-payload.json
+          echo "{\"ref\":\"$SHA\",\"environment\":\"dev\",\"environment_url\":\"$ENVIRONMENT_URL\",\"description\":\"Render auto-deploy of dev to dev (frontend: $ENVIRONMENT_URL, backend: $BACKEND_URL)\",\"production\":false,\"auto_merge\":false,\"required_contexts\":[]}" > deploy-payload.json
           DEPLOYMENT_ID="$(gh api "repos/$REPO/deployments" --input deploy-payload.json --jq ".id")"
           echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
-          echo "Created preview deployment $DEPLOYMENT_ID for $SHA"
+          echo "Created dev deployment $DEPLOYMENT_ID for $SHA"
 
       - name: Mark in progress
         env:
@@ -78,4 +78,4 @@ jobs:
             "repos/$REPO/deployments/$DEPLOYMENT_ID/statuses" \
             -f "state=success" \
             -f "environment_url=$ENVIRONMENT_URL" \
-            -f "description=Deployed to preview (Render auto-deploy from dev)"
+            -f "description=Deployed to the dev environment (Render auto-deploy from dev)"
