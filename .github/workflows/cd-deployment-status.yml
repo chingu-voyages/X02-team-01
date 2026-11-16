@@ -45,18 +45,10 @@ jobs:
           ENVIRONMENT_URL: "https://jhep-frontend.onrender.com"
           BACKEND_URL: "https://jhep-backend.onrender.com"
         run: |
-          DEPLOYMENT_ID="$(
-            gh api \
-              "repos/$REPO/deployments" \
-              -f "ref=$SHA" \
-              -f "environment=preview" \
-              -f "environment_url=$ENVIRONMENT_URL" \
-              -f "description=Render auto-deploy of dev to preview (frontend: $ENVIRONMENT_URL, backend: $BACKEND_URL)" \
-              -F "production=false" \
-              -F "auto_merge=false" \
-              -F "required_contexts=[]" \
-              --jq ".id"
-          )"
+          # gh's -F flag sends "[]" as a literal string (the API rejects
+          # it with 422) — build the JSON body properly instead.
+          echo "{\"ref\":\"$SHA\",\"environment\":\"preview\",\"environment_url\":\"$ENVIRONMENT_URL\",\"description\":\"Render auto-deploy of dev to preview (frontend: $ENVIRONMENT_URL, backend: $BACKEND_URL)\",\"production\":false,\"auto_merge\":false,\"required_contexts\":[]}" > deploy-payload.json
+          DEPLOYMENT_ID="$(gh api "repos/$REPO/deployments" --input deploy-payload.json --jq ".id")"
           echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
           echo "Created preview deployment $DEPLOYMENT_ID for $SHA"
 
