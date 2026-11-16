@@ -41,8 +41,8 @@ STORAGE_KEY = "questions/demo/agile.png"
 
 # Confirm this accurately describes the actual image before committing.
 ALT_TEXT = (
-    "Agile workflow diagram showing work moving through an iterative "
-    "planning and delivery process."
+    "Circular Agile methodology workflow showing Plan, Design, Develop,"
+    "Test, Deploy, and Review stages."
 )
 
 MEDIA_TYPE = "image/png"
@@ -106,8 +106,7 @@ def main() -> None:
 
     if not args.confirm_local:
         parser.error(
-            "Only disposable local databases are allowed; "
-            "pass --confirm-local"
+            "Only disposable local databases are allowed; pass --confirm-local"
         )
 
     inserted = seed()
