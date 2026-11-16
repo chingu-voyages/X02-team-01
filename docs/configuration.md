@@ -25,6 +25,7 @@ gitignored — **never commit them**.
 | `JWT_ALGORITHM` | backend | `HS256` | Default: `HS256`. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | backend | `30` | Default: `30`. Access-token lifetime. |
 | `NEXT_PUBLIC_API_URL` | frontend | `http://localhost:8000/api/v1` | Base URL of the API as seen from the browser. Set in `frontend/.env.local`, not the root file — Next.js only loads env files from its own directory. |
+| `MEDIA_BASE_URL` | backend | `https://pub-xxxxxxxx.r2.dev` | Public HTTPS base URL used to resolve hosted question-image storage keys. Development may use an R2 public development URL; production should use the configured Cloudflare custom domain. |
 
 `POSTGRES_HOST` and `POSTGRES_PORT` are also read by the backend, but they have
 code defaults (`127.0.0.1` / `5432`) and so are **not** listed in `.env.example`.

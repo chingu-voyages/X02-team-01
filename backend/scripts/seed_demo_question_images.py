@@ -25,7 +25,6 @@ from scripts.seed_demo_exams import (
     require_safe_local_database,
 )
 
-
 # Existing seeded question:
 #
 # Professional Scrum Master I — Demo
