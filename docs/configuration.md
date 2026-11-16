@@ -104,17 +104,17 @@ shows nothing.
 
 | Environment (GitHub name) | Trigger | Notes |
 |---|---|---|
-| `preview` | push to `dev` (frontend/backend/render.yaml/compose.yaml) | `environment_url`: the Render frontend. Mirrors Render's buildFilter, so docs-only pushes record nothing. |
+| `dev` | push to `dev` (frontend/backend/render.yaml/compose.yaml) | `environment_url`: the Render frontend. Mirrors Render's buildFilter, so docs-only pushes record nothing. Named `dev` to match Jira's built-in keyword mapping (development) — no `.jira/config.yml` needed. |
 | `production` | *not tracked yet* | Deliberately deferred until a real production host exists. When it lands: track `main` with `production: true`. |
 
 Jira association: deployments link to stories automatically through the
 `JHEP-XXX` keys in the pushed commits/merge messages.
 
-**One-time Jira step (required, or deployments stay invisible):** in the
-Jira project's settings → the Releases/Deployments (or GitHub
-integration) environment mapping, map the GitHub environment name
-`preview` to the project's dev/test environment type. Jira only
-displays deployments whose environment name it recognises — the
-thirty pre-existing manually created deployments with
+Jira mapping: Jira's GitHub integration matches environment **names**
+against built-in keywords (`dev`/`development`, `test`, `staging`,
+`production`) — no `.jira/config.yml` is needed (an earlier attempt at
+one was removed: it disabled Jira's auto-detection entirely, and
+custom names like `preview` lagged behind the integration's config
+cache). The thirty pre-existing manually created deployments with
 `feature/JHEP-56-deployment-setup - jhep-*` names are unmapped and can
-be ignored (or deleted in Jira's view).
+be ignored.
