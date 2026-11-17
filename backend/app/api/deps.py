@@ -69,9 +69,7 @@ def get_current_user(
         )
 
     try:
-        subject, issued_at = decode_access_token_issued_at(
-            credentials.credentials
-        )
+        subject, issued_at = decode_access_token_issued_at(credentials.credentials)
     except jwt.InvalidTokenError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

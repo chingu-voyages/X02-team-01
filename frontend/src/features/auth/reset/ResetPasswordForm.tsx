@@ -6,7 +6,7 @@ import Link from "next/link";
 import Navbar from "@/components/layouts/Navbar";
 import Card from "@/components/ui/Card";
 
-const PASSWORD_RULES = [
+const passwordRules = [
   { test: (v: string) => v.length >= 8, message: "At least 8 characters" },
   {
     test: (v: string) => /[A-Z]/.test(v),
@@ -20,7 +20,7 @@ const PASSWORD_RULES = [
 ];
 
 function validateNewPassword(value: string): string | null {
-  for (const rule of PASSWORD_RULES) {
+  for (const rule of passwordRules) {
     if (!rule.test(value)) {
       return `Password must contain ${rule.message.toLowerCase()}`;
     }

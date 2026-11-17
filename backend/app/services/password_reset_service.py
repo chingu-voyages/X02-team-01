@@ -40,8 +40,7 @@ RESET_MIN_INTERVAL_SECONDS = settings.reset_min_interval_seconds
 RESET_LINK_TTL_HOURS = settings.reset_token_ttl_hours
 
 GENERIC_RESET_MESSAGE = (
-    "If an account exists for that email, a password-reset link has "
-    "been sent."
+    "If an account exists for that email, a password-reset link has been sent."
 )
 
 
@@ -74,9 +73,7 @@ def request_reset(session: Session, *, email: str) -> None:
     (prior unused ones are invalidated) and the reset email.
     """
     normalized = email.strip().lower()
-    user = session.exec(
-        select(User).where(User.email == normalized)
-    ).first()
+    user = session.exec(select(User).where(User.email == normalized)).first()
 
     if user is None:
         return  # silence: no enumeration
@@ -143,9 +140,7 @@ def request_reset(session: Session, *, email: str) -> None:
         )
 
 
-def reset_password(
-    session: Session, *, raw_token: str, new_password: str
-) -> User:
+def reset_password(session: Session, *, raw_token: str, new_password: str) -> User:
     """Consume the challenge and set the new credential (AC2/AC3/AC5).
 
     Validation order mirrors email verification: unknown hash → used →
@@ -164,23 +159,17 @@ def reset_password(
     ).first()
 
     if token is None or token.used_at is not None:
-        raise InvalidResetTokenError(
-            "This password-reset link is invalid"
-        )
+        raise InvalidResetTokenError("This password-reset link is invalid")
 
     expires_at = token.expires_at
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=UTC)
     if expires_at < _utcnow():
-        raise InvalidResetTokenError(
-            "This password-reset link is invalid"
-        )
+        raise InvalidResetTokenError("This password-reset link is invalid")
 
     user = session.get(User, token.user_id)
     if user is None:
-        raise InvalidResetTokenError(
-            "This password-reset link is invalid"
-        )
+        raise InvalidResetTokenError("This password-reset link is invalid")
 
     user.hashed_password = hash_password(new_password)
     user.sessions_invalid_before = _utcnow()
