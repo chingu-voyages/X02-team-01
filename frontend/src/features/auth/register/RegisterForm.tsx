@@ -454,6 +454,10 @@ export default function RegisterForm() {
             </span>
           </div>
         )}
+        <p className="text-xs text-gray-500 mt-1">
+          At least 8 characters, with an uppercase letter, a lowercase
+          letter, and a digit.
+        </p>
       </div>
 
       <FormInput
