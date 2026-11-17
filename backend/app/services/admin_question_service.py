@@ -19,6 +19,7 @@ from app.schemas.admin_question import (
     QuestionDraftCreate,
     QuestionDraftEdit,
 )
+from app.services.media_url import resolve_media_url
 
 
 class QuestionDraftScopeError(ValueError):
@@ -30,25 +31,23 @@ class QuestionBankNotFoundError(LookupError):
 
 
 class QuestionDraftNotEditableError(ValueError):
-    """The current question version cannot be edited in place as a draft."""
+    """Current question version cannot be edited in place."""
 
 
 class QuestionPublishedRevisionForbiddenError(PermissionError):
-    """Only an Administrator may create a revision of published content."""
+    """Only an Administrator may revise published content."""
 
 
 class QuestionDraftNotPublishableError(ValueError):
-    """The latest question version cannot be approved and published."""
+    """Latest version cannot be approved and published."""
 
 
 class QuestionDraftNotRejectableError(ValueError):
-    """The latest question version cannot be rejected."""
+    """Latest version cannot be rejected."""
 
 
 @dataclass(frozen=True)
 class CreatedQuestionDraft:
-    """Identifiers and server-controlled state for a newly created draft."""
-
     question_id: UUID
     question_version_id: UUID
     version_number: int
@@ -58,8 +57,6 @@ class CreatedQuestionDraft:
 
 @dataclass(frozen=True)
 class QuestionBankRecord:
-    """Latest-version summary shown in the management question bank."""
-
     question_id: UUID
     question_version_id: UUID
     version_number: int
@@ -79,17 +76,25 @@ class QuestionBankRecord:
 
 @dataclass(frozen=True)
 class QuestionBankOption:
-    """Trusted answer option returned only to authorized question managers."""
-
     position: int
     option_text: str
     is_correct: bool
 
 
 @dataclass(frozen=True)
-class QuestionBankDetails:
-    """Latest-version content and answer configuration for management."""
+class QuestionBankImage:
+    """Safe media metadata for management screens."""
 
+    id: UUID
+    question_version_id: UUID
+    position: int
+    alt_text: str
+    media_type: str
+    url: str | None
+
+
+@dataclass(frozen=True)
+class QuestionBankDetails:
     question_id: UUID
     question_version_id: UUID
     version_number: int
@@ -110,6 +115,7 @@ class QuestionBankDetails:
     last_updated: datetime
     options: list[QuestionBankOption]
     expected_answer: str | None
+    images: list[QuestionBankImage]
 
 
 def create_question_draft(
@@ -118,7 +124,6 @@ def create_question_draft(
     *,
     actor_id: UUID,
 ) -> CreatedQuestionDraft:
-    """Create a question and version 1 atomically in pending/draft state."""
     _validate_question_scope(
         session,
         payload,
@@ -136,7 +141,7 @@ def create_question_draft(
         version_number=1,
         question_text=payload.question_text,
         question_type=payload.question_type,
-        allows_multiple_answers=payload.allows_multiple_answers,
+        allows_multiple_answers=(payload.allows_multiple_answers),
         explanation=payload.explanation,
         review_status="pending",
         publication_status="draft",
@@ -158,19 +163,20 @@ def create_question_draft(
             ):
                 session.add(
                     AnswerOption(
-                        question_version_id=version.id,
-                        option_text=option.option_text,
-                        is_correct=option.is_correct,
+                        question_version_id=(version.id),
+                        option_text=(option.option_text),
+                        is_correct=(option.is_correct),
                         position=position,
                     )
                 )
+
         else:
             assert payload.expected_answer is not None
 
             session.add(
                 TextAnswerKey(
-                    question_version_id=version.id,
-                    expected_answer=payload.expected_answer,
+                    question_version_id=(version.id),
+                    expected_answer=(payload.expected_answer),
                 )
             )
 
@@ -182,10 +188,10 @@ def create_question_draft(
 
     return CreatedQuestionDraft(
         question_id=question.id,
-        question_version_id=version.id,
-        version_number=version.version_number,
-        review_status=version.review_status,
-        publication_status=version.publication_status,
+        question_version_id=(version.id),
+        version_number=(version.version_number),
+        review_status=(version.review_status),
+        publication_status=(version.publication_status),
     )
 
 
@@ -196,13 +202,6 @@ def edit_question_draft(
     *,
     actor: User,
 ) -> QuestionBankDetails:
-    """Replace editable fields on the current draft without changing its version.
-
-    Contributors may edit only their own question records. Administrators may
-    edit any permitted draft. Active/retired versions are not modified in
-    place; their revision lifecycle is handled separately so historical exam
-    content is preserved.
-    """
     question = session.get(
         Question,
         question_id,
@@ -221,8 +220,10 @@ def edit_question_draft(
 
     if version.publication_status == "active":
         if actor.role != UserRole.ADMINISTRATOR:
-            raise QuestionPublishedRevisionForbiddenError(
-                "Only administrators can revise published questions"
+            raise (
+                QuestionPublishedRevisionForbiddenError(
+                    "Only administrators can revise published questions"
+                )
             )
 
         return _create_published_revision(
@@ -240,7 +241,7 @@ def edit_question_draft(
 
     _validate_category_scope(
         session,
-        certification_id=question.certification_id,
+        certification_id=(question.certification_id),
         category_id=payload.category_id,
     )
 
@@ -256,9 +257,6 @@ def edit_question_draft(
         version.allows_multiple_answers = payload.allows_multiple_answers
         version.explanation = payload.explanation
 
-        # Set the draft state and its required metadata together so an
-        # unexpected autoflush cannot expose an inconsistent intermediate
-        # object to database constraints.
         version.review_status = "pending"
         version.publication_status = "draft"
         version.submitted_by_id = actor_id
@@ -281,8 +279,6 @@ def edit_question_draft(
         if existing_key is not None:
             session.delete(existing_key)
 
-        # Make removals visible before inserting replacement rows with the same
-        # version/position keys. A later failure still rolls back atomically.
         session.flush()
 
         if payload.question_type == "multiple_choice":
@@ -292,9 +288,9 @@ def edit_question_draft(
             ):
                 session.add(
                     AnswerOption(
-                        question_version_id=version.id,
-                        option_text=option.option_text,
-                        is_correct=option.is_correct,
+                        question_version_id=(version.id),
+                        option_text=(option.option_text),
+                        is_correct=(option.is_correct),
                         position=position,
                     )
                 )
@@ -304,8 +300,8 @@ def edit_question_draft(
 
             session.add(
                 TextAnswerKey(
-                    question_version_id=version.id,
-                    expected_answer=payload.expected_answer,
+                    question_version_id=(version.id),
+                    expected_answer=(payload.expected_answer),
                 )
             )
 
@@ -330,16 +326,6 @@ def _create_published_revision(
     payload: QuestionDraftEdit,
     actor: User,
 ) -> QuestionBankDetails:
-    """Create a new pending/draft version while preserving the active version.
-
-    Category and difficulty live on the parent ``questions`` row in the current
-    schema. Changing either while an older version remains active would alter
-    the live question's management scope before approval, so published
-    revisions must preserve those parent-level values.
-
-    Content, answer configuration, explanation, and version-pinned image
-    references are safely versioned here.
-    """
     if (
         payload.category_id != question.category_id
         or payload.difficulty != question.difficulty
@@ -353,10 +339,10 @@ def _create_published_revision(
     revision = QuestionVersion(
         question_id=question.id,
         version_number=(active_version.version_number + 1),
-        question_text=payload.question_text,
-        question_type=payload.question_type,
+        question_text=(payload.question_text),
+        question_type=(payload.question_type),
         allows_multiple_answers=(payload.allows_multiple_answers),
-        explanation=payload.explanation,
+        explanation=(payload.explanation),
         review_status="pending",
         publication_status="draft",
         is_flagged=False,
@@ -374,9 +360,9 @@ def _create_published_revision(
             ):
                 session.add(
                     AnswerOption(
-                        question_version_id=revision.id,
-                        option_text=option.option_text,
-                        is_correct=option.is_correct,
+                        question_version_id=(revision.id),
+                        option_text=(option.option_text),
+                        is_correct=(option.is_correct),
                         position=position,
                     )
                 )
@@ -386,8 +372,8 @@ def _create_published_revision(
 
             session.add(
                 TextAnswerKey(
-                    question_version_id=revision.id,
-                    expected_answer=payload.expected_answer,
+                    question_version_id=(revision.id),
+                    expected_answer=(payload.expected_answer),
                 )
             )
 
@@ -400,11 +386,11 @@ def _create_published_revision(
         for image in images:
             session.add(
                 QuestionImage(
-                    question_version_id=revision.id,
-                    storage_key=image.storage_key,
-                    alt_text=image.alt_text,
-                    media_type=image.media_type,
-                    position=image.position,
+                    question_version_id=(revision.id),
+                    storage_key=(image.storage_key),
+                    alt_text=(image.alt_text),
+                    media_type=(image.media_type),
+                    position=(image.position),
                 )
             )
 
@@ -427,11 +413,6 @@ def publish_question_draft(
     *,
     actor: User,
 ) -> QuestionBankDetails:
-    """Approve and activate the latest pending draft version.
-
-    If an older version is currently active, retire it before activating
-    the newer revision so only one active version exists per question.
-    """
     question = session.get(
         Question,
         question_id,
@@ -450,10 +431,8 @@ def publish_question_draft(
             "Only pending draft questions can be published"
         )
 
-    # Resolve values that could cause ORM lazy loading before the version is
-    # moved into a reviewed state. This prevents query-triggered autoflush
-    # from seeing an invalid partially-updated row.
     actor_id = actor.id
+
     reviewed_at = datetime.now(UTC)
 
     active_version = session.exec(
@@ -464,9 +443,6 @@ def publish_question_draft(
     ).first()
 
     try:
-        # A published revision replaces the previous active version.
-        # Flush retirement first because the database enforces one active
-        # version per parent question.
         if active_version is not None:
             active_version.publication_status = "retired"
 
@@ -474,9 +450,6 @@ def publish_question_draft(
 
             session.flush()
 
-        # The review-information constraint requires reviewed_by_id and
-        # reviewed_at whenever review_status is no longer pending.
-        # Set those fields first so every possible autoflush remains valid.
         version.reviewed_by_id = actor_id
         version.reviewed_at = reviewed_at
         version.review_note = None
@@ -506,12 +479,6 @@ def reject_question_draft(
     actor: User,
     review_note: str,
 ) -> QuestionBankDetails:
-    """Reject the latest pending draft without disturbing live content.
-
-    If the draft is a revision of an already published question, the older
-    active version remains active. Editing the rejected draft later resets it
-    to pending so it can be reviewed again.
-    """
     question = session.get(
         Question,
         question_id,
@@ -530,13 +497,11 @@ def reject_question_draft(
             "Only pending draft questions can be rejected"
         )
 
-    # Resolve potentially lazy-loaded values before changing review state.
     actor_id = actor.id
+
     reviewed_at = datetime.now(UTC)
 
     try:
-        # Keep all review metadata valid before changing review_status so
-        # query-triggered autoflush can never violate the DB constraint.
         version.reviewed_by_id = actor_id
         version.reviewed_at = reviewed_at
         version.review_note = review_note
@@ -563,7 +528,6 @@ def list_question_bank(
     *,
     actor: User,
 ) -> list[QuestionBankRecord]:
-    """Return question-bank rows permitted by the manager's role."""
     statement = select(Question)
 
     if actor.role == UserRole.CONTRIBUTOR:
@@ -594,7 +558,6 @@ def get_question_bank_details(
     *,
     actor: User,
 ) -> QuestionBankDetails:
-    """Return latest-version management data within the actor's role scope."""
     question = session.get(
         Question,
         question_id,
@@ -623,7 +586,7 @@ def get_question_bank_details(
             Category,
             question.category_id,
         )
-        if question.category_id is not None
+        if (question.category_id is not None)
         else None
     )
 
@@ -640,9 +603,9 @@ def get_question_bank_details(
 
         options = [
             QuestionBankOption(
-                position=option.position,
-                option_text=option.option_text,
-                is_correct=option.is_correct,
+                position=(option.position),
+                option_text=(option.option_text),
+                is_correct=(option.is_correct),
             )
             for option in option_rows
         ]
@@ -655,27 +618,52 @@ def get_question_bank_details(
         if answer_key is not None:
             expected_answer = answer_key.expected_answer
 
+    image_rows = session.exec(
+        select(QuestionImage)
+        .where(QuestionImage.question_version_id == version.id)
+        .order_by(QuestionImage.position)
+    ).all()
+
+    images = [
+        QuestionBankImage(
+            id=image.id,
+            question_version_id=(image.question_version_id),
+            position=image.position,
+            alt_text=image.alt_text,
+            media_type=image.media_type,
+            url=resolve_media_url(image.storage_key),
+        )
+        for image in image_rows
+        if image.media_type
+        in {
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+        }
+    ]
+
     return QuestionBankDetails(
         question_id=question.id,
-        question_version_id=version.id,
-        version_number=version.version_number,
-        certification_id=question.certification_id,
-        certification_name=certification.name,
-        category_id=question.category_id,
+        question_version_id=(version.id),
+        version_number=(version.version_number),
+        certification_id=(question.certification_id),
+        certification_name=(certification.name),
+        category_id=(question.category_id),
         category_name=(category.name if category is not None else None),
-        difficulty=question.difficulty,
-        question_text=version.question_text,
-        question_type=version.question_type,
+        difficulty=(question.difficulty),
+        question_text=(version.question_text),
+        question_type=(version.question_type),
         allows_multiple_answers=(version.allows_multiple_answers),
-        explanation=version.explanation,
-        review_status=version.review_status,
+        explanation=(version.explanation),
+        review_status=(version.review_status),
         publication_status=(version.publication_status),
-        is_flagged=version.is_flagged,
-        created_by_id=question.created_by_id,
-        submitted_by_id=version.submitted_by_id,
-        last_updated=version.submitted_at,
+        is_flagged=(version.is_flagged),
+        created_by_id=(question.created_by_id),
+        submitted_by_id=(version.submitted_by_id),
+        last_updated=(version.submitted_at),
         options=options,
-        expected_answer=expected_answer,
+        expected_answer=(expected_answer),
+        images=images,
     )
 
 
@@ -693,8 +681,8 @@ def _validate_question_scope(
 
     _validate_category_scope(
         session,
-        certification_id=payload.certification_id,
-        category_id=payload.category_id,
+        certification_id=(payload.certification_id),
+        category_id=(payload.category_id),
     )
 
 
@@ -752,26 +740,26 @@ def _question_bank_record(
             Category,
             question.category_id,
         )
-        if question.category_id is not None
+        if (question.category_id is not None)
         else None
     )
 
     return QuestionBankRecord(
-        question_id=question.id,
-        question_version_id=version.id,
-        version_number=version.version_number,
+        question_id=(question.id),
+        question_version_id=(version.id),
+        version_number=(version.version_number),
         question_preview=_preview(version.question_text),
         certification_id=(question.certification_id),
         certification_name=(certification.name),
-        category_id=question.category_id,
+        category_id=(question.category_id),
         category_name=(category.name if category is not None else None),
-        difficulty=question.difficulty,
-        question_type=version.question_type,
-        review_status=version.review_status,
+        difficulty=(question.difficulty),
+        question_type=(version.question_type),
+        review_status=(version.review_status),
         publication_status=(version.publication_status),
-        is_flagged=version.is_flagged,
+        is_flagged=(version.is_flagged),
         created_by_id=(question.created_by_id),
-        last_updated=version.submitted_at,
+        last_updated=(version.submitted_at),
     )
 
 

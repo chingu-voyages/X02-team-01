@@ -30,7 +30,6 @@ from app.services.admin_question_service import (
 )
 from app.services.r2_storage import R2StorageError
 
-
 app = FastAPI()
 app.include_router(
     admin.router,
@@ -362,7 +361,7 @@ def test_contributor_can_upload_image_to_owned_draft(
 
     assert upload["key"] == record.storage_key
 
-    assert str(upload["key"]).startswith((f"questions/{created.question_version_id}/"))
+    assert str(upload["key"]).startswith(f"questions/{created.question_version_id}/")
 
     assert str(upload["key"]).endswith(".png")
 

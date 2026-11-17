@@ -6,7 +6,6 @@ Session: a successful call commits, and a failed call rolls back.
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from urllib.parse import quote
 from uuid import UUID
 
 from sqlmodel import Session, select
@@ -25,6 +24,7 @@ from app.models import (
 )
 from app.repositories.question_repository import ExamQuestionSelector
 from app.repositories.sqlmodel_repository import SQLModelQuestionRepository
+from app.services.media_url import resolve_media_url
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,7 @@ class ExamImageContent:
 class ExamQuestionContent:
     """Stored exam assignment with safe question content."""
 
-    id: UUID  # Question-version ID
+    id: UUID
     position: int
     question_text: str
     question_type: str
@@ -87,8 +87,7 @@ class CertificationNotFoundError(LookupError):
 
 
 class MissingThresholdError(Exception):
-    """The certification has no valid passing threshold (AC3: exams cannot
-    be made available to learners without one)."""
+    """Certification has no valid passing threshold."""
 
 
 class InvalidCategoryError(ValueError):
@@ -96,34 +95,39 @@ class InvalidCategoryError(ValueError):
 
 
 class CategoryUnavailableError(ValueError):
-    """The requested category exists but is not published for learners."""
+    """The requested category is not published for learners."""
 
 
 class AttemptInProgressError(Exception):
-    """A learner may hold only one in-progress attempt per certification.
+    """A learner may hold only one in-progress attempt per certification."""
 
-    Carries the existing attempt's id so the API can point the learner
-    back to it (JHEP-32 recovery) instead of creating a duplicate.
-    """
-
-    def __init__(self, existing_attempt_id: UUID) -> None:
+    def __init__(
+        self,
+        existing_attempt_id: UUID,
+    ) -> None:
         self.existing_attempt_id = existing_attempt_id
+
         super().__init__(f"Attempt {existing_attempt_id} is already in progress")
 
 
 class InsufficientQuestionsError(Exception):
-    """There are not enough eligible questions to generate a complete exam."""
+    """Not enough eligible questions exist."""
 
-    def __init__(self, requested: int, available: int) -> None:
+    def __init__(
+        self,
+        requested: int,
+        available: int,
+    ) -> None:
         self.requested = requested
         self.available = available
+
         super().__init__(
             f"Requested {requested} questions, but only {available} are available"
         )
 
 
 class InvalidQuestionSelectionError(RuntimeError):
-    """The selector returned duplicate questions or an invalid result size."""
+    """The selector returned invalid or duplicate questions."""
 
 
 class ExamService:
@@ -135,6 +139,7 @@ class ExamService:
         selector: ExamQuestionSelector | None = None,
     ) -> None:
         self._session = session
+
         self._selector = (
             selector if selector is not None else SQLModelQuestionRepository(session)
         )
@@ -147,52 +152,67 @@ class ExamService:
         question_count: int,
         category_id: UUID | None = None,
     ) -> CreatedExam:
-        """Create an attempt with exactly `question_count` distinct questions.
+        """Create and persist one randomized exam."""
 
-        Nothing is committed if validation, selection, or persistence fails.
-        `learner_id` must come from verified authentication, never request JSON.
-        """
         if (
-            isinstance(question_count, bool)
-            or not isinstance(question_count, int)
+            isinstance(
+                question_count,
+                bool,
+            )
+            or not isinstance(
+                question_count,
+                int,
+            )
             or question_count < 1
         ):
             raise InvalidQuestionCountError("question_count must be a positive integer")
+
         if question_count > settings.max_exam_questions:
             raise InvalidQuestionCountError(
                 f"question_count must not exceed {settings.max_exam_questions}"
             )
 
         try:
-            if self._session.get(User, learner_id) is None:
+            if (
+                self._session.get(
+                    User,
+                    learner_id,
+                )
+                is None
+            ):
                 raise LearnerNotFoundError("Learner not found")
 
-            cert = self._session.get(Certification, certification_id)
-            if cert is None:
+            certification = self._session.get(
+                Certification,
+                certification_id,
+            )
+
+            if certification is None:
                 raise CertificationNotFoundError("Certification not found")
-            if cert.passing_threshold_pct is None:
+
+            if certification.passing_threshold_pct is None:
                 raise MissingThresholdError(
                     "Certification has no passing threshold configured"
                 )
-            threshold_pct = cert.passing_threshold_pct
-            # Feedback mode is snapshotted with the threshold (same rule:
-            # later certification edits never change a running attempt).
-            feedback_mode = cert.feedback_mode
 
-            # JHEP-27: revalidate category availability when starting the exam.
-            # This protects against stale frontend state after catalog loading.
+            threshold_pct = certification.passing_threshold_pct
+
+            feedback_mode = certification.feedback_mode
+
             if category_id is not None:
-                category = self._session.get(Category, category_id)
+                category = self._session.get(
+                    Category,
+                    category_id,
+                )
+
                 if category is None or category.certification_id != certification_id:
                     raise InvalidCategoryError(
                         "Category is not part of this certification"
                     )
+
                 if not category.is_published:
                     raise CategoryUnavailableError("Category is not available")
 
-            # AC3: repeated clicks must never create parallel attempts.
-            # Try-Again stays allowed — this only guards while a previous
-            # attempt for the same certification is still in progress.
             existing_active = self._session.exec(
                 select(ExamAttempt)
                 .where(
@@ -202,31 +222,33 @@ class ExamService:
                 )
                 .limit(1)
             ).first()
+
             if existing_active is not None:
                 raise AttemptInProgressError(existing_active.id)
 
-            # Preserve the legacy certification-wide call when no category is
-            # supplied, but constrain catalog-driven starts to the chosen category.
             if category_id is None:
                 selected = self._selector.select_random_eligible(
-                    certification_id=certification_id,
-                    question_count=question_count,
+                    certification_id=(certification_id),
+                    question_count=(question_count),
                 )
+
             else:
                 selected = self._selector.select_random_eligible(
-                    certification_id=certification_id,
-                    question_count=question_count,
-                    category_id=category_id,
+                    certification_id=(certification_id),
+                    question_count=(question_count),
+                    category_id=(category_id),
                 )
+
             if len(selected) < question_count:
                 raise InsufficientQuestionsError(
                     requested=question_count,
                     available=len(selected),
                 )
 
-            # The selector and the database should both guard against duplicates.
             question_ids = {item.question_id for item in selected}
+
             version_ids = {item.question_version_id for item in selected}
+
             if (
                 len(selected) != question_count
                 or len(question_ids) != question_count
@@ -238,31 +260,33 @@ class ExamService:
 
             attempt = ExamAttempt(
                 user_id=learner_id,
-                certification_id=certification_id,
+                certification_id=(certification_id),
                 question_count=question_count,
-                # AC3: the applicable threshold is recorded at creation and
-                # later certification edits never affect existing attempts.
-                passing_threshold_pct=threshold_pct,
-                # Feedback mode snapshot: fixed for the whole attempt.
+                passing_threshold_pct=(threshold_pct),
                 feedback_mode=feedback_mode,
             )
+
             self._session.add(attempt)
-            # Flush first: no ORM relationship is needed to force parent before child.
+
             self._session.flush()
+
             attempt_id = attempt.id
 
             self._session.add_all(
                 [
                     ExamAttemptQuestion(
                         attempt_id=attempt_id,
-                        question_id=item.question_id,
-                        question_version_id=item.question_version_id,
+                        question_id=(item.question_id),
+                        question_version_id=(item.question_version_id),
                         position=position,
                     )
-                    for position, item in enumerate(selected, start=1)
+                    for position, item in enumerate(
+                        selected,
+                        start=1,
+                    )
                 ]
             )
-            # A single commit persists the parent and every assignment atomically.
+
             self._session.commit()
 
         except Exception:
@@ -271,25 +295,34 @@ class ExamService:
 
         return CreatedExam(
             attempt_id=attempt_id,
-            certification_id=certification_id,
+            certification_id=(certification_id),
             question_count=question_count,
         )
 
-    def get_owned_attempt(self, *, attempt_id: UUID, learner_id: UUID) -> ExamAttempt:
-        """Authorize before retrieving any attempt data (no ID enumeration)."""
-        attempt = self._session.get(ExamAttempt, attempt_id)
+    def get_owned_attempt(
+        self,
+        *,
+        attempt_id: UUID,
+        learner_id: UUID,
+    ) -> ExamAttempt:
+        """Authorize before retrieving attempt data."""
+
+        attempt = self._session.get(
+            ExamAttempt,
+            attempt_id,
+        )
+
         if attempt is None or attempt.user_id != learner_id:
             raise ExamAttemptNotFoundError("Exam attempt not found")
+
         return attempt
 
-    def get_exam_questions(self, attempt_id: UUID) -> list[ExamQuestionContent]:
-        """Read assigned questions in fixed order, without loading answer keys.
+    def get_exam_questions(
+        self,
+        attempt_id: UUID,
+    ) -> list[ExamQuestionContent]:
+        """Read assigned safe question content."""
 
-        Only call after the learner has been authenticated and ownership checked.
-        This milestone calls it exclusively for an exam that was just created
-        by the same authenticated learner. A future GET-by-ID endpoint must
-        perform its own owner check before using this method.
-        """
         rows = self._session.exec(
             select(
                 ExamAttemptQuestion.position,
@@ -304,7 +337,10 @@ class ExamService:
                 QuestionVersion,
                 ExamAttemptQuestion.question_version_id == QuestionVersion.id,
             )
-            .join(Question, Question.id == QuestionVersion.question_id)
+            .join(
+                Question,
+                Question.id == QuestionVersion.question_id,
+            )
             .where(ExamAttemptQuestion.attempt_id == attempt_id)
             .order_by(ExamAttemptQuestion.position)
         ).all()
@@ -313,6 +349,7 @@ class ExamService:
             return []
 
         version_ids = [version_id for _, version_id, *_ in rows]
+
         option_rows = self._session.exec(
             select(
                 AnswerOption.question_version_id,
@@ -321,11 +358,23 @@ class ExamService:
                 AnswerOption.option_text,
             )
             .where(AnswerOption.question_version_id.in_(version_ids))
-            .order_by(AnswerOption.question_version_id, AnswerOption.position)
+            .order_by(
+                AnswerOption.question_version_id,
+                AnswerOption.position,
+            )
         ).all()
 
-        options_by_version: dict[UUID, list[ExamOptionContent]] = defaultdict(list)
-        for version_id, option_id, position, option_text in option_rows:
+        options_by_version: dict[
+            UUID,
+            list[ExamOptionContent],
+        ] = defaultdict(list)
+
+        for (
+            version_id,
+            option_id,
+            position,
+            option_text,
+        ) in option_rows:
             options_by_version[version_id].append(
                 ExamOptionContent(
                     id=option_id,
@@ -334,17 +383,28 @@ class ExamService:
                 )
             )
 
-        # A single batched query, never one query per question.
         image_rows = self._session.exec(
             select(QuestionImage)
             .where(QuestionImage.question_version_id.in_(version_ids))
-            .order_by(QuestionImage.question_version_id, QuestionImage.position)
+            .order_by(
+                QuestionImage.question_version_id,
+                QuestionImage.position,
+            )
         ).all()
-        images_by_version: dict[UUID, list[ExamImageContent]] = defaultdict(list)
+
+        images_by_version: dict[
+            UUID,
+            list[ExamImageContent],
+        ] = defaultdict(list)
+
         for image in image_rows:
-            if image.media_type not in {"image/png", "image/jpeg", "image/webp"}:
-                # Defensive fallback for legacy/corrupted records.
+            if image.media_type not in {
+                "image/png",
+                "image/jpeg",
+                "image/webp",
+            }:
                 continue
+
             images_by_version[image.question_version_id].append(
                 ExamImageContent(
                     id=image.id,
@@ -361,7 +421,7 @@ class ExamService:
                 position=position,
                 question_text=question_text,
                 question_type=question_type,
-                allows_multiple_answers=allows_multiple_answers,
+                allows_multiple_answers=(allows_multiple_answers),
                 difficulty=difficulty,
                 options=options_by_version[version_id],
                 images=images_by_version[version_id],
@@ -377,22 +437,9 @@ class ExamService:
         ]
 
     @staticmethod
-    def _image_url(storage_key: str) -> str | None:
-        """Turn a safe object-storage key into a CDN URL, or use alt fallback.
+    def _image_url(
+        storage_key: str,
+    ) -> str | None:
+        """Compatibility wrapper around the shared media resolver."""
 
-        Never fetch a remote URL server-side. Invalid or unconfigured keys
-        yield `None`, allowing the client to show alt text without crashing.
-        """
-        base = settings.media_base_url
-        parts = storage_key.split("/")
-        if (
-            not base
-            or not parts
-            or any(part in {"", ".", ".."} for part in parts)
-            or any(
-                "\\" in part or ":" in part or any(ord(c) < 32 for c in part)
-                for part in parts
-            )
-        ):
-            return None
-        return f"{base}/{'/'.join(quote(part, safe='') for part in parts)}"
+        return resolve_media_url(storage_key)

@@ -103,6 +103,7 @@ from app.services.admin_user_service import (
     change_role,
     list_users,
 )
+from app.services.media_url import resolve_media_url
 from app.services.question_image_validation import (
     QuestionImageAltTextError,
     QuestionImageDimensionsError,
@@ -135,8 +136,8 @@ def get_r2_storage() -> R2Storage:
 
     except R2ConfigurationError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_503_SERVICE_UNAVAILABLE),
-            detail=("Question image storage is unavailable"),
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Question image storage is unavailable",
         ) from exc
 
 
@@ -176,7 +177,7 @@ def _question_image_http_error(
         QuestionImageUnsupportedTypeError,
     ):
         return HTTPException(
-            status_code=(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE),
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail=str(exc),
         )
 
@@ -189,7 +190,7 @@ def _question_image_http_error(
         ),
     ):
         return HTTPException(
-            status_code=(status.HTTP_422_UNPROCESSABLE_CONTENT),
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         )
 
@@ -198,7 +199,7 @@ def _question_image_http_error(
         QuestionImageNotFoundError,
     ):
         return HTTPException(
-            status_code=(status.HTTP_404_NOT_FOUND),
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         )
 
@@ -207,7 +208,7 @@ def _question_image_http_error(
         QuestionImagePermissionError,
     ):
         return HTTPException(
-            status_code=(status.HTTP_403_FORBIDDEN),
+            status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         )
 
@@ -219,7 +220,7 @@ def _question_image_http_error(
         ),
     ):
         return HTTPException(
-            status_code=(status.HTTP_409_CONFLICT),
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         )
 
@@ -228,27 +229,28 @@ def _question_image_http_error(
         R2StorageError,
     ):
         return HTTPException(
-            status_code=(status.HTTP_503_SERVICE_UNAVAILABLE),
-            detail=("Question image storage is unavailable"),
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Question image storage is unavailable",
         )
 
     return HTTPException(
-        status_code=(status.HTTP_500_INTERNAL_SERVER_ERROR),
-        detail=("Unable to manage question image"),
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Unable to manage question image",
     )
 
 
 def _question_image_response(
     image: ManagedQuestionImage,
 ) -> AdminQuestionImageOut:
-    """Return safe management metadata without storage keys."""
+    """Return safe management metadata without exposing storage keys."""
 
     return AdminQuestionImageOut(
         id=image.id,
-        question_version_id=(image.question_version_id),
+        question_version_id=image.question_version_id,
         position=image.position,
         alt_text=image.alt_text,
         media_type=image.media_type,
+        url=resolve_media_url(image.storage_key),
     )
 
 
@@ -257,10 +259,10 @@ def _category_response(
 ) -> AdminCategoryOut:
     return AdminCategoryOut(
         id=category.id,
-        certification_id=(category.certification_id),
-        certification_name=(category.certification_name),
+        certification_id=category.certification_id,
+        certification_name=category.certification_name,
         name=category.name,
-        is_published=(category.is_published),
+        is_published=category.is_published,
     )
 
 
@@ -272,8 +274,8 @@ def _certification_response(
         name=certification.name,
         code=certification.code,
         passing_threshold_pct=(certification.passing_threshold_pct),
-        feedback_mode=(certification.feedback_mode),
-        is_published=(certification.is_published),
+        feedback_mode=certification.feedback_mode,
+        is_published=certification.is_published,
     )
 
 
@@ -282,32 +284,43 @@ def _question_detail_response(
 ) -> QuestionBankDetail:
     return QuestionBankDetail(
         question_id=detail.question_id,
-        question_version_id=(detail.question_version_id),
-        version_number=(detail.version_number),
-        certification_id=(detail.certification_id),
-        certification_name=(detail.certification_name),
+        question_version_id=detail.question_version_id,
+        version_number=detail.version_number,
+        certification_id=detail.certification_id,
+        certification_name=detail.certification_name,
         category_id=detail.category_id,
         category_name=detail.category_name,
         difficulty=detail.difficulty,
-        question_text=(detail.question_text),
-        question_type=(detail.question_type),
+        question_text=detail.question_text,
+        question_type=detail.question_type,
         allows_multiple_answers=(detail.allows_multiple_answers),
         explanation=detail.explanation,
-        review_status=(detail.review_status),
-        publication_status=(detail.publication_status),
+        review_status=detail.review_status,
+        publication_status=detail.publication_status,
         is_flagged=detail.is_flagged,
-        created_by_id=(detail.created_by_id),
-        submitted_by_id=(detail.submitted_by_id),
-        last_updated=(detail.last_updated),
+        created_by_id=detail.created_by_id,
+        submitted_by_id=detail.submitted_by_id,
+        last_updated=detail.last_updated,
         options=[
             AdminAnswerOptionOut(
                 position=option.position,
-                option_text=(option.option_text),
-                is_correct=(option.is_correct),
+                option_text=option.option_text,
+                is_correct=option.is_correct,
             )
             for option in detail.options
         ],
-        expected_answer=(detail.expected_answer),
+        expected_answer=detail.expected_answer,
+        images=[
+            AdminQuestionImageOut(
+                id=image.id,
+                question_version_id=(image.question_version_id),
+                position=image.position,
+                alt_text=image.alt_text,
+                media_type=image.media_type,
+                url=image.url,
+            )
+            for image in detail.images
+        ],
     )
 
 
@@ -332,7 +345,7 @@ def list_managed_certifications(
 @router.post(
     "/certifications",
     response_model=CertificationOut,
-    status_code=(status.HTTP_201_CREATED),
+    status_code=status.HTTP_201_CREATED,
 )
 def create_managed_certification(
     payload: CertificationCreate,
@@ -353,7 +366,7 @@ def create_managed_certification(
 
     except CertificationCodeConflictError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_409_CONFLICT),
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
 
@@ -380,13 +393,13 @@ def update_certification_publication(
         certification = set_certification_publication(
             session,
             certification_id,
-            is_published=(payload.is_published),
+            is_published=payload.is_published,
         )
 
     except CertificationNotFoundError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_404_NOT_FOUND),
-            detail=("Certification not found"),
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Certification not found",
         ) from exc
 
     return _certification_response(certification)
@@ -401,11 +414,11 @@ def list_managed_categories(
         Session,
         Depends(get_session),
     ],
-    certification_id: (UUID | None) = None,
+    certification_id: UUID | None = None,
 ) -> AdminCategoryList:
     records = list_categories(
         session,
-        certification_id=(certification_id),
+        certification_id=certification_id,
     )
 
     return AdminCategoryList(
@@ -417,7 +430,7 @@ def list_managed_categories(
 @router.post(
     "/categories",
     response_model=AdminCategoryOut,
-    status_code=(status.HTTP_201_CREATED),
+    status_code=status.HTTP_201_CREATED,
 )
 def create_managed_category(
     payload: CategoryCreate,
@@ -438,13 +451,13 @@ def create_managed_category(
 
     except CategoryCertificationNotFoundError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_404_NOT_FOUND),
-            detail=("Certification not found"),
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Certification not found",
         ) from exc
 
     except CategoryNameConflictError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_409_CONFLICT),
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
 
@@ -471,19 +484,19 @@ def update_category_publication(
         category = set_category_publication(
             session,
             category_id,
-            is_published=(payload.is_published),
+            is_published=payload.is_published,
         )
 
     except AdminCategoryNotFoundError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_404_NOT_FOUND),
-            detail=("Category not found"),
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Category not found",
         ) from exc
 
     except CategoryCertificationNotFoundError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_404_NOT_FOUND),
-            detail=("Certification not found"),
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Certification not found",
         ) from exc
 
     return _category_response(category)
@@ -511,21 +524,21 @@ def list_managed_questions(
     return QuestionBankList(
         items=[
             QuestionBankItem(
-                question_id=(item.question_id),
+                question_id=item.question_id,
                 question_version_id=(item.question_version_id),
-                version_number=(item.version_number),
-                question_preview=(item.question_preview),
+                version_number=item.version_number,
+                question_preview=item.question_preview,
                 certification_id=(item.certification_id),
                 certification_name=(item.certification_name),
-                category_id=(item.category_id),
-                category_name=(item.category_name),
-                difficulty=(item.difficulty),
-                question_type=(item.question_type),
-                review_status=(item.review_status),
+                category_id=item.category_id,
+                category_name=item.category_name,
+                difficulty=item.difficulty,
+                question_type=item.question_type,
+                review_status=item.review_status,
                 publication_status=(item.publication_status),
-                is_flagged=(item.is_flagged),
-                created_by_id=(item.created_by_id),
-                last_updated=(item.last_updated),
+                is_flagged=item.is_flagged,
+                created_by_id=item.created_by_id,
+                last_updated=item.last_updated,
             )
             for item in records
         ],
@@ -557,8 +570,8 @@ def get_managed_question(
 
     except QuestionBankNotFoundError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_404_NOT_FOUND),
-            detail=("Question not found"),
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Question not found",
         ) from exc
 
     return _question_detail_response(detail)
@@ -567,7 +580,7 @@ def get_managed_question(
 @router.post(
     "/questions/{question_id}/images",
     response_model=AdminQuestionImageOut,
-    status_code=(status.HTTP_201_CREATED),
+    status_code=status.HTTP_201_CREATED,
 )
 async def add_managed_question_image(
     question_id: UUID,
@@ -600,7 +613,7 @@ async def add_managed_question_image(
 
         image = add_question_image(
             session,
-            question_id=(question_id),
+            question_id=question_id,
             image=validated,
             actor=current_user,
             storage=storage,
@@ -659,7 +672,7 @@ async def replace_managed_question_image(
 
         image = replace_question_image(
             session,
-            question_id=(question_id),
+            question_id=question_id,
             image_id=image_id,
             image=validated,
             actor=current_user,
@@ -685,7 +698,7 @@ async def replace_managed_question_image(
 
 @router.delete(
     "/questions/{question_id}/images/{image_id}",
-    status_code=(status.HTTP_204_NO_CONTENT),
+    status_code=status.HTTP_204_NO_CONTENT,
 )
 def remove_managed_question_image(
     question_id: UUID,
@@ -720,7 +733,7 @@ def remove_managed_question_image(
     ) as exc:
         raise _question_image_http_error(exc) from exc
 
-    return Response(status_code=(status.HTTP_204_NO_CONTENT))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch(
@@ -749,25 +762,25 @@ def edit_managed_question(
 
     except QuestionBankNotFoundError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_404_NOT_FOUND),
-            detail=("Question not found"),
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Question not found",
         ) from exc
 
     except QuestionPublishedRevisionForbiddenError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_403_FORBIDDEN),
+            status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         ) from exc
 
     except QuestionDraftNotEditableError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_409_CONFLICT),
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
 
     except QuestionDraftScopeError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_422_UNPROCESSABLE_CONTENT),
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
@@ -798,13 +811,13 @@ def publish_managed_question(
 
     except QuestionBankNotFoundError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_404_NOT_FOUND),
-            detail=("Question not found"),
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Question not found",
         ) from exc
 
     except QuestionDraftNotPublishableError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_409_CONFLICT),
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
 
@@ -832,18 +845,18 @@ def reject_managed_question(
             session,
             question_id,
             actor=administrator,
-            review_note=(payload.review_note),
+            review_note=payload.review_note,
         )
 
     except QuestionBankNotFoundError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_404_NOT_FOUND),
-            detail=("Question not found"),
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Question not found",
         ) from exc
 
     except QuestionDraftNotRejectableError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_409_CONFLICT),
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
 
@@ -852,7 +865,7 @@ def reject_managed_question(
 
 @router.post(
     "/questions/{question_id}/retire",
-    response_model=(QuestionRetirementResponse),
+    response_model=QuestionRetirementResponse,
 )
 def retire_managed_question(
     question_id: UUID,
@@ -876,27 +889,27 @@ def retire_managed_question(
 
     except QuestionRetirementNotFoundError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_404_NOT_FOUND),
-            detail=("Question not found"),
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Question not found",
         ) from exc
 
     except QuestionNotRetirableError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_409_CONFLICT),
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
 
     return QuestionRetirementResponse(
         question_id=result.question_id,
         retired_version_ids=list(result.retired_version_ids),
-        already_retired=(result.already_retired),
+        already_retired=result.already_retired,
     )
 
 
 @router.post(
     "/questions",
     response_model=QuestionDraftCreated,
-    status_code=(status.HTTP_201_CREATED),
+    status_code=status.HTTP_201_CREATED,
 )
 def create_draft_question(
     payload: QuestionDraftCreate,
@@ -918,16 +931,16 @@ def create_draft_question(
 
     except QuestionDraftScopeError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_422_UNPROCESSABLE_CONTENT),
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
     return QuestionDraftCreated(
-        question_id=(created.question_id),
-        question_version_id=(created.question_version_id),
-        version_number=(created.version_number),
-        review_status=(created.review_status),
-        publication_status=(created.publication_status),
+        question_id=created.question_id,
+        question_version_id=created.question_version_id,
+        version_number=created.version_number,
+        review_status=created.review_status,
+        publication_status=created.publication_status,
     )
 
 
@@ -1007,34 +1020,34 @@ def change_account_role(
 
     except UserNotFoundError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_404_NOT_FOUND),
+            status_code=status.HTTP_404_NOT_FOUND,
             detail={
-                "code": ("USER_NOT_FOUND"),
+                "code": "USER_NOT_FOUND",
                 "message": str(exc),
             },
         ) from exc
 
     except AdministratorRoleChangeError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_409_CONFLICT),
+            status_code=status.HTTP_409_CONFLICT,
             detail={
-                "code": ("CANNOT_CHANGE_ADMIN_ROLE"),
+                "code": "CANNOT_CHANGE_ADMIN_ROLE",
                 "message": str(exc),
             },
         ) from exc
 
     except SelfRoleChangeError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_409_CONFLICT),
+            status_code=status.HTTP_409_CONFLICT,
             detail={
-                "code": ("CANNOT_CHANGE_OWN_ROLE"),
+                "code": "CANNOT_CHANGE_OWN_ROLE",
                 "message": str(exc),
             },
         ) from exc
 
     except ValueError as exc:
         raise HTTPException(
-            status_code=(status.HTTP_422_UNPROCESSABLE_CONTENT),
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
