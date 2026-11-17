@@ -107,9 +107,13 @@ class AuthTokenOut(BaseModel):
 
 
 class PasswordResetRequestIn(BaseModel):
-    """AC1/AC4: the requested email; the response is generic either way."""
+    """AC1/AC4: the requested email; the response is generic either way.
 
-    email: EmailStr
+    Plain `str` (mirroring LearnerLoginIn): EmailStr rejects reserved
+    TLDs like the team's `.test` demo accounts.
+    """
+
+    email: str
 
 
 class PasswordResetIn(BaseModel):
