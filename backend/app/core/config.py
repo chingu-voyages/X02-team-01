@@ -115,6 +115,21 @@ class Settings(BaseSettings):
     r2_secret_access_key: str | None = None
     r2_bucket_name: str | None = None
 
+    # JHEP-165: question image upload limits.
+    # 5 MiB by default, with a hard configuration ceiling of 20 MiB.
+    max_question_image_bytes: int = Field(
+        default=5 * 1024 * 1024,
+        ge=1024,
+        le=20 * 1024 * 1024,
+    )
+
+    # Protect against unexpectedly huge decoded images.
+    max_question_image_pixels: int = Field(
+        default=20_000_000,
+        ge=1,
+        le=100_000_000,
+    )
+
     @field_validator("media_base_url")
     @classmethod
     def require_https_asset_base(

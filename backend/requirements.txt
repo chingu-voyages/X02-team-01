@@ -27,3 +27,6 @@ ruff
 
 # Cloudflare R2 (S3-compatible object storage)
 boto3
+
+# Question image validation
+Pillow
