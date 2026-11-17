@@ -15,7 +15,10 @@ from app.models.question_image import QuestionImage
 from app.models.question_version import QuestionVersion
 from app.models.text_answer_key import TextAnswerKey
 from app.models.user import User
-from app.schemas.admin_question import QuestionDraftCreate, QuestionDraftEdit
+from app.schemas.admin_question import (
+    QuestionDraftCreate,
+    QuestionDraftEdit,
+)
 
 
 class QuestionDraftScopeError(ValueError):
@@ -116,7 +119,10 @@ def create_question_draft(
     actor_id: UUID,
 ) -> CreatedQuestionDraft:
     """Create a question and version 1 atomically in pending/draft state."""
-    _validate_question_scope(session, payload)
+    _validate_question_scope(
+        session,
+        payload,
+    )
 
     question = Question(
         certification_id=payload.certification_id,
@@ -146,7 +152,10 @@ def create_question_draft(
         session.flush()
 
         if payload.question_type == "multiple_choice":
-            for position, option in enumerate(payload.options, start=1):
+            for position, option in enumerate(
+                payload.options,
+                start=1,
+            ):
                 session.add(
                     AnswerOption(
                         question_version_id=version.id,
@@ -157,6 +166,7 @@ def create_question_draft(
                 )
         else:
             assert payload.expected_answer is not None
+
             session.add(
                 TextAnswerKey(
                     question_version_id=version.id,
@@ -165,6 +175,7 @@ def create_question_draft(
             )
 
         session.commit()
+
     except Exception:
         session.rollback()
         raise
@@ -187,15 +198,26 @@ def edit_question_draft(
 ) -> QuestionBankDetails:
     """Replace editable fields on the current draft without changing its version.
 
-    Contributors may edit only their own question records. Administrators may edit
-    any permitted draft. Active/retired versions are not modified in place; their
-    revision lifecycle is handled separately so historical exam content is preserved.
+    Contributors may edit only their own question records. Administrators may
+    edit any permitted draft. Active/retired versions are not modified in
+    place; their revision lifecycle is handled separately so historical exam
+    content is preserved.
     """
-    question = session.get(Question, question_id)
-    if question is None or not _question_visible_to_actor(question, actor):
+    question = session.get(
+        Question,
+        question_id,
+    )
+
+    if question is None or not _question_visible_to_actor(
+        question,
+        actor,
+    ):
         raise QuestionBankNotFoundError("Question not found")
 
-    version = _latest_version(session, question.id)
+    version = _latest_version(
+        session,
+        question.id,
+    )
 
     if version.publication_status == "active":
         if actor.role != UserRole.ADMINISTRATOR:
@@ -222,6 +244,9 @@ def edit_question_draft(
         category_id=payload.category_id,
     )
 
+    actor_id = actor.id
+    submitted_at = datetime.now(UTC)
+
     try:
         question.category_id = payload.category_id
         question.difficulty = payload.difficulty
@@ -230,10 +255,14 @@ def edit_question_draft(
         version.question_type = payload.question_type
         version.allows_multiple_answers = payload.allows_multiple_answers
         version.explanation = payload.explanation
+
+        # Set the draft state and its required metadata together so an
+        # unexpected autoflush cannot expose an inconsistent intermediate
+        # object to database constraints.
         version.review_status = "pending"
         version.publication_status = "draft"
-        version.submitted_by_id = actor.id
-        version.submitted_at = datetime.now(UTC)
+        version.submitted_by_id = actor_id
+        version.submitted_at = submitted_at
         version.reviewed_by_id = None
         version.reviewed_at = None
         version.review_note = None
@@ -253,11 +282,14 @@ def edit_question_draft(
             session.delete(existing_key)
 
         # Make removals visible before inserting replacement rows with the same
-        # version/position keys. A later failure still rolls the transaction back.
+        # version/position keys. A later failure still rolls back atomically.
         session.flush()
 
         if payload.question_type == "multiple_choice":
-            for position, option in enumerate(payload.options, start=1):
+            for position, option in enumerate(
+                payload.options,
+                start=1,
+            ):
                 session.add(
                     AnswerOption(
                         question_version_id=version.id,
@@ -266,8 +298,10 @@ def edit_question_draft(
                         position=position,
                     )
                 )
+
         else:
             assert payload.expected_answer is not None
+
             session.add(
                 TextAnswerKey(
                     question_version_id=version.id,
@@ -276,6 +310,7 @@ def edit_question_draft(
             )
 
         session.commit()
+
     except Exception:
         session.rollback()
         raise
@@ -298,10 +333,12 @@ def _create_published_revision(
     """Create a new pending/draft version while preserving the active version.
 
     Category and difficulty live on the parent ``questions`` row in the current
-    schema. Changing either while an older version remains active would alter the
-    live question's management scope before approval, so published revisions must
-    preserve those parent-level values. Content, answer configuration, explanation,
-    and version-pinned image references are safely versioned here.
+    schema. Changing either while an older version remains active would alter
+    the live question's management scope before approval, so published
+    revisions must preserve those parent-level values.
+
+    Content, answer configuration, explanation, and version-pinned image
+    references are safely versioned here.
     """
     if (
         payload.category_id != question.category_id
@@ -311,17 +348,19 @@ def _create_published_revision(
             "Published revisions cannot change category or difficulty"
         )
 
+    actor_id = actor.id
+
     revision = QuestionVersion(
         question_id=question.id,
-        version_number=active_version.version_number + 1,
+        version_number=(active_version.version_number + 1),
         question_text=payload.question_text,
         question_type=payload.question_type,
-        allows_multiple_answers=payload.allows_multiple_answers,
+        allows_multiple_answers=(payload.allows_multiple_answers),
         explanation=payload.explanation,
         review_status="pending",
         publication_status="draft",
         is_flagged=False,
-        submitted_by_id=actor.id,
+        submitted_by_id=actor_id,
     )
 
     try:
@@ -329,7 +368,10 @@ def _create_published_revision(
         session.flush()
 
         if payload.question_type == "multiple_choice":
-            for position, option in enumerate(payload.options, start=1):
+            for position, option in enumerate(
+                payload.options,
+                start=1,
+            ):
                 session.add(
                     AnswerOption(
                         question_version_id=revision.id,
@@ -338,8 +380,10 @@ def _create_published_revision(
                         position=position,
                     )
                 )
+
         else:
             assert payload.expected_answer is not None
+
             session.add(
                 TextAnswerKey(
                     question_version_id=revision.id,
@@ -365,6 +409,7 @@ def _create_published_revision(
             )
 
         session.commit()
+
     except Exception:
         session.rollback()
         raise
@@ -387,17 +432,29 @@ def publish_question_draft(
     If an older version is currently active, retire it before activating
     the newer revision so only one active version exists per question.
     """
-    question = session.get(Question, question_id)
+    question = session.get(
+        Question,
+        question_id,
+    )
 
     if question is None:
         raise QuestionBankNotFoundError("Question not found")
 
-    version = _latest_version(session, question.id)
+    version = _latest_version(
+        session,
+        question.id,
+    )
 
     if version.publication_status != "draft" or version.review_status != "pending":
         raise QuestionDraftNotPublishableError(
             "Only pending draft questions can be published"
         )
+
+    # Resolve values that could cause ORM lazy loading before the version is
+    # moved into a reviewed state. This prevents query-triggered autoflush
+    # from seeing an invalid partially-updated row.
+    actor_id = actor.id
+    reviewed_at = datetime.now(UTC)
 
     active_version = session.exec(
         select(QuestionVersion).where(
@@ -408,21 +465,29 @@ def publish_question_draft(
 
     try:
         # A published revision replaces the previous active version.
-        # Flush the retirement first because the database enforces
-        # one active version per parent question.
+        # Flush retirement first because the database enforces one active
+        # version per parent question.
         if active_version is not None:
             active_version.publication_status = "retired"
+
             session.add(active_version)
+
             session.flush()
+
+        # The review-information constraint requires reviewed_by_id and
+        # reviewed_at whenever review_status is no longer pending.
+        # Set those fields first so every possible autoflush remains valid.
+        version.reviewed_by_id = actor_id
+        version.reviewed_at = reviewed_at
+        version.review_note = None
 
         version.review_status = "approved"
         version.publication_status = "active"
-        version.reviewed_by_id = actor.id
-        version.reviewed_at = datetime.now(UTC)
-        version.review_note = None
 
         session.add(version)
+
         session.commit()
+
     except Exception:
         session.rollback()
         raise
@@ -447,26 +512,41 @@ def reject_question_draft(
     active version remains active. Editing the rejected draft later resets it
     to pending so it can be reviewed again.
     """
-    question = session.get(Question, question_id)
+    question = session.get(
+        Question,
+        question_id,
+    )
 
     if question is None:
         raise QuestionBankNotFoundError("Question not found")
 
-    version = _latest_version(session, question.id)
+    version = _latest_version(
+        session,
+        question.id,
+    )
 
     if version.publication_status != "draft" or version.review_status != "pending":
         raise QuestionDraftNotRejectableError(
             "Only pending draft questions can be rejected"
         )
 
+    # Resolve potentially lazy-loaded values before changing review state.
+    actor_id = actor.id
+    reviewed_at = datetime.now(UTC)
+
     try:
-        version.review_status = "rejected"
-        version.reviewed_by_id = actor.id
-        version.reviewed_at = datetime.now(UTC)
+        # Keep all review metadata valid before changing review_status so
+        # query-triggered autoflush can never violate the DB constraint.
+        version.reviewed_by_id = actor_id
+        version.reviewed_at = reviewed_at
         version.review_note = review_note
 
+        version.review_status = "rejected"
+
         session.add(version)
+
         session.commit()
+
     except Exception:
         session.rollback()
         raise
@@ -488,6 +568,7 @@ def list_question_bank(
 
     if actor.role == UserRole.CONTRIBUTOR:
         statement = statement.where(Question.created_by_id == actor.id)
+
     elif actor.role != UserRole.ADMINISTRATOR:
         return []
 
@@ -534,6 +615,7 @@ def get_question_bank_details(
         Certification,
         question.certification_id,
     )
+
     assert certification is not None
 
     category = (
@@ -546,6 +628,7 @@ def get_question_bank_details(
     )
 
     options: list[QuestionBankOption] = []
+
     expected_answer: str | None = None
 
     if version.question_type == "multiple_choice":
@@ -661,6 +744,7 @@ def _question_bank_record(
         Certification,
         question.certification_id,
     )
+
     assert certification is not None
 
     category = (
@@ -678,7 +762,7 @@ def _question_bank_record(
         version_number=version.version_number,
         question_preview=_preview(version.question_text),
         certification_id=(question.certification_id),
-        certification_name=certification.name,
+        certification_name=(certification.name),
         category_id=question.category_id,
         category_name=(category.name if category is not None else None),
         difficulty=question.difficulty,
@@ -686,7 +770,7 @@ def _question_bank_record(
         review_status=version.review_status,
         publication_status=(version.publication_status),
         is_flagged=version.is_flagged,
-        created_by_id=question.created_by_id,
+        created_by_id=(question.created_by_id),
         last_updated=version.submitted_at,
     )
 

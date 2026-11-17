@@ -255,6 +255,21 @@ class AdminAnswerOptionOut(BaseModel):
     is_correct: bool
 
 
+class AdminQuestionImageOut(BaseModel):
+    """Safe image metadata returned to authorized question managers."""
+
+    id: UUID
+    question_version_id: UUID
+    position: int
+    alt_text: str
+
+    media_type: Literal[
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+    ]
+
+
 class QuestionBankDetail(BaseModel):
     """Latest-version management detail for one permitted question."""
 
