@@ -1,7 +1,5 @@
 import {
-  afterEach,
-  beforeEach,
-  describe,
+  afterEach,  describe,
   expect,
   it,
   vi,
@@ -29,16 +27,9 @@ function mockResponse(status: number, body: unknown) {
 }
 
 describe("Admin question write API", () => {
-  beforeEach(() => {
-    vi.stubEnv(
-      "NEXT_PUBLIC_API_URL",
-      "http://localhost:8000/api/v1",
-    );
-  });
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
   });
 
   it("creates a draft question with bearer authentication", async () => {
@@ -71,7 +62,7 @@ describe("Admin question write API", () => {
 
     expect(result).toEqual(created);
     const [url, options] = mockFetch.mock.calls[0];
-    expect(url).toBe("http://localhost:8000/api/v1/admin/questions");
+    expect(url).toBe("/api/v1/admin/questions");
     expect(options?.method).toBe("POST");
     expect(new Headers(options?.headers).get("Authorization")).toBe(
       "Bearer admin-token",
@@ -119,7 +110,7 @@ describe("Admin question write API", () => {
 
     const [url, options] = mockFetch.mock.calls[0];
     expect(url).toBe(
-      `http://localhost:8000/api/v1/admin/questions/${questionId}`,
+      `/api/v1/admin/questions/${questionId}`,
     );
     expect(options?.method).toBe("PATCH");
     expect(JSON.parse(String(options?.body))).toEqual(payload);

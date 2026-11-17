@@ -1,7 +1,5 @@
 import {
-  afterEach,
-  beforeEach,
-  describe,
+  afterEach,  describe,
   expect,
   it,
   vi,
@@ -18,9 +16,6 @@ function mockResponse(status: number, body: unknown) {
 }
 
 describe("Exam API integration", () => {
-  beforeEach(() => {
-    process.env.NEXT_PUBLIC_API_URL = "https://api.example.com";
-  });
 
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -39,7 +34,7 @@ describe("Exam API integration", () => {
 
     expect(result.attempt_id).toBe("4711");
     const [url, options] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://api.example.com/exams/4711");
+    expect(url).toBe("/api/v1/exams/4711");
     expect(options?.method).toBe("GET");
     expect(options?.headers instanceof Headers).toBe(true);
     expect(
@@ -72,7 +67,7 @@ describe("Exam API integration", () => {
     expect(result.feedback_released).toBe(true);
     const [url, options] = fetchMock.mock.calls[0];
     expect(url).toBe(
-      "https://api.example.com/exams/attempt-1/responses/version-1/submit",
+      "/api/v1/exams/attempt-1/responses/version-1/submit",
     );
     expect(options?.method).toBe("POST");
     expect(JSON.parse(String(options?.body))).toEqual({

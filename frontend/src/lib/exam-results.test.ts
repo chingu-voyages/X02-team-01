@@ -1,7 +1,5 @@
 import {
-  afterEach,
-  beforeEach,
-  describe,
+  afterEach,  describe,
   expect,
   it,
   vi,
@@ -24,16 +22,9 @@ const mockResults = {
 };
 
 describe("getExamResults", () => {
-  beforeEach(() => {
-    vi.stubEnv(
-      "NEXT_PUBLIC_API_URL",
-      "http://localhost:8000/api/v1",
-    );
-  });
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
   });
 
   it("retrieves results for an authenticated attempt", async () => {
@@ -53,7 +44,7 @@ describe("getExamResults", () => {
     expect(results).toEqual(mockResults);
 
     expect(mockFetch).toHaveBeenCalledWith(
-      `http://localhost:8000/api/v1/exams/${attemptId}/results`,
+      `/api/v1/exams/${attemptId}/results`,
       expect.objectContaining({
         method: "GET",
         cache: "no-store",
@@ -118,27 +109,5 @@ describe("getExamResults", () => {
     });
 
     expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it("falls back to the same-origin /api/v1 base when the API URL is unset", async () => {
-    // JHEP-125: deployments that bake no NEXT_PUBLIC_API_URL (e.g.
-    // Render's docker runtime) must keep working — the relative base
-    // rides the runtime same-origin proxy instead of throwing.
-    vi.stubEnv("NEXT_PUBLIC_API_URL", "");
-
-    const mockFetch = vi.fn<typeof fetch>().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({}),
-    } as Response);
-
-    vi.stubGlobal("fetch", mockFetch);
-
-    await getExamResults(attemptId, "test-token");
-
-    expect(mockFetch).toHaveBeenCalledWith(
-      `/api/v1/exams/${attemptId}/results`,
-      expect.objectContaining({ method: "GET" }),
-    );
   });
 });
