@@ -23,6 +23,7 @@ from app.models import (
     Category,
     Certification,
     Question,
+    QuestionImage,
     QuestionVersion,
     RoleChangeAudit,
     User,
@@ -77,6 +78,7 @@ class UsersHarness:
                 Question.__table__,
                 QuestionVersion.__table__,
                 AnswerOption.__table__,
+                QuestionImage.__table__,
                 RoleChangeAudit.__table__,
             ],
         )

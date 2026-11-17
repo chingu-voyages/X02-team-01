@@ -1,7 +1,5 @@
 import {
-  afterEach,
-  beforeEach,
-  describe,
+  afterEach,  describe,
   expect,
   it,
   vi,
@@ -43,16 +41,9 @@ function mockResponse(
 describe(
   "Admin catalog API",
   () => {
-    beforeEach(() => {
-      vi.stubEnv(
-        "NEXT_PUBLIC_API_URL",
-        "http://localhost:8000/api/v1",
-      );
-    });
 
     afterEach(() => {
       vi.unstubAllGlobals();
-      vi.unstubAllEnvs();
     });
 
     it(
@@ -98,7 +89,7 @@ describe(
           mockFetch.mock.calls[0];
 
         expect(url).toBe(
-          "http://localhost:8000/api/v1/admin/certifications",
+          "/api/v1/admin/certifications",
         );
 
         expect(
@@ -151,7 +142,7 @@ describe(
           mockFetch.mock.calls[0];
 
         expect(url).toBe(
-          "http://localhost:8000/api/v1/admin/certifications",
+          "/api/v1/admin/certifications",
         );
 
         expect(
@@ -199,7 +190,7 @@ describe(
           mockFetch.mock.calls[0];
 
         expect(url).toBe(
-          "http://localhost:8000/api/v1/admin/certifications/11111111-1111-4111-8111-111111111111/publication",
+          "/api/v1/admin/certifications/11111111-1111-4111-8111-111111111111/publication",
         );
 
         expect(
@@ -270,7 +261,7 @@ describe(
           mockFetch.mock.calls[0];
 
         expect(url).toBe(
-          "http://localhost:8000/api/v1/admin/categories",
+          "/api/v1/admin/categories",
         );
       },
     );
@@ -301,7 +292,7 @@ describe(
           mockFetch.mock.calls[0];
 
         expect(url).toBe(
-          "http://localhost:8000/api/v1/admin/categories",
+          "/api/v1/admin/categories",
         );
 
         expect(
@@ -345,7 +336,7 @@ describe(
           mockFetch.mock.calls[0];
 
         expect(url).toBe(
-          "http://localhost:8000/api/v1/admin/categories/22222222-2222-4222-8222-222222222222/publication",
+          "/api/v1/admin/categories/22222222-2222-4222-8222-222222222222/publication",
         );
 
         expect(

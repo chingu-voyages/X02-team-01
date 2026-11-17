@@ -17,6 +17,7 @@ from app.models.answer_option import AnswerOption
 from app.models.category import Category
 from app.models.certification import Certification
 from app.models.question import Question
+from app.models.question_image import QuestionImage
 from app.models.question_version import QuestionVersion
 from app.models.text_answer_key import TextAnswerKey
 from app.models.user import User
@@ -51,6 +52,7 @@ def engine():
             QuestionVersion.__table__,
             AnswerOption.__table__,
             TextAnswerKey.__table__,
+            QuestionImage.__table__,
         ],
     )
 

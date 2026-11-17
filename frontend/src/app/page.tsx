@@ -1,20 +1,34 @@
-import Link from "next/link";
+"use client";
+
+import {
+  useEffect,
+} from "react";
+
+import {
+  useRouter,
+} from "next/navigation";
+
 
 export default function Home() {
+  const router =
+    useRouter();
+
+  useEffect(() => {
+    router.replace(
+      "/login",
+    );
+  }, [
+    router,
+  ]);
+
   return (
-    <main className="p-4 sm:p-6 space-y-4">
-      <h1 className="text-lg sm:text-2xl font-semibold">
-        Job Hackers Exam Prep
-      </h1>
-      <p className="text-sm text-gray-700">
-        Choose a practice exam category to get started.
-      </p>
-      <Link
-        href="/categories"
-        className="inline-block rounded-sm border border-[#d4d8db] bg-white px-4 py-2 text-sm font-medium hover:bg-gray-100"
+    <main className="flex min-h-screen items-center justify-center">
+      <p
+        role="status"
+        className="text-sm text-[#687178]"
       >
-        Browse practice categories
-      </Link>
+        Opening sign in...
+      </p>
     </main>
   );
 }

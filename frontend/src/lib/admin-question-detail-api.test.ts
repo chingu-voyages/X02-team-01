@@ -1,7 +1,5 @@
 import {
-  afterEach,
-  beforeEach,
-  describe,
+  afterEach,  describe,
   expect,
   it,
   vi,
@@ -102,16 +100,9 @@ function questionDetail(
 describe(
   "Admin question detail API",
   () => {
-    beforeEach(() => {
-      vi.stubEnv(
-        "NEXT_PUBLIC_API_URL",
-        "http://localhost:8000/api/v1",
-      );
-    });
 
     afterEach(() => {
       vi.unstubAllGlobals();
-      vi.unstubAllEnvs();
     });
 
     it(
@@ -146,7 +137,7 @@ describe(
           mockFetch.mock.calls[0];
 
         expect(url).toBe(
-          `http://localhost:8000/api/v1/admin/questions/${questionId}`,
+          `/api/v1/admin/questions/${questionId}`,
         );
 
         expect(
@@ -197,7 +188,7 @@ describe(
           mockFetch.mock.calls[0];
 
         expect(url).toBe(
-          `http://localhost:8000/api/v1/admin/questions/${questionId}/publish`,
+          `/api/v1/admin/questions/${questionId}/publish`,
         );
 
         expect(
@@ -249,7 +240,7 @@ describe(
           mockFetch.mock.calls[0];
 
         expect(url).toBe(
-          `http://localhost:8000/api/v1/admin/questions/${questionId}/reject`,
+          `/api/v1/admin/questions/${questionId}/reject`,
         );
 
         expect(
@@ -331,7 +322,7 @@ describe(
           mockFetch.mock.calls[0];
 
         expect(url).toBe(
-          `http://localhost:8000/api/v1/admin/questions/${questionId}/retire`,
+          `/api/v1/admin/questions/${questionId}/retire`,
         );
 
         expect(

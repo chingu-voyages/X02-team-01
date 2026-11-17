@@ -1,7 +1,5 @@
 import {
-  afterEach,
-  beforeEach,
-  describe,
+  afterEach,  describe,
   expect,
   it,
   vi,
@@ -33,16 +31,9 @@ function mockResponse(status: number, body: unknown) {
 }
 
 describe("Final exam submission API", () => {
-  beforeEach(() => {
-    vi.stubEnv(
-      "NEXT_PUBLIC_API_URL",
-      "http://localhost:8000/api/v1",
-    );
-  });
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
   });
 
   it("submits an authenticated exam", async () => {
@@ -58,7 +49,7 @@ describe("Final exam submission API", () => {
     const [url, options] = mockFetch.mock.calls[0];
 
     expect(url).toBe(
-      `http://localhost:8000/api/v1/exams/${attemptId}/submit`,
+      `/api/v1/exams/${attemptId}/submit`,
     );
 
     expect(options?.method).toBe("POST");

@@ -21,7 +21,10 @@ class AdminAnswerOptionInput(BaseModel):
 
     @field_validator("option_text")
     @classmethod
-    def normalize_option_text(cls, value: str) -> str:
+    def normalize_option_text(
+        cls,
+        value: str,
+    ) -> str:
         normalized = value.strip()
 
         if not normalized:
@@ -31,11 +34,12 @@ class AdminAnswerOptionInput(BaseModel):
 
 
 class _QuestionDraftContent(BaseModel):
-    """Fields shared by create and edit draft payloads."""
+    """Fields shared by create and edit payloads."""
 
     model_config = ConfigDict(extra="forbid")
 
     question_text: str
+
     question_type: Literal[
         "multiple_choice",
         "short_answer",
@@ -129,7 +133,7 @@ class _QuestionDraftContent(BaseModel):
 
 
 class QuestionDraftCreate(_QuestionDraftContent):
-    """Create a new question with version 1 in pending/draft state."""
+    """Create version 1 in pending/draft state."""
 
     certification_id: UUID
     category_id: UUID | None = None
@@ -142,11 +146,7 @@ class QuestionDraftCreate(_QuestionDraftContent):
 
 
 class QuestionDraftEdit(_QuestionDraftContent):
-    """Replace editable fields of an existing draft question.
-
-    Certification is intentionally absent because a question's
-    certification identity remains stable.
-    """
+    """Replace editable fields of an existing draft."""
 
     category_id: UUID | None = None
 
@@ -158,11 +158,9 @@ class QuestionDraftEdit(_QuestionDraftContent):
 
 
 class QuestionRejectionRequest(BaseModel):
-    """Administrator review feedback required when rejecting a draft."""
+    """Administrator review feedback for a rejection."""
 
-    model_config = ConfigDict(
-        extra="forbid",
-    )
+    model_config = ConfigDict(extra="forbid")
 
     review_note: str = Field(
         min_length=1,
@@ -240,7 +238,7 @@ class QuestionBankItem(BaseModel):
 
 
 class QuestionBankList(BaseModel):
-    """Role-filtered management list, including an explicit empty state."""
+    """Role-filtered question bank."""
 
     items: list[QuestionBankItem]
 
@@ -248,15 +246,32 @@ class QuestionBankList(BaseModel):
 
 
 class AdminAnswerOptionOut(BaseModel):
-    """Trusted answer configuration visible only in management routes."""
+    """Trusted answer option visible only in management routes."""
 
     position: int
     option_text: str
     is_correct: bool
 
 
+class AdminQuestionImageOut(BaseModel):
+    """Safe image metadata returned to authorized managers."""
+
+    id: UUID
+    question_version_id: UUID
+    position: int
+    alt_text: str
+
+    media_type: Literal[
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+    ]
+
+    url: str | None = None
+
+
 class QuestionBankDetail(BaseModel):
-    """Latest-version management detail for one permitted question."""
+    """Latest-version management detail."""
 
     question_id: UUID
     question_version_id: UUID
@@ -306,3 +321,5 @@ class QuestionBankDetail(BaseModel):
     options: list[AdminAnswerOptionOut] = Field(default_factory=list)
 
     expected_answer: str | None = None
+
+    images: list[AdminQuestionImageOut] = Field(default_factory=list)

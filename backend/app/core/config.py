@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     email_api_key: str = ""  # resend only; empty = not configured
     email_from: str = "no-reply@jobhackers.local"
     verification_link_base: str = "http://127.0.0.1:8010/api/v1/auth/verify"
+
     # Where the emailed verification link sends the browser after
     # activation (the login screen, with a verified/invalid flag).
     frontend_base_url: str = "http://127.0.0.1:3030"
@@ -114,12 +115,39 @@ class Settings(BaseSettings):
     # unavailable, but the API still returns the image's alt text/metadata.
     media_base_url: str | None = None
 
+    # JHEP-165: backend-only Cloudflare R2 write configuration.
+    # Optional at startup so read-only environments/tests can still run.
+    r2_account_id: str | None = None
+    r2_access_key_id: str | None = None
+    r2_secret_access_key: str | None = None
+    r2_bucket_name: str | None = None
+
+    # JHEP-165: question image upload limits.
+    # 5 MiB by default, with a hard configuration ceiling of 20 MiB.
+    max_question_image_bytes: int = Field(
+        default=5 * 1024 * 1024,
+        ge=1024,
+        le=20 * 1024 * 1024,
+    )
+
+    # Protect against unexpectedly huge decoded images.
+    max_question_image_pixels: int = Field(
+        default=20_000_000,
+        ge=1,
+        le=100_000_000,
+    )
+
     @field_validator("media_base_url")
     @classmethod
-    def require_https_asset_base(cls, value: str | None) -> str | None:
+    def require_https_asset_base(
+        cls,
+        value: str | None,
+    ) -> str | None:
         if value is None or not value.strip():
             return None
+
         parsed = urlsplit(value)
+
         if (
             parsed.scheme != "https"
             or not parsed.hostname
@@ -129,7 +157,25 @@ class Settings(BaseSettings):
             or parsed.fragment
         ):
             raise ValueError("MEDIA_BASE_URL must be a public HTTPS base URL")
+
         return value.rstrip("/")
+
+    @field_validator(
+        "r2_account_id",
+        "r2_access_key_id",
+        "r2_secret_access_key",
+        "r2_bucket_name",
+        mode="before",
+    )
+    @classmethod
+    def normalize_optional_r2_setting(
+        cls,
+        value,
+    ):  # noqa: N805
+        if isinstance(value, str):
+            value = value.strip()
+
+        return value or None
 
     model_config = SettingsConfigDict(
         env_file=ROOT_DIR / ".env",
@@ -152,7 +198,9 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         if not self.cors_origins:
             return ["http://localhost:3000"]
+
         origins = [origin.strip() for origin in self.cors_origins.split(",")]
+
         return [origin for origin in origins if origin]
 
 

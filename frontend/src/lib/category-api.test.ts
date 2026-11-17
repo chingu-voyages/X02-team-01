@@ -1,7 +1,5 @@
 import {
-  afterEach,
-  beforeEach,
-  describe,
+  afterEach,  describe,
   expect,
   it,
   vi,
@@ -35,16 +33,9 @@ function mockResponse(status: number, body: unknown) {
 }
 
 describe("Category API integration", () => {
-  beforeEach(() => {
-    vi.stubEnv(
-      "NEXT_PUBLIC_API_URL",
-      "http://localhost:8000/api/v1",
-    );
-  });
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
   });
 
   it("retrieves categories with bearer authentication", async () => {
@@ -59,7 +50,7 @@ describe("Category API integration", () => {
     const [url, options] = mockFetch.mock.calls[0];
 
     expect(url).toBe(
-      "http://localhost:8000/api/v1/categories",
+      "/api/v1/categories",
     );
     expect(options?.method).toBe("GET");
     expect(
@@ -97,7 +88,7 @@ describe("Category API integration", () => {
     const [url, options] = mockFetch.mock.calls[0];
 
     expect(url).toBe(
-      "http://localhost:8000/api/v1/exams",
+      "/api/v1/exams",
     );
     expect(options?.method).toBe("POST");
 
