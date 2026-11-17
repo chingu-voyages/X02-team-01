@@ -9,7 +9,7 @@
 > `CURRENT` = implemented in the current baseline.  
 > `PROPOSED` = not implemented in the current router and must not be treated as a live API contract.
 
-The current system includes registration, verification, login/logout, role-based authorization, learner category discovery, category-aware randomized exams, save/resume/submission/results behavior, hosted question-media delivery, Contributor/Administrator question-image management through Cloudflare R2, admin question management, question approval/rejection/retirement, certification management, category management, certification/category publication, and Administrator-managed user roles.
+The current system includes registration, verification, login/logout, password reset, role-based authorization, learner category discovery, category-aware randomized exams, save/resume/submission/results behavior, hosted question-media delivery, Contributor/Administrator question-image management through Cloudflare R2, admin question management, question approval/rejection/retirement, certification management, category management, certification/category publication, and Administrator-managed user roles.
 
 ---
 
@@ -152,6 +152,8 @@ Learner category discovery additionally requires:
 | POST | `/api/v1/auth/resend-verification` | CURRENT | No |
 | POST | `/api/v1/auth/login` | CURRENT | No |
 | POST | `/api/v1/auth/logout` | CURRENT | Bearer |
+| POST | `/api/v1/auth/forgot-password` | CURRENT | No |
+| POST | `/api/v1/auth/reset-password` | CURRENT | No |
 
 ## 2.2 Learner discovery and delivery
 
@@ -332,6 +334,57 @@ administrator -> /admin/questions
 Requires Bearer authentication.
 
 Logout is stateless: the client discards the JWT. Server-side token invalidation is not currently implemented.
+
+---
+
+## 3.6 Forgot password — CURRENT (JHEP-124)
+
+**POST** `/api/v1/auth/forgot-password`
+
+AC1: the response is **byte-identical** whether or not the account
+exists (no enumeration). AC4: rate-limited per account (60 s default —
+`RATE_LIMITED` 429); the raw token never appears in logs or responses.
+
+Request: `{"email": "learner@example.com"}`
+
+Response (always):
+
+```json
+{"message": "If an account exists for that email, a password-reset link has been sent."}
+```
+
+The emailed link targets `{FRONTEND_BASE_URL}/reset-password?token={one_time_token}` —
+works once, expires in 1 hour (`RESET_TOKEN_TTL_HOURS`), and a new
+request invalidates prior unused challenges.
+
+## 3.7 Reset password — CURRENT (JHEP-124)
+
+**POST** `/api/v1/auth/reset-password`
+
+Request: `{"token": "<one_time_token>", "new_password": "..."}`
+
+Success:
+
+```json
+{"message": "Password updated. Sign in with your new password."}
+```
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `INVALID_OR_EXPIRED_RESET_TOKEN` | unknown, expired (1 h), or already-used challenge |
+| 422 | `WEAK_PASSWORD` | the new credential fails the registration policy |
+
+Behavioral guarantees:
+
+- **AC3**: the new password follows the registration password policy
+  (same messages, one failed rule at a time).
+- **AC5**: a successful reset stamps `sessions_invalid_before` on the
+  account; every access token issued before that instant is rejected
+  (stateless revocation via the JWT `iat`). Role/ownership are never
+  touched.
+- **MFA gate**: no second factor is enforced today; JHEP-109 must gate
+  this flow when MFA lands — reset must never bypass a required second
+  factor.
 
 ---
 
@@ -1169,6 +1222,8 @@ Do not build against these as live contracts.
 | Registration password | 8–128 chars + uppercase/lowercase/digit |
 | Verification token lifetime | 24 hours |
 | Verification resend interval | 60 seconds |
+| Password-reset token lifetime | 1 hour (default) |
+| Password-reset request interval | 60 seconds (default) |
 | Learner session token | default 12 hours |
 | Question formats | `multiple_choice`, `short_answer` |
 | Difficulty | `easy`, `medium`, `hard` |

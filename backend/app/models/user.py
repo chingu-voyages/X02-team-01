@@ -67,6 +67,15 @@ class User(SQLModel, table=True):
         sa_type=DateTime(timezone=True),
         nullable=True,
     )
+    # JHEP-124 AC5: access tokens issued BEFORE this instant are rejected
+    # by get_current_user (iat comparison) — a password reset revokes
+    # every pre-existing session without a token store (stateless
+    # revocation).
+    sessions_invalid_before: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),
+        nullable=True,
+    )
 
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),

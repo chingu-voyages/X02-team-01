@@ -104,3 +104,24 @@ class AuthTokenOut(BaseModel):
     access_token: str
     token_type: Literal["bearer"]
     learner: LearnerOut
+
+
+class PasswordResetRequestIn(BaseModel):
+    """AC1/AC4: the requested email; the response is generic either way.
+
+    Plain `str` (mirroring LearnerLoginIn): EmailStr rejects reserved
+    TLDs like the team's `.test` demo accounts.
+    """
+
+    email: str
+
+
+class PasswordResetIn(BaseModel):
+    """AC2/AC3: the one-time emailed challenge plus the new credential.
+
+    The password policy is enforced by the service (mirrors
+    registration, including `WEAK_PASSWORD`).
+    """
+
+    token: str
+    new_password: str

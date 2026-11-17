@@ -7,6 +7,7 @@ from .exam_attempt_question import ExamAttemptQuestion as ExamAttemptQuestion
 from .exam_question_grade import ExamQuestionGrade as ExamQuestionGrade
 from .exam_response import ExamResponse as ExamResponse
 from .exam_result import ExamResult as ExamResult
+from .password_reset_token import PasswordResetToken as PasswordResetToken
 from .question import Question as Question
 from .question_image import QuestionImage as QuestionImage
 from .question_version import QuestionVersion as QuestionVersion

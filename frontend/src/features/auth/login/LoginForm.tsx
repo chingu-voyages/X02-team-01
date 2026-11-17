@@ -243,6 +243,14 @@ export default function LoginForm() {
           </Button>
 
           <p className="text-sm text-gray-600">
+            <Link
+              href="/forgot-password"
+              className="text-primary hover:underline font-medium"
+            >
+              Forgot your password?
+            </Link>
+          </p>
+          <p className="text-sm text-gray-600">
             New to the platform?{" "}
             <Link
               href="/register"

@@ -43,8 +43,19 @@ from app.schemas.auth import (
     AuthTokenOut,
     LearnerLoginIn,
     LearnerOut,
+    PasswordResetIn,
+    PasswordResetRequestIn,
     ResendVerificationIn,
     UserRegistrationIn,
+)
+from app.services.password_reset_service import (
+    GENERIC_RESET_MESSAGE,
+    InvalidResetTokenError,
+    request_reset,
+    reset_password,
+)
+from app.services.password_reset_service import (
+    RateLimitError as ResetRateLimitError,
 )
 from app.services.registration_service import (
     EmailTakenError,
@@ -79,6 +90,15 @@ def get_registration_service(
 ) -> RegistrationService:
     """One request-scoped database session for the whole registration."""
     return RegistrationService(session)
+
+
+def get_password_reset_service(
+    session: Annotated[Session, Depends(get_session)],
+) -> None:
+    """The password-reset service functions are module-level; this
+    provider exists so the reset endpoints share the request-scoped
+    session dependency with the rest of the auth surface."""
+    return None
 
 
 def _learner_out(user: User) -> LearnerOut:
@@ -237,3 +257,51 @@ def logout(
         "message": "Logged out",
         "logged_out_at": datetime.now(UTC).isoformat(),
     }
+
+
+@router.post("/forgot-password", status_code=status.HTTP_200_OK)
+def forgot_password(
+    payload: PasswordResetRequestIn,
+    session: Annotated[Session, Depends(get_session)],
+) -> dict:
+    """JHEP-124 AC1/AC4: generic, rate-limited, enumeration-safe."""
+    try:
+        request_reset(session, email=str(payload.email))
+    except ResetRateLimitError as exc:
+        raise CodedAuthError(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "RATE_LIMITED",
+            str(exc),
+        ) from exc
+
+    return {"message": GENERIC_RESET_MESSAGE}
+
+
+@router.post("/reset-password", status_code=status.HTTP_200_OK)
+def reset_account_password(
+    payload: PasswordResetIn,
+    session: Annotated[Session, Depends(get_session)],
+) -> dict:
+    """JHEP-124 AC2/AC3/AC5: consume the one-time challenge, set the new
+    credential under the registration policy, and invalidate every
+    pre-reset session."""
+    try:
+        reset_password(
+            session,
+            raw_token=payload.token,
+            new_password=payload.new_password,
+        )
+    except InvalidResetTokenError as exc:
+        raise CodedAuthError(
+            status.HTTP_400_BAD_REQUEST,
+            "INVALID_OR_EXPIRED_RESET_TOKEN",
+            str(exc),
+        ) from exc
+    except WeakPasswordError as exc:
+        raise CodedAuthError(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "WEAK_PASSWORD",
+            str(exc),
+        ) from exc
+
+    return {"message": "Password updated. Sign in with your new password."}
