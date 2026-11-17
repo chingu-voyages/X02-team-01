@@ -25,6 +25,7 @@ gitignored — **never commit them**.
 | `JWT_ALGORITHM` | backend | `HS256` | Default: `HS256`. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | backend | `30` | Default: `30`. Access-token lifetime. |
 | `NEXT_PUBLIC_API_URL` | frontend | *(optional)* | Absolute base URL of the API **as baked into the browser bundle at build time**. Leave unset: `apiRequest` defaults to the same-origin `/api/v1` proxy (see below), which is the correct setup for every deployment. A `localhost` value here breaks hosted frontends (it makes every visitor's browser call its own machine — the PR #54 incident). Set in `frontend/.env.local`, not the root file. |
+| `MEDIA_BASE_URL` | backend | `https://pub-xxxxxxxx.r2.dev` | Public HTTPS base URL for hosted question images in Cloudflare R2. |
 
 ## Frontend deployment variables
 
