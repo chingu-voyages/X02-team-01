@@ -24,7 +24,22 @@ gitignored — **never commit them**.
 | `JWT_SECRET_KEY` | backend | a long random string | **Required** — no default. Signs and verifies access tokens. |
 | `JWT_ALGORITHM` | backend | `HS256` | Default: `HS256`. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | backend | `30` | Default: `30`. Access-token lifetime. |
-| `NEXT_PUBLIC_API_URL` | frontend | `http://localhost:8000/api/v1` | Base URL of the API as seen from the browser. Set in `frontend/.env.local`, not the root file — Next.js only loads env files from its own directory. |
+| `NEXT_PUBLIC_API_URL` | frontend | *(optional)* | Absolute base URL of the API **as baked into the browser bundle at build time**. Leave unset: `apiRequest` defaults to the same-origin `/api/v1` proxy (see below), which is the correct setup for every deployment. A `localhost` value here breaks hosted frontends (it makes every visitor's browser call its own machine — the PR #54 incident). Set in `frontend/.env.local`, not the root file. |
+
+## Frontend deployment variables
+
+The Next.js app calls the backend same-origin (`/api/v1/...`); a
+catch-all route handler forwards those calls to the backend **reading
+`BACKEND_PROXY_TARGET` at request time** — so hosted deployments need
+no build-time configuration (next.config rewrites bake destinations at
+build time, which is why they were replaced — see the comment in
+`frontend/next.config.ts`).
+
+| Variable | Service | Example | Notes |
+|---|---|---|---|
+| `BACKEND_PROXY_TARGET` | frontend | `https://jhep-backend.onrender.com` | **Required on hosted frontends.** The runtime proxy target for all `/api/v1/*` calls. Read per request — no rebuild needed when it changes. |
+| `FRONTEND_BASE_URL` | backend | `https://jhep-frontend.onrender.com` | **Required on the backend env.** Where the emailed verification and password-reset links point the browser after activation (`/login?verified=1`, `/reset-password?token=…`). Default: `http://127.0.0.1:3030` (local). Whitespace-normalised. |
+| `NEXT_PUBLIC_API_URL` | frontend | *(leave unset)* | Optional absolute override (build-time baked). Omit it — see the row above. |
 
 `POSTGRES_HOST` and `POSTGRES_PORT` are also read by the backend, but they have
 code defaults (`127.0.0.1` / `5432`) and so are **not** listed in `.env.example`.
