@@ -24,8 +24,22 @@ gitignored — **never commit them**.
 | `JWT_SECRET_KEY` | backend | a long random string | **Required** — no default. Signs and verifies access tokens. |
 | `JWT_ALGORITHM` | backend | `HS256` | Default: `HS256`. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | backend | `30` | Default: `30`. Access-token lifetime. |
-| `NEXT_PUBLIC_API_URL` | frontend | `http://localhost:8000/api/v1` | Base URL of the API as seen from the browser. Set in `frontend/.env.local`, not the root file — Next.js only loads env files from its own directory. |
-| `MEDIA_BASE_URL` | backend | `https://pub-xxxxxxxx.r2.dev` | Public HTTPS base URL used to resolve hosted question-image storage keys. Development may use an R2 public development URL; production should use the configured Cloudflare custom domain. |
+| `NEXT_PUBLIC_API_URL` | frontend | *(optional)* | Absolute base URL of the API **as baked into the browser bundle at build time**. Leave unset: `apiRequest` defaults to the same-origin `/api/v1` proxy (see below), which is the correct setup for every deployment. A `localhost` value here breaks hosted frontends (it makes every visitor's browser call its own machine — the PR #54 incident). Set in `frontend/.env.local`, not the root file. |
+
+## Frontend deployment variables
+
+The Next.js app calls the backend same-origin (`/api/v1/...`); a
+catch-all route handler forwards those calls to the backend **reading
+`BACKEND_PROXY_TARGET` at request time** — so hosted deployments need
+no build-time configuration (next.config rewrites bake destinations at
+build time, which is why they were replaced — see the comment in
+`frontend/next.config.ts`).
+
+| Variable | Service | Example | Notes |
+|---|---|---|---|
+| `BACKEND_PROXY_TARGET` | frontend | `https://jhep-backend.onrender.com` | **Required on hosted frontends.** The runtime proxy target for all `/api/v1/*` calls. Read per request — no rebuild needed when it changes. |
+| `FRONTEND_BASE_URL` | backend | `https://jhep-frontend.onrender.com` | **Required on the backend env.** Where the emailed verification and password-reset links point the browser after activation (`/login?verified=1`, `/reset-password?token=…`). Default: `http://127.0.0.1:3030` (local). Whitespace-normalised. |
+| `NEXT_PUBLIC_API_URL` | frontend | *(leave unset)* | Optional absolute override (build-time baked). Omit it — see the row above. |
 
 `POSTGRES_HOST` and `POSTGRES_PORT` are also read by the backend, but they have
 code defaults (`127.0.0.1` / `5432`) and so are **not** listed in `.env.example`.
@@ -86,6 +100,8 @@ arrive.
 | `VERIFICATION_LINK_BASE` | backend | URL | The verification link's domain (the backend's own verify endpoint). |
 | `VERIFY_TOKEN_TTL_HOURS` | backend | 1–168 (default 24) | The verification link's lifetime. |
 | `RESEND_INTERVAL_SECONDS` | backend | 1–86400 (default 60) | The resend throttle. |
+| `RESET_TOKEN_TTL_HOURS` | backend | 1–24 (default 1) | The password-reset challenge's lifetime — deliberately shorter than email verification. |
+| `RESET_MIN_INTERVAL_SECONDS` | backend | 1–86400 (default 60) | The forgot-password request throttle per account. |
 
 **Fail-fast:** a transport selected in `EMAIL_DELIVERY` whose credentials
 are missing raises at startup — a misconfigured production email blocks
@@ -105,17 +121,17 @@ shows nothing.
 
 | Environment (GitHub name) | Trigger | Notes |
 |---|---|---|
-| `preview` | push to `dev` (frontend/backend/render.yaml/compose.yaml) | `environment_url`: the Render frontend. Mirrors Render's buildFilter, so docs-only pushes record nothing. |
+| `dev` | push to `dev` (frontend/backend/render.yaml/compose.yaml) | `environment_url`: the Render frontend. Mirrors Render's buildFilter, so docs-only pushes record nothing. Named `dev` to match Jira's built-in keyword mapping (development) — no `.jira/config.yml` needed. |
 | `production` | *not tracked yet* | Deliberately deferred until a real production host exists. When it lands: track `main` with `production: true`. |
 
 Jira association: deployments link to stories automatically through the
 `JHEP-XXX` keys in the pushed commits/merge messages.
 
-**One-time Jira step (required, or deployments stay invisible):** in the
-Jira project's settings → the Releases/Deployments (or GitHub
-integration) environment mapping, map the GitHub environment name
-`preview` to the project's dev/test environment type. Jira only
-displays deployments whose environment name it recognises — the
-thirty pre-existing manually created deployments with
+Jira mapping: Jira's GitHub integration matches environment **names**
+against built-in keywords (`dev`/`development`, `test`, `staging`,
+`production`) — no `.jira/config.yml` is needed (an earlier attempt at
+one was removed: it disabled Jira's auto-detection entirely, and
+custom names like `preview` lagged behind the integration's config
+cache). The thirty pre-existing manually created deployments with
 `feature/JHEP-56-deployment-setup - jhep-*` names are unmapped and can
-be ignored (or deleted in Jira's view).
+be ignored.

@@ -51,6 +51,24 @@ def decode_access_token(token: str) -> str:
     return payload["sub"]
 
 
+def decode_access_token_issued_at(token: str) -> tuple[str, datetime]:
+    """The subject plus the token's issue time (JHEP-124 AC5).
+
+    Password reset stamps `users.sessions_invalid_before`; callers
+    compare the token's `iat` against it to reject every session issued
+    before the reset — stateless revocation without a token store.
+    """
+    payload = jwt.decode(
+        token,
+        settings.jwt_secret_key,
+        algorithms=[settings.jwt_algorithm],
+        options={"require": ["sub", "iat", "exp"]},
+    )
+
+    issued_at = datetime.fromtimestamp(payload["iat"], tz=UTC)
+    return payload["sub"], issued_at
+
+
 def create_access_token_for_learner(user) -> str:
     """JHEP-25: learner-scoped token with the dedicated session TTL
     (`learner_access_token_hours`, default 12 h — the default 30-minute

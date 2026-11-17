@@ -94,6 +94,13 @@ class Settings(BaseSettings):
     verify_token_ttl_hours: int = Field(default=24, ge=1, le=168)
     resend_interval_seconds: int = Field(default=60, ge=1, le=86400)
 
+    # JHEP-124: password-reset challenges. The TTL is deliberately much
+    # shorter than email verification — a reset challenge grants
+    # credential control, so it lives 1 hour, single-use, one live
+    # challenge per account.
+    reset_token_ttl_hours: int = Field(default=1, ge=1, le=24)
+    reset_min_interval_seconds: int = Field(default=60, ge=1, le=86400)
+
     # JHEP-25: learner session TTL. The default 30-minute token expires
     # mid-exam, so learner sessions get a dedicated, longer lifetime.
     # Logout is stateless (client discards; JWT expiry is the server-side
