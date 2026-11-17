@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import UTC
 from typing import Annotated
 from uuid import UUID
 
@@ -11,7 +12,7 @@ from fastapi.security import (
 from sqlmodel import Session
 
 from app.core.roles import UserRole
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, decode_access_token_issued_at
 from app.db.session import get_session
 from app.models.user import User
 
@@ -48,10 +49,36 @@ def get_current_subject(
 
 
 def get_current_user(
-    subject: Annotated[str, Depends(get_current_subject)],
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Depends(bearer_scheme),
+    ],
     session: Annotated[Session, Depends(get_session)],
 ) -> User:
-    """Resolve the authenticated token subject to the trusted account record."""
+    """Resolve the authenticated token to the trusted account record.
+
+    JHEP-124 AC5: a token whose `iat` predates the account's
+    `sessions_invalid_before` stamp (set by a password reset) is
+    rejected — every pre-reset session is dead without a token store.
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        subject, issued_at = decode_access_token_issued_at(
+            credentials.credentials
+        )
+    except jwt.InvalidTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
     try:
         user_id = UUID(subject)
     except (TypeError, ValueError) as exc:
@@ -69,6 +96,17 @@ def get_current_user(
             detail="Authenticated account not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    invalid_before = user.sessions_invalid_before
+    if invalid_before is not None:
+        if invalid_before.tzinfo is None:
+            invalid_before = invalid_before.replace(tzinfo=UTC)
+        if issued_at < invalid_before:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session invalidated — please sign in again",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
     return user
 
