@@ -85,6 +85,8 @@ arrive.
 | `VERIFICATION_LINK_BASE` | backend | URL | The verification link's domain (the backend's own verify endpoint). |
 | `VERIFY_TOKEN_TTL_HOURS` | backend | 1–168 (default 24) | The verification link's lifetime. |
 | `RESEND_INTERVAL_SECONDS` | backend | 1–86400 (default 60) | The resend throttle. |
+| `RESET_TOKEN_TTL_HOURS` | backend | 1–24 (default 1) | The password-reset challenge's lifetime — deliberately shorter than email verification. |
+| `RESET_MIN_INTERVAL_SECONDS` | backend | 1–86400 (default 60) | The forgot-password request throttle per account. |
 
 **Fail-fast:** a transport selected in `EMAIL_DELIVERY` whose credentials
 are missing raises at startup — a misconfigured production email blocks
