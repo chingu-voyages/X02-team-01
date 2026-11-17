@@ -1,71 +1,156 @@
 "use client";
 
 import Link from "next/link";
-import { Button } from "../ui/button";
-import { useAuth } from "@/features/auth/AuthProvider";
+
+import {
+  useAuth,
+} from "@/features/auth/AuthProvider";
+
+import {
+  Button,
+} from "../ui/button";
+
+
+const navLink =
+  "rounded-xs text-base text-[#303639] transition-colors hover:text-black hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400";
+
 
 export default function Navbar() {
-  const { token, logout } = useAuth();
+  const {
+    token,
+    role,
+    logout,
+  } =
+    useAuth();
+
+
+  const staff =
+    role ===
+      "contributor" ||
+    role ===
+      "administrator";
+
+
+  const administrator =
+    role ===
+    "administrator";
+
 
   return (
     <nav
       aria-label="Main navigation"
-      className="flex items-center justify-between gap-x-8 gap-y-3 rounded-md border border-[#d4d8db] bg-white px-6 py-5 m-4 shadow-xs"
+      className="m-4 flex flex-wrap items-center justify-between gap-x-8 gap-y-3 rounded-md border border-[#d4d8db] bg-white px-6 py-5 shadow-xs"
     >
-      <div className="flex gap-8">
-        <span className="text-base font-bold tracking-tight text-[#303639]">
+      <div className="flex flex-wrap items-center gap-8">
+        <Link
+          href={
+            token
+              ? "/categories"
+              : "/login"
+          }
+          className="text-base font-bold tracking-tight text-[#303639] hover:underline"
+        >
           THE JOB HACKERS
-        </span>
+        </Link>
+
 
         <div className="flex flex-wrap items-center gap-4 text-sm">
-          <Link
-            href="#"
-            className="text-base text-[#303639] hover:text-black hover:underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 rounded-xs"
-          >
-            Exams
-          </Link>
-          <span className="text-gray-300 select-none" aria-hidden="true">
-            •
-          </span>
-          <Link
-            href="#"
-            className="text-base text-[#303639] hover:text-black hover:underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 rounded-xs"
-          >
-            My History
-          </Link>
-          <span className="text-gray-300 select-none" aria-hidden="true">
-            •
-          </span>
-          <Link
-            href="#"
-            className="text-base text-[#303639] hover:text-black hover:underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 rounded-xs"
-          >
-            My Journal
-          </Link>
-          <span className="text-gray-300 select-none" aria-hidden="true">
-            •
-          </span>
-          <Link
-            href="#"
-            className="text-base text-[#303639] hover:text-black hover:underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 rounded-xs"
-          >
-            Account
-          </Link>
+          {token ? (
+            <>
+              <Link
+                href="/categories"
+                className={
+                  navLink
+                }
+              >
+                Practice Exams
+              </Link>
+
+
+              {staff && (
+                <>
+                  <span
+                    className="select-none text-gray-300"
+                    aria-hidden="true"
+                  >
+                    •
+                  </span>
+
+                  <Link
+                    href="/admin/questions"
+                    className={
+                      navLink
+                    }
+                  >
+                    Question Bank
+                  </Link>
+                </>
+              )}
+
+
+              {administrator && (
+                <>
+                  <span
+                    className="select-none text-gray-300"
+                    aria-hidden="true"
+                  >
+                    •
+                  </span>
+
+                  <Link
+                    href="/admin/users"
+                    className={
+                      navLink
+                    }
+                  >
+                    Users & Access
+                  </Link>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className={
+                  navLink
+                }
+              >
+                Sign in
+              </Link>
+
+              <span
+                className="select-none text-gray-300"
+                aria-hidden="true"
+              >
+                •
+              </span>
+
+              <Link
+                href="/register"
+                className={
+                  navLink
+                }
+              >
+                Create account
+              </Link>
+            </>
+          )}
         </div>
       </div>
 
-      <div className="flex items-baseline gap-2">
-        {/* A signed-out visitor has nothing to log out of. */}
-        {token && (
-          <Button
-            onClick={logout}
-            variant="outline"
-            className="hover:cursor-pointer"
-          >
-            Logout
-          </Button>
-        )}
-      </div>
+
+      {token && (
+        <Button
+          onClick={
+            logout
+          }
+          variant="outline"
+          className="hover:cursor-pointer"
+        >
+          Logout
+        </Button>
+      )}
     </nav>
   );
 }
