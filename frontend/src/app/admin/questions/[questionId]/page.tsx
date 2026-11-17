@@ -38,10 +38,18 @@ import type {
   AdminQuestionDetail,
 } from "@/types/admin-question-api.types";
 
+
 type LoadStatus =
   | "loading"
   | "ready"
   | "error";
+
+
+type SessionRole =
+  | "learner"
+  | "contributor"
+  | "administrator";
+
 
 function shortQuestionId(
   id: string,
@@ -51,6 +59,7 @@ function shortQuestionId(
     .slice(0, 8)
     .toUpperCase()}`;
 }
+
 
 function questionTypeLabel(
   type:
@@ -63,6 +72,7 @@ function questionTypeLabel(
     ? "Multiple Choice"
     : "Short Answer";
 }
+
 
 function publicationLabel(
   question:
@@ -99,6 +109,63 @@ function publicationLabel(
   return "Draft";
 }
 
+
+function roleFromToken(
+  token: string | null,
+): SessionRole | null {
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const parts =
+      token.split(".");
+
+    if (
+      parts.length < 2 ||
+      !parts[1]
+    ) {
+      return null;
+    }
+
+    const normalized =
+      parts[1]
+        .replace(/-/g, "+")
+        .replace(/_/g, "/");
+
+    const padded =
+      normalized.padEnd(
+        Math.ceil(
+          normalized.length / 4,
+        ) * 4,
+        "=",
+      );
+
+    const payload =
+      JSON.parse(
+        atob(padded),
+      ) as {
+        role?: unknown;
+      };
+
+    if (
+      payload.role ===
+        "learner" ||
+      payload.role ===
+        "contributor" ||
+      payload.role ===
+        "administrator"
+    ) {
+      return payload.role;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+
 export default function AdminQuestionDetailPage() {
   const params =
     useParams<{
@@ -109,10 +176,20 @@ export default function AdminQuestionDetailPage() {
     token,
     ready,
     handleError,
-  } = useDemoSession();
+  } =
+    useDemoSession();
 
   const questionId =
     params.questionId;
+
+  const role =
+    roleFromToken(
+      token,
+    );
+
+  const isAdministrator =
+    role ===
+    "administrator";
 
   const [
     question,
@@ -196,6 +273,7 @@ export default function AdminQuestionDetailPage() {
   ] =
     useState("");
 
+
   const loadQuestion =
     useCallback(() => {
       if (!token) {
@@ -209,25 +287,27 @@ export default function AdminQuestionDetailPage() {
         token,
         questionId,
       )
-        .then((data) => {
-          if (
-            cancelled
-          ) {
-            return;
-          }
+        .then(
+          (data) => {
+            if (
+              cancelled
+            ) {
+              return;
+            }
 
-          setQuestion(
-            data,
-          );
+            setQuestion(
+              data,
+            );
 
-          setLoadStatus(
-            "ready",
-          );
+            setLoadStatus(
+              "ready",
+            );
 
-          setLoadError(
-            "",
-          );
-        })
+            setLoadError(
+              "",
+            );
+          },
+        )
         .catch(
           (
             error: unknown,
@@ -260,8 +340,12 @@ export default function AdminQuestionDetailPage() {
                   ApiError &&
                 error.status ===
                   404
-                ? "Question not found or you do not have access to it."
-                : "Unable to load this question.",
+                ? (
+                    "Question not found or you do not have access to it."
+                  )
+                : (
+                    "Unable to load this question."
+                  ),
             );
           },
         );
@@ -275,6 +359,7 @@ export default function AdminQuestionDetailPage() {
       questionId,
       token,
     ]);
+
 
   useEffect(() => {
     if (
@@ -291,6 +376,7 @@ export default function AdminQuestionDetailPage() {
     reloadKey,
     token,
   ]);
+
 
   async function refreshQuestion() {
     if (
@@ -311,8 +397,10 @@ export default function AdminQuestionDetailPage() {
     );
   }
 
+
   async function publishQuestion() {
     if (
+      !isAdministrator ||
       !token ||
       !question ||
       publishing
@@ -335,13 +423,15 @@ export default function AdminQuestionDetailPage() {
       );
 
       await refreshQuestion();
+
     } catch (
       error: unknown
     ) {
       if (
         error instanceof
           ApiError &&
-        error.status === 401
+        error.status ===
+          401
       ) {
         handleError(
           error,
@@ -353,24 +443,29 @@ export default function AdminQuestionDetailPage() {
       if (
         error instanceof
           ApiError &&
-        error.status === 403
+        error.status ===
+          403
       ) {
         setReviewError(
           "Only Administrators can approve and publish questions.",
         );
+
       } else if (
         error instanceof
           ApiError &&
-        error.status === 409
+        error.status ===
+          409
       ) {
         setReviewError(
           "This question cannot be published in its current state.",
         );
+
       } else {
         setReviewError(
           "Unable to publish this question. Please try again.",
         );
       }
+
     } finally {
       setPublishing(
         false,
@@ -378,8 +473,10 @@ export default function AdminQuestionDetailPage() {
     }
   }
 
+
   async function confirmRejection() {
     if (
+      !isAdministrator ||
       !token ||
       !question ||
       rejecting
@@ -426,13 +523,15 @@ export default function AdminQuestionDetailPage() {
       setRejectNote(
         "",
       );
+
     } catch (
       error: unknown
     ) {
       if (
         error instanceof
           ApiError &&
-        error.status === 401
+        error.status ===
+          401
       ) {
         handleError(
           error,
@@ -444,32 +543,39 @@ export default function AdminQuestionDetailPage() {
       if (
         error instanceof
           ApiError &&
-        error.status === 403
+        error.status ===
+          403
       ) {
         setRejectError(
           "Only Administrators can reject questions.",
         );
+
       } else if (
         error instanceof
           ApiError &&
-        error.status === 409
+        error.status ===
+          409
       ) {
         setRejectError(
           "This question cannot be rejected in its current state.",
         );
+
       } else if (
         error instanceof
           ApiError &&
-        error.status === 422
+        error.status ===
+          422
       ) {
         setRejectError(
           "Enter a valid review reason before rejecting.",
         );
+
       } else {
         setRejectError(
           "Unable to reject this question. Please try again.",
         );
       }
+
     } finally {
       setRejecting(
         false,
@@ -477,8 +583,10 @@ export default function AdminQuestionDetailPage() {
     }
   }
 
+
   async function confirmRetirement() {
     if (
+      !isAdministrator ||
       !token ||
       !question ||
       retiring
@@ -505,13 +613,15 @@ export default function AdminQuestionDetailPage() {
       setShowRetireModal(
         false,
       );
+
     } catch (
       error: unknown
     ) {
       if (
         error instanceof
           ApiError &&
-        error.status === 401
+        error.status ===
+          401
       ) {
         handleError(
           error,
@@ -523,30 +633,36 @@ export default function AdminQuestionDetailPage() {
       if (
         error instanceof
           ApiError &&
-        error.status === 403
+        error.status ===
+          403
       ) {
         setRetireError(
           "Only Administrators can retire questions.",
         );
+
       } else if (
         error instanceof
           ApiError &&
-        error.status === 409
+        error.status ===
+          409
       ) {
         setRetireError(
           "This question cannot be retired in its current state.",
         );
+
       } else {
         setRetireError(
           "Unable to retire this question. Please try again.",
         );
       }
+
     } finally {
       setRetiring(
         false,
       );
     }
   }
+
 
   if (
     !ready ||
@@ -558,6 +674,7 @@ export default function AdminQuestionDetailPage() {
       </p>
     );
   }
+
 
   if (
     loadStatus ===
@@ -574,6 +691,7 @@ export default function AdminQuestionDetailPage() {
     );
   }
 
+
   if (
     loadStatus ===
       "error" ||
@@ -586,7 +704,9 @@ export default function AdminQuestionDetailPage() {
           className="text-sm text-red-700"
         >
           {loadError ||
-            "Unable to load this question."}
+            (
+              "Unable to load this question."
+            )}
         </p>
 
         <div className="mt-5 flex gap-3">
@@ -611,32 +731,38 @@ export default function AdminQuestionDetailPage() {
             href="/admin/questions"
             className="rounded-md border border-[#cfd2d5] px-4 py-2 text-sm"
           >
-            Back to Question
-            Bank
+            Back to Question Bank
           </Link>
         </div>
       </div>
     );
   }
 
+
   const retired =
-    question.publication_status ===
+    question
+      .publication_status ===
     "retired";
 
   const published =
-    question.publication_status ===
+    question
+      .publication_status ===
     "active";
 
   const pendingDraft =
-    question.publication_status ===
+    question
+      .publication_status ===
       "draft" &&
-    question.review_status ===
+    question
+      .review_status ===
       "pending";
 
   const rejectedDraft =
-    question.publication_status ===
+    question
+      .publication_status ===
       "draft" &&
-    question.review_status ===
+    question
+      .review_status ===
       "rejected";
 
   const displayId =
@@ -644,11 +770,20 @@ export default function AdminQuestionDetailPage() {
       question.question_id,
     );
 
+  const canEdit =
+    !retired &&
+    (
+      isAdministrator ||
+      question
+        .publication_status ===
+        "draft"
+    );
+
+
   return (
     <section>
       <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#71777c]">
-        JHEP-159 / Question
-        Review
+        JHEP-159 / Question Review
       </p>
 
       <Link
@@ -659,97 +794,101 @@ export default function AdminQuestionDetailPage() {
           aria-hidden="true"
           className="size-4"
         />
-        Back to Question
-        Bank
+
+        Back to Question Bank
       </Link>
 
+
       <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-            Question Details —{" "}
-            {displayId}
-          </h1>
-        </div>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+          Question Details —{" "}
+          {displayId}
+        </h1>
 
         {!retired && (
           <div className="flex flex-wrap gap-2">
-            <Link
-              href={`/admin/questions/${encodeURIComponent(
-                question.question_id,
-              )}/edit`}
-              className="rounded-md border border-[#cfd2d5] bg-white px-5 py-2.5 text-sm font-medium hover:bg-[#f4f4f4]"
-            >
-              Edit
-            </Link>
+            {canEdit && (
+              <Link
+                href={`/admin/questions/${encodeURIComponent(
+                  question.question_id,
+                )}/edit`}
+                className="rounded-md border border-[#cfd2d5] bg-white px-5 py-2.5 text-sm font-medium hover:bg-[#f4f4f4]"
+              >
+                Edit
+              </Link>
+            )}
 
-            {pendingDraft && (
-              <>
+            {isAdministrator &&
+              pendingDraft && (
+                <>
+                  <button
+                    type="button"
+                    disabled={
+                      publishing ||
+                      rejecting
+                    }
+                    onClick={() => {
+                      setReviewError(
+                        "",
+                      );
+
+                      void publishQuestion();
+                    }}
+                    className="rounded-md bg-[#3d4145] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#292d30] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {publishing
+                      ? "Publishing..."
+                      : "Approve & Publish"}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={
+                      publishing ||
+                      rejecting
+                    }
+                    onClick={() => {
+                      setRejectError(
+                        "",
+                      );
+
+                      setReviewError(
+                        "",
+                      );
+
+                      setShowRejectModal(
+                        true,
+                      );
+                    }}
+                    className="rounded-md border border-[#cfd2d5] bg-white px-5 py-2.5 text-sm font-semibold hover:bg-[#f4f4f4] disabled:opacity-50"
+                  >
+                    Reject
+                  </button>
+                </>
+              )}
+
+            {isAdministrator &&
+              published && (
                 <button
                   type="button"
-                  disabled={
-                    publishing ||
-                    rejecting
-                  }
                   onClick={() => {
-                    setReviewError(
+                    setRetireError(
                       "",
                     );
 
-                    void publishQuestion();
-                  }}
-                  className="rounded-md bg-[#3d4145] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#292d30] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {publishing
-                    ? "Publishing..."
-                    : "Approve & Publish"}
-                </button>
-
-                <button
-                  type="button"
-                  disabled={
-                    publishing ||
-                    rejecting
-                  }
-                  onClick={() => {
-                    setRejectError(
-                      "",
-                    );
-
-                    setReviewError(
-                      "",
-                    );
-
-                    setShowRejectModal(
+                    setShowRetireModal(
                       true,
                     );
                   }}
-                  className="rounded-md border border-[#cfd2d5] bg-white px-5 py-2.5 text-sm font-semibold hover:bg-[#f4f4f4] disabled:opacity-50"
+                  className="rounded-md border border-[#cfd2d5] bg-white px-5 py-2.5 text-sm font-medium hover:bg-[#f4f4f4]"
                 >
-                  Reject
+                  Retire
                 </button>
-              </>
-            )}
-
-            {published && (
-              <button
-                type="button"
-                onClick={() => {
-                  setRetireError(
-                    "",
-                  );
-
-                  setShowRetireModal(
-                    true,
-                  );
-                }}
-                className="rounded-md border border-[#cfd2d5] bg-white px-5 py-2.5 text-sm font-medium hover:bg-[#f4f4f4]"
-              >
-                Retire
-              </button>
-            )}
+              )}
           </div>
         )}
       </div>
+
 
       {reviewError && (
         <div
@@ -765,6 +904,7 @@ export default function AdminQuestionDetailPage() {
         </div>
       )}
 
+
       {pendingDraft && (
         <div className="mb-5 flex items-center gap-2 rounded-md bg-[#f1f1f1] px-4 py-4 text-sm font-semibold">
           <CircleAlert
@@ -772,11 +912,16 @@ export default function AdminQuestionDetailPage() {
             className="size-4"
           />
 
-          PENDING REVIEW —
-          approve and publish, or
-          reject with feedback.
+          {isAdministrator
+            ? (
+                "PENDING REVIEW — approve and publish, or reject with feedback."
+              )
+            : (
+                "PENDING REVIEW — awaiting Administrator review."
+              )}
         </div>
       )}
+
 
       {rejectedDraft && (
         <div className="mb-5 flex items-center gap-2 rounded-md bg-[#f1f1f1] px-4 py-4 text-sm font-semibold">
@@ -790,6 +935,7 @@ export default function AdminQuestionDetailPage() {
           to pending review.
         </div>
       )}
+
 
       {retired && (
         <div className="mb-5 flex items-center gap-2 rounded-md bg-[#f1f1f1] px-4 py-4 text-sm font-semibold">
@@ -805,6 +951,7 @@ export default function AdminQuestionDetailPage() {
         </div>
       )}
 
+
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.8fr)_minmax(260px,0.9fr)]">
         <article className="rounded-md border border-[#cfd2d5] bg-white p-5 sm:p-6">
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide">
@@ -816,6 +963,7 @@ export default function AdminQuestionDetailPage() {
           <h2 className="text-xl font-medium leading-relaxed">
             {question.question_text}
           </h2>
+
 
           <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm text-[#555c61]">
             <span>
@@ -849,6 +997,69 @@ export default function AdminQuestionDetailPage() {
             </span>
           </div>
 
+
+          {question.images.length >
+            0 && (
+            <div className="mt-6">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wide">
+                Question Image
+              </p>
+
+              <div className="space-y-4">
+                {question.images.map(
+                  (image) => (
+                    <figure
+                      key={
+                        image.id
+                      }
+                      className="rounded-md border border-[#d4d7da] bg-[#f8f9f9] p-4"
+                    >
+                      {image.url ? (
+                        <>
+                          {/* Native img supports runtime Cloudflare R2 URLs. */}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={
+                              image.url
+                            }
+                            alt={
+                              image.alt_text
+                            }
+                            className="mx-auto h-auto max-h-[30rem] max-w-full rounded object-contain"
+                          />
+                        </>
+                      ) : (
+                        <div
+                          role="status"
+                          className="rounded-md border border-dashed border-[#cfd2d5] bg-white px-4 py-8 text-center"
+                        >
+                          <FileImage
+                            aria-hidden="true"
+                            className="mx-auto size-6 text-[#777e83]"
+                          />
+
+                          <p className="mt-2 text-sm font-semibold">
+                            Image unavailable
+                          </p>
+                        </div>
+                      )}
+
+                      <figcaption className="mt-3 border-t border-[#d7dbde] pt-3 text-xs leading-5 text-[#626b71]">
+                        <span className="font-semibold">
+                          Alt text:
+                        </span>{" "}
+                        {
+                          image.alt_text
+                        }
+                      </figcaption>
+                    </figure>
+                  ),
+                )}
+              </div>
+            </div>
+          )}
+
+
           {question.question_type ===
             "multiple_choice" && (
             <div className="mt-6">
@@ -871,8 +1082,7 @@ export default function AdminQuestionDetailPage() {
                       }`}
                     >
                       {String.fromCharCode(
-                        65 +
-                          index,
+                        65 + index,
                       )}
                       .{" "}
                       {
@@ -892,6 +1102,7 @@ export default function AdminQuestionDetailPage() {
             </div>
           )}
 
+
           {question.question_type ===
             "short_answer" && (
             <div className="mt-6">
@@ -906,10 +1117,10 @@ export default function AdminQuestionDetailPage() {
             </div>
           )}
 
+
           <div className="mt-6">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide">
-              Explanation /
-              Rubric
+              Explanation / Rubric
             </p>
 
             <div className="rounded-md bg-[#f1f1f1] p-4 text-sm leading-6 text-[#4f565b]">
@@ -918,18 +1129,21 @@ export default function AdminQuestionDetailPage() {
             </div>
           </div>
 
-          <div className="mt-5 flex items-start gap-2 rounded-md bg-[#f1f1f1] p-4 text-xs leading-5 text-[#6b7277]">
-            <FileImage
-              aria-hidden="true"
-              className="mt-0.5 size-4 shrink-0"
-            />
 
-            Existing image/math
-            references are
-            preserved if present.
-            Adding new media is
-            handled separately.
-          </div>
+          {question.images.length ===
+            0 && (
+            <div className="mt-5 flex items-start gap-2 rounded-md bg-[#f1f1f1] p-4 text-xs leading-5 text-[#6b7277]">
+              <FileImage
+                aria-hidden="true"
+                className="mt-0.5 size-4 shrink-0"
+              />
+
+              No image is attached
+              to this question
+              version.
+            </div>
+          )}
+
 
           {retired && (
             <p className="mt-5 text-sm text-[#6b7277]">
@@ -940,6 +1154,7 @@ export default function AdminQuestionDetailPage() {
             </p>
           )}
         </article>
+
 
         <aside className="rounded-md border border-[#cfd2d5] bg-white p-5 sm:p-6">
           <h2 className="text-lg font-bold">
@@ -981,12 +1196,13 @@ export default function AdminQuestionDetailPage() {
               </p>
 
               <p className="mt-1 text-xs leading-5 text-[#6e7479]">
-                Administrators may
-                approve, reject,
-                publish, or retire.
-                Contributors may
-                edit permitted
-                drafts.
+                {isAdministrator
+                  ? (
+                      "Administrators may edit, approve, reject, publish, or retire this record."
+                    )
+                  : (
+                      "Contributors may edit their permitted draft questions. Approval, rejection, publication, and retirement are Administrator-only."
+                    )}
               </p>
             </div>
 
@@ -999,10 +1215,10 @@ export default function AdminQuestionDetailPage() {
 
                 <p className="mt-1 text-xs leading-5 text-[#6e7479]">
                   Past attempts keep
-                  the original
-                  pinned question
-                  version, responses,
-                  and results.
+                  the original pinned
+                  question version,
+                  responses, results,
+                  and media.
                 </p>
               </div>
             )}
@@ -1010,7 +1226,9 @@ export default function AdminQuestionDetailPage() {
         </aside>
       </div>
 
-      {showRejectModal && (
+
+      {isAdministrator &&
+        showRejectModal && (
         <div
           role="presentation"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
@@ -1070,6 +1288,7 @@ export default function AdminQuestionDetailPage() {
 
             <label className="mt-5 block text-sm font-semibold">
               Review feedback *
+
               <textarea
                 rows={5}
                 value={
@@ -1141,7 +1360,9 @@ export default function AdminQuestionDetailPage() {
         </div>
       )}
 
-      {showRetireModal && (
+
+      {isAdministrator &&
+        showRetireModal && (
         <div
           role="presentation"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
@@ -1206,22 +1427,20 @@ export default function AdminQuestionDetailPage() {
               <p>
                 Retiring this
                 question marks it
-                inactive and
-                excludes it from
-                new generated
-                exams. The record
-                is not permanently
+                inactive and excludes
+                it from new generated
+                exams. The record is
+                not permanently
                 deleted.
               </p>
 
               <p>
-                Previously
-                completed attempts
-                retain the original
-                question version,
-                answer history,
-                and existing media
-                references.
+                Previously completed
+                attempts retain the
+                original question
+                version, answer
+                history, and existing
+                media references.
               </p>
             </div>
 

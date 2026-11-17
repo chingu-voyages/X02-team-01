@@ -8,28 +8,42 @@ import {
 
 import {
   useParams,
-  useRouter,
 } from "next/navigation";
 
 import AdminQuestionForm from "@/features/questions/AdminQuestionForm";
-import { useDemoSession } from "@/features/auth/AuthProvider";
-import { getAdminQuestionCategories } from "@/lib/admin-catalog-api";
-import { ApiError } from "@/lib/api-client";
+
+import {
+  useDemoSession,
+} from "@/features/auth/AuthProvider";
+
+import {
+  getAdminQuestionCategories,
+} from "@/lib/admin-catalog-api";
+
+import {
+  ApiError,
+} from "@/lib/api-client";
+
 import {
   editManagedQuestion,
   getManagedQuestion,
 } from "@/lib/admin-question-api";
 
-import type { PracticeCategory } from "@/types/category-api.types";
+import type {
+  PracticeCategory,
+} from "@/types/category-api.types";
+
 import type {
   AdminQuestionDetail,
   AdminQuestionDraftEditRequest,
 } from "@/types/admin-question-api.types";
 
+
 type LoadStatus =
   | "loading"
   | "ready"
   | "error";
+
 
 export default function EditAdminQuestionPage() {
   const params =
@@ -37,13 +51,12 @@ export default function EditAdminQuestionPage() {
       questionId: string;
     }>();
 
-  const router = useRouter();
-
   const {
     token,
     ready,
     handleError,
-  } = useDemoSession();
+  } =
+    useDemoSession();
 
   const questionId =
     params.questionId;
@@ -51,29 +64,39 @@ export default function EditAdminQuestionPage() {
   const [
     question,
     setQuestion,
-  ] = useState<AdminQuestionDetail | null>(
-    null,
-  );
+  ] =
+    useState<
+      AdminQuestionDetail | null
+    >(null);
 
   const [
     categories,
     setCategories,
-  ] = useState<PracticeCategory[]>([]);
+  ] =
+    useState<
+      PracticeCategory[]
+    >([]);
 
   const [
     loadStatus,
     setLoadStatus,
-  ] = useState<LoadStatus>("loading");
+  ] =
+    useState<LoadStatus>(
+      "loading",
+    );
 
   const [
     loadError,
     setLoadError,
-  ] = useState("");
+  ] =
+    useState("");
 
   const [
     reloadKey,
     setReloadKey,
-  ] = useState(0);
+  ] =
+    useState(0);
+
 
   const loadData =
     useCallback(() => {
@@ -81,13 +104,15 @@ export default function EditAdminQuestionPage() {
         return;
       }
 
-      let cancelled = false;
+      let cancelled =
+        false;
 
       Promise.all([
         getManagedQuestion(
           token,
           questionId,
         ),
+
         getAdminQuestionCategories(
           token,
         ),
@@ -97,7 +122,9 @@ export default function EditAdminQuestionPage() {
             questionData,
             categoryData,
           ]) => {
-            if (cancelled) {
+            if (
+              cancelled
+            ) {
               return;
             }
 
@@ -113,20 +140,31 @@ export default function EditAdminQuestionPage() {
               "ready",
             );
 
-            setLoadError("");
+            setLoadError(
+              "",
+            );
           },
         )
         .catch(
-          (error: unknown) => {
-            if (cancelled) {
+          (
+            error: unknown,
+          ) => {
+            if (
+              cancelled
+            ) {
               return;
             }
 
             if (
-              error instanceof ApiError &&
-              error.status === 401
+              error instanceof
+                ApiError &&
+              error.status ===
+                401
             ) {
-              handleError(error);
+              handleError(
+                error,
+              );
+
               return;
             }
 
@@ -135,10 +173,16 @@ export default function EditAdminQuestionPage() {
             );
 
             setLoadError(
-              error instanceof ApiError &&
-                error.status === 404
-                ? "Question not found or you do not have access to it."
-                : "Unable to load the question editor.",
+              error instanceof
+                  ApiError &&
+                error.status ===
+                  404
+                ? (
+                    "Question not found or you do not have access to it."
+                  )
+                : (
+                    "Unable to load the question editor."
+                  ),
             );
           },
         );
@@ -152,8 +196,12 @@ export default function EditAdminQuestionPage() {
       token,
     ]);
 
+
   useEffect(() => {
-    if (!ready || !token) {
+    if (
+      !ready ||
+      !token
+    ) {
       return;
     }
 
@@ -165,7 +213,11 @@ export default function EditAdminQuestionPage() {
     token,
   ]);
 
-  if (!ready || !token) {
+
+  if (
+    !ready ||
+    !token
+  ) {
     return (
       <p role="status">
         Checking session...
@@ -173,16 +225,23 @@ export default function EditAdminQuestionPage() {
     );
   }
 
-  if (loadStatus === "loading") {
+
+  if (
+    loadStatus ===
+    "loading"
+  ) {
     return (
       <p role="status">
-        Loading question editor...
+        Loading question
+        editor...
       </p>
     );
   }
 
+
   if (
-    loadStatus === "error" ||
+    loadStatus ===
+      "error" ||
     !question
   ) {
     return (
@@ -192,7 +251,9 @@ export default function EditAdminQuestionPage() {
           className="text-sm text-red-700"
         >
           {loadError ||
-            "Unable to load the question editor."}
+            (
+              "Unable to load the question editor."
+            )}
         </p>
 
         <button
@@ -215,20 +276,25 @@ export default function EditAdminQuestionPage() {
     );
   }
 
+
   if (
-    question.publication_status ===
+    question
+      .publication_status ===
     "retired"
   ) {
     return (
       <div className="rounded-md border border-[#cfd2d5] bg-white p-6 text-sm text-[#687178]">
-        Retired questions are read-only
-        and cannot be edited.
+        Retired questions are
+        read-only and cannot be
+        edited.
       </div>
     );
   }
 
+
   async function saveQuestion(
-    payload: AdminQuestionDraftEditRequest,
+    payload:
+      AdminQuestionDraftEditRequest,
   ) {
     const updated =
       await editManagedQuestion(
@@ -237,27 +303,32 @@ export default function EditAdminQuestionPage() {
         payload,
       );
 
-    const destination =
-      `/admin/questions/${encodeURIComponent(
-        updated.question_id,
-      )}`;
-
-    router.push(destination);
-
-    return updated.question_id;
+    return (
+      updated.question_id
+    );
   }
+
 
   return (
     <AdminQuestionForm
       key={
-        question.question_version_id
+        question
+          .question_version_id
       }
       mode="edit"
       token={token}
-      categories={categories}
-      initialQuestion={question}
-      onUnauthorized={handleError}
-      onSubmit={saveQuestion}
+      categories={
+        categories
+      }
+      initialQuestion={
+        question
+      }
+      onUnauthorized={
+        handleError
+      }
+      onSubmit={
+        saveQuestion
+      }
     />
   );
 }

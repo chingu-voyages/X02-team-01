@@ -46,27 +46,53 @@ export interface AdminAnswerOption {
   is_correct: boolean;
 }
 
+export interface AdminQuestionImage {
+  id: string;
+  question_version_id: string;
+  position: number;
+  alt_text: string;
+  media_type:
+    | "image/png"
+    | "image/jpeg"
+    | "image/webp";
+  url: string | null;
+}
+
 export interface AdminQuestionDetail {
   question_id: string;
   question_version_id: string;
   version_number: number;
+
   certification_id: string;
   certification_name: string;
+
   category_id: string | null;
   category_name: string | null;
+
   difficulty: AdminDifficulty;
+
   question_text: string;
   question_type: AdminQuestionType;
+
   allows_multiple_answers: boolean;
+
   explanation: string | null;
+
   review_status: AdminReviewStatus;
   publication_status: AdminPublicationStatus;
+
   is_flagged: boolean;
+
   created_by_id: string;
   submitted_by_id: string;
+
   last_updated: string;
+
   options: AdminAnswerOption[];
+
   expected_answer: string | null;
+
+  images: AdminQuestionImage[];
 }
 
 export interface AdminAnswerOptionInput {

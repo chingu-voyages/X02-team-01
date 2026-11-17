@@ -14,17 +14,14 @@ export async function apiRequest<T>(
   token: string | null,
   init: RequestInit = {},
 ): Promise<T> {
-  // Default to the same-origin proxy (`/api/v1/*` -> the backend via
-  // BACKEND_PROXY_TARGET, read at request time by the catch-all route
-  // handler). NEXT_PUBLIC_API_URL stays as an optional absolute override
-  // — but it is a BUILD-TIME variable in Next, so deployments that bake
-  // no value (e.g. Render's docker runtime) must keep working: the
-  // relative base always does. (JHEP-125: the admin screens died on
-  // Render with "NEXT_PUBLIC_API_URL is not configured" because a
-  // localhost dev value was baked instead.)
-    // An env var present but EMPTY also means "not configured" (the
-  // project-wide convention, cf. the email settings validators).
-  const base = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
+  // Default to the same-origin Next.js proxy.
+  //
+  // NEXT_PUBLIC_API_URL remains an optional absolute override, but because
+  // NEXT_PUBLIC_* values are baked into the frontend build, deployments must
+  // continue working when no override exists.
+  const base =
+    process.env.NEXT_PUBLIC_API_URL ||
+    "/api/v1";
 
   if (!token) {
     throw new ApiError(
@@ -42,7 +39,14 @@ export async function apiRequest<T>(
     `Bearer ${token}`,
   );
 
-  if (init.body) {
+  // JSON requests need an explicit Content-Type.
+  //
+  // FormData MUST NOT set this manually because the browser generates the
+  // multipart/form-data boundary.
+  if (
+    init.body &&
+    !(init.body instanceof FormData)
+  ) {
     headers.set(
       "Content-Type",
       "application/json",
@@ -70,34 +74,52 @@ export async function apiRequest<T>(
   if (!response.ok) {
     let detail: unknown = null;
 
-    if (response.status === 409) {
-      try {
-        const body: unknown =
-          await response.json();
+    try {
+      const body: unknown =
+        await response.json();
 
-        if (
-          body !== null &&
-          typeof body === "object" &&
-          "detail" in body
-        ) {
-          detail = body.detail;
-        }
-      } catch {
-        // Preserve the original HTTP
-        // failure if no JSON body exists.
+      if (
+        body !== null &&
+        typeof body === "object" &&
+        "detail" in body
+      ) {
+        detail = body.detail;
       }
+    } catch {
+      // Preserve the original HTTP failure when the server does not return
+      // JSON.
+    }
+
+    let message =
+      `API request failed (${response.status})`;
+
+    if (response.status === 401) {
+      message =
+        "Your session has expired. Please sign in again.";
+    } else if (response.status === 403) {
+      message =
+        "You do not have permission to perform this action.";
+    } else if (
+      typeof detail === "string"
+    ) {
+      message = detail;
     }
 
     throw new ApiError(
       response.status,
-      response.status === 401
-        ? "Your session has expired. Please sign in again."
-        : response.status === 403
-          ? "You do not have permission to perform this action."
-          : `API request failed (${response.status})`,
+      message,
       detail,
     );
   }
 
-  return (await response.json()) as T;
+  // Successful DELETE routes commonly return 204 with no response body.
+  if (
+    response.status === 204
+  ) {
+    return undefined as T;
+  }
+
+  return (
+    await response.json()
+  ) as T;
 }
