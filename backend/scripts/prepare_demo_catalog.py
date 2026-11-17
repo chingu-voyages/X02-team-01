@@ -32,6 +32,10 @@ def prepare_demo_catalog() -> int:
             if category.certification_id != certification.id:
                 raise RuntimeError("Demo category belongs to a different certification")
 
+            if not certification.is_published:
+                certification.is_published = True
+                changed += 1
+
             if not category.is_published:
                 category.is_published = True
                 changed += 1
