@@ -446,7 +446,7 @@ export default function RegisterForm() {
         />
 
         {formData.password && (
-          <div className="absolute right-14 top-8.5 flex items-center gap-1.5 pointer-events-none text-xs font-medium text-gray-500 bg-white px-1">
+          <div className="absolute right-10 top-8.5 flex items-center gap-1.5 pointer-events-none text-xs font-medium text-gray-500 bg-white px-1">
             <span
               className={`w-10 h-2 rounded-full ${strengthInfo.color}`}
             />
