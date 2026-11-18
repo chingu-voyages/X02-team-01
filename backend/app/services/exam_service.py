@@ -1,0 +1,445 @@
+"""Generate and persist a randomized practice exam attempt (JHEP-29).
+
+The service owns the database transaction. Supply a dedicated request-scoped
+Session: a successful call commits, and a failed call rolls back.
+"""
+
+from collections import defaultdict
+from dataclasses import dataclass, field
+from uuid import UUID
+
+from sqlmodel import Session, select
+
+from app.core.config import settings
+from app.models import (
+    AnswerOption,
+    Category,
+    Certification,
+    ExamAttempt,
+    ExamAttemptQuestion,
+    Question,
+    QuestionImage,
+    QuestionVersion,
+    User,
+)
+from app.repositories.question_repository import ExamQuestionSelector
+from app.repositories.sqlmodel_repository import SQLModelQuestionRepository
+from app.services.media_url import resolve_media_url
+
+
+@dataclass(frozen=True)
+class CreatedExam:
+    """Safe, minimal details of a successfully created attempt."""
+
+    attempt_id: UUID
+    certification_id: UUID
+    question_count: int
+
+
+@dataclass(frozen=True)
+class ExamOptionContent:
+    """Learner-visible answer option; deliberately excludes correctness."""
+
+    id: UUID
+    position: int
+    option_text: str
+
+
+@dataclass(frozen=True)
+class ExamImageContent:
+    """Image metadata only; correct answers and raw storage keys are private."""
+
+    id: UUID
+    position: int
+    alt_text: str
+    media_type: str
+    url: str | None
+
+
+@dataclass(frozen=True)
+class ExamQuestionContent:
+    """Stored exam assignment with safe question content."""
+
+    id: UUID
+    position: int
+    question_text: str
+    question_type: str
+    allows_multiple_answers: bool
+    difficulty: str
+    options: list[ExamOptionContent]
+    images: list[ExamImageContent] = field(default_factory=list)
+
+
+class ExamAttemptNotFoundError(LookupError):
+    """Attempt doesn't exist or doesn't belong to the current learner."""
+
+
+class InvalidQuestionCountError(ValueError):
+    """The requested count is not a positive integer."""
+
+
+class LearnerNotFoundError(LookupError):
+    """The authenticated learner has no matching users row."""
+
+
+class CertificationNotFoundError(LookupError):
+    """The requested certification does not exist."""
+
+
+class MissingThresholdError(Exception):
+    """Certification has no valid passing threshold."""
+
+
+class InvalidCategoryError(ValueError):
+    """The requested category does not exist within the certification."""
+
+
+class CategoryUnavailableError(ValueError):
+    """The requested category is not published for learners."""
+
+
+class AttemptInProgressError(Exception):
+    """A learner may hold only one in-progress attempt per certification."""
+
+    def __init__(
+        self,
+        existing_attempt_id: UUID,
+    ) -> None:
+        self.existing_attempt_id = existing_attempt_id
+
+        super().__init__(f"Attempt {existing_attempt_id} is already in progress")
+
+
+class InsufficientQuestionsError(Exception):
+    """Not enough eligible questions exist."""
+
+    def __init__(
+        self,
+        requested: int,
+        available: int,
+    ) -> None:
+        self.requested = requested
+        self.available = available
+
+        super().__init__(
+            f"Requested {requested} questions, but only {available} are available"
+        )
+
+
+class InvalidQuestionSelectionError(RuntimeError):
+    """The selector returned invalid or duplicate questions."""
+
+
+class ExamService:
+    """Coordinate selection and atomic persistence of an exam attempt."""
+
+    def __init__(
+        self,
+        session: Session,
+        selector: ExamQuestionSelector | None = None,
+    ) -> None:
+        self._session = session
+
+        self._selector = (
+            selector if selector is not None else SQLModelQuestionRepository(session)
+        )
+
+    def create_exam(
+        self,
+        *,
+        learner_id: UUID,
+        certification_id: UUID,
+        question_count: int,
+        category_id: UUID | None = None,
+    ) -> CreatedExam:
+        """Create and persist one randomized exam."""
+
+        if (
+            isinstance(
+                question_count,
+                bool,
+            )
+            or not isinstance(
+                question_count,
+                int,
+            )
+            or question_count < 1
+        ):
+            raise InvalidQuestionCountError("question_count must be a positive integer")
+
+        if question_count > settings.max_exam_questions:
+            raise InvalidQuestionCountError(
+                f"question_count must not exceed {settings.max_exam_questions}"
+            )
+
+        try:
+            if (
+                self._session.get(
+                    User,
+                    learner_id,
+                )
+                is None
+            ):
+                raise LearnerNotFoundError("Learner not found")
+
+            certification = self._session.get(
+                Certification,
+                certification_id,
+            )
+
+            if certification is None:
+                raise CertificationNotFoundError("Certification not found")
+
+            if certification.passing_threshold_pct is None:
+                raise MissingThresholdError(
+                    "Certification has no passing threshold configured"
+                )
+
+            threshold_pct = certification.passing_threshold_pct
+
+            feedback_mode = certification.feedback_mode
+
+            if category_id is not None:
+                category = self._session.get(
+                    Category,
+                    category_id,
+                )
+
+                if category is None or category.certification_id != certification_id:
+                    raise InvalidCategoryError(
+                        "Category is not part of this certification"
+                    )
+
+                if not category.is_published:
+                    raise CategoryUnavailableError("Category is not available")
+
+            existing_active = self._session.exec(
+                select(ExamAttempt)
+                .where(
+                    ExamAttempt.user_id == learner_id,
+                    ExamAttempt.certification_id == certification_id,
+                    ExamAttempt.status == "in_progress",
+                )
+                .limit(1)
+            ).first()
+
+            if existing_active is not None:
+                raise AttemptInProgressError(existing_active.id)
+
+            if category_id is None:
+                selected = self._selector.select_random_eligible(
+                    certification_id=(certification_id),
+                    question_count=(question_count),
+                )
+
+            else:
+                selected = self._selector.select_random_eligible(
+                    certification_id=(certification_id),
+                    question_count=(question_count),
+                    category_id=(category_id),
+                )
+
+            if len(selected) < question_count:
+                raise InsufficientQuestionsError(
+                    requested=question_count,
+                    available=len(selected),
+                )
+
+            question_ids = {item.question_id for item in selected}
+
+            version_ids = {item.question_version_id for item in selected}
+
+            if (
+                len(selected) != question_count
+                or len(question_ids) != question_count
+                or len(version_ids) != question_count
+            ):
+                raise InvalidQuestionSelectionError(
+                    "Question selection contains duplicates or an invalid size"
+                )
+
+            attempt = ExamAttempt(
+                user_id=learner_id,
+                certification_id=(certification_id),
+                question_count=question_count,
+                passing_threshold_pct=(threshold_pct),
+                feedback_mode=feedback_mode,
+            )
+
+            self._session.add(attempt)
+
+            self._session.flush()
+
+            attempt_id = attempt.id
+
+            self._session.add_all(
+                [
+                    ExamAttemptQuestion(
+                        attempt_id=attempt_id,
+                        question_id=(item.question_id),
+                        question_version_id=(item.question_version_id),
+                        position=position,
+                    )
+                    for position, item in enumerate(
+                        selected,
+                        start=1,
+                    )
+                ]
+            )
+
+            self._session.commit()
+
+        except Exception:
+            self._session.rollback()
+            raise
+
+        return CreatedExam(
+            attempt_id=attempt_id,
+            certification_id=(certification_id),
+            question_count=question_count,
+        )
+
+    def get_owned_attempt(
+        self,
+        *,
+        attempt_id: UUID,
+        learner_id: UUID,
+    ) -> ExamAttempt:
+        """Authorize before retrieving attempt data."""
+
+        attempt = self._session.get(
+            ExamAttempt,
+            attempt_id,
+        )
+
+        if attempt is None or attempt.user_id != learner_id:
+            raise ExamAttemptNotFoundError("Exam attempt not found")
+
+        return attempt
+
+    def get_exam_questions(
+        self,
+        attempt_id: UUID,
+    ) -> list[ExamQuestionContent]:
+        """Read assigned safe question content."""
+
+        rows = self._session.exec(
+            select(
+                ExamAttemptQuestion.position,
+                QuestionVersion.id,
+                QuestionVersion.question_text,
+                QuestionVersion.question_type,
+                QuestionVersion.allows_multiple_answers,
+                Question.difficulty,
+            )
+            .select_from(ExamAttemptQuestion)
+            .join(
+                QuestionVersion,
+                ExamAttemptQuestion.question_version_id == QuestionVersion.id,
+            )
+            .join(
+                Question,
+                Question.id == QuestionVersion.question_id,
+            )
+            .where(ExamAttemptQuestion.attempt_id == attempt_id)
+            .order_by(ExamAttemptQuestion.position)
+        ).all()
+
+        if not rows:
+            return []
+
+        version_ids = [version_id for _, version_id, *_ in rows]
+
+        option_rows = self._session.exec(
+            select(
+                AnswerOption.question_version_id,
+                AnswerOption.id,
+                AnswerOption.position,
+                AnswerOption.option_text,
+            )
+            .where(AnswerOption.question_version_id.in_(version_ids))
+            .order_by(
+                AnswerOption.question_version_id,
+                AnswerOption.position,
+            )
+        ).all()
+
+        options_by_version: dict[
+            UUID,
+            list[ExamOptionContent],
+        ] = defaultdict(list)
+
+        for (
+            version_id,
+            option_id,
+            position,
+            option_text,
+        ) in option_rows:
+            options_by_version[version_id].append(
+                ExamOptionContent(
+                    id=option_id,
+                    position=position,
+                    option_text=option_text,
+                )
+            )
+
+        image_rows = self._session.exec(
+            select(QuestionImage)
+            .where(QuestionImage.question_version_id.in_(version_ids))
+            .order_by(
+                QuestionImage.question_version_id,
+                QuestionImage.position,
+            )
+        ).all()
+
+        images_by_version: dict[
+            UUID,
+            list[ExamImageContent],
+        ] = defaultdict(list)
+
+        for image in image_rows:
+            if image.media_type not in {
+                "image/png",
+                "image/jpeg",
+                "image/webp",
+            }:
+                continue
+
+            images_by_version[image.question_version_id].append(
+                ExamImageContent(
+                    id=image.id,
+                    position=image.position,
+                    alt_text=image.alt_text,
+                    media_type=image.media_type,
+                    url=self._image_url(image.storage_key),
+                )
+            )
+
+        return [
+            ExamQuestionContent(
+                id=version_id,
+                position=position,
+                question_text=question_text,
+                question_type=question_type,
+                allows_multiple_answers=(allows_multiple_answers),
+                difficulty=difficulty,
+                options=options_by_version[version_id],
+                images=images_by_version[version_id],
+            )
+            for (
+                position,
+                version_id,
+                question_text,
+                question_type,
+                allows_multiple_answers,
+                difficulty,
+            ) in rows
+        ]
+
+    @staticmethod
+    def _image_url(
+        storage_key: str,
+    ) -> str | None:
+        """Compatibility wrapper around the shared media resolver."""
+
+        return resolve_media_url(storage_key)

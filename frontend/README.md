@@ -13,6 +13,16 @@ in your `readme` feel free to replace the text we've provided here.
 
 > Own it & Make it your Own!
 
+## Backend API proxy (JHEP-24/JHEP-99)
+
+Browser pages call the API **same-origin** (`/api/v1/...`), and the Next
+server proxies those calls to the FastAPI backend.
+
+- Local default target: `http://127.0.0.1:8010`
+- Override per environment with `BACKEND_PROXY_TARGET` (read at request
+  time from the runtime env — not baked into the bundle)
+- Inside the compose network, set `BACKEND_PROXY_TARGET=http://backend:8000`
+
 ## Team Documents
 
 You may find these helpful as you work together to organize your project.

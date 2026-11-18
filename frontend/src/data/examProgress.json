@@ -1,0 +1,27 @@
+{
+  "attempt_id": "d470a2a2-8c57-5a24-b0ae-611c4c566a28",
+  "current_question_version_id": "98f3e43a-6452-5ee0-a9a0-34f32ede0432",
+  "total_questions": 3,
+  "submitted_count": 2,
+  "responses": [
+    {
+      "question_version_id": "84abaf3f-b242-5c17-8982-687a44d39b3f",
+      "selected_option_ids": ["42cec141-8d9b-5e3e-b539-c7453cb388f8"],
+      "submitted": true
+    },
+    {
+      "question_version_id": "020da2d8-7594-5aee-a021-a3dc13d48b5d",
+      "selected_option_ids": [
+        "435737a8-e04a-5af3-a9d5-9b36c06d8eae",
+        "1f3edd12-8c62-5342-aef9-18be8ad1feb9"
+      ],
+      "submitted": true
+    }
+  ],
+  "current_question_state": {
+    "question_version_id": "98f3e43a-6452-5ee0-a9a0-34f32ede0432",
+    "selected_option_ids": [],
+    "submitted": false,
+    "feedback": null
+  }
+}

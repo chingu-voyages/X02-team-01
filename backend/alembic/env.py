@@ -3,6 +3,7 @@ from logging.config import fileConfig
 from sqlmodel import SQLModel
 
 from alembic import context
+from app import models  # noqa: F401
 from app.core.config import settings
 from app.db.session import engine
 
