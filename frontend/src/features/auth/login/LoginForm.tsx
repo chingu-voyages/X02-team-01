@@ -220,6 +220,7 @@ export default function LoginForm() {
           id="password"
           name="password"
           type="password"
+          passwordToggle
           placeholder="Enter your password"
           value={formData.password}
           onChange={handleChange}

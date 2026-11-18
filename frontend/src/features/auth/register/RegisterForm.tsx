@@ -431,6 +431,7 @@ export default function RegisterForm() {
           id="password"
           name="password"
           type="password"
+          passwordToggle
           placeholder="At least 8 characters"
           value={formData.password}
           onChange={handleChange}
@@ -465,6 +466,7 @@ export default function RegisterForm() {
         id="confirmPassword"
         name="confirmPassword"
         type="password"
+        passwordToggle
         placeholder="Please confirm your password."
         value={
           formData.confirmPassword

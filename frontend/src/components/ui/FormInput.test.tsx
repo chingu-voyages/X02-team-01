@@ -51,3 +51,60 @@ describe("FormInput", () => {
     expect(handleChange).toHaveBeenCalled();
   });
 });
+
+
+describe("password visibility toggle (JHEP-124)", () => {
+  it("keeps the field hidden until the eye button is clicked", () => {
+    render(
+      <FormInput label="Password" name="password" type="password" passwordToggle />,
+    );
+
+    const input = screen.getByLabelText(/^password$/i);
+    expect(input).toHaveAttribute("type", "password");
+
+    const toggle = screen.getByRole("button", { name: /show password/i });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(input).not.toHaveAttribute("type", "text");
+  });
+
+  it("reveals the password on click and hides it again", async () => {
+    const user = userEvent.setup();
+    render(
+      <FormInput label="Password" name="password" type="password" passwordToggle />,
+    );
+
+    const toggle = screen.getByRole("button", { name: /show password/i });
+    await user.click(toggle);
+
+    const revealed = screen.getByLabelText(/^password$/i);
+    expect(revealed).toHaveAttribute("type", "text");
+    expect(
+      screen.getByRole("button", { name: /hide password/i }),
+    ).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("button", { name: /hide password/i }));
+    expect(
+      screen.getByLabelText(/^password$/i),
+    ).toHaveAttribute("type", "password");
+  });
+
+  it("does not render a toggle when passwordToggle is not set", () => {
+    render(<FormInput label="Password" name="password" type="password" />);
+
+    expect(
+      screen.queryByRole("button", { name: /show password/i }),
+    ).toBeNull();
+    expect(screen.getByLabelText(/password/i)).toHaveAttribute(
+      "type",
+      "password",
+    );
+  });
+
+  it("does not render a toggle for non-password types", () => {
+    render(<FormInput label="Email" name="email" passwordToggle />);
+
+    expect(
+      screen.queryByRole("button", { name: /show password/i }),
+    ).toBeNull();
+  });
+});

@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import Navbar from "@/components/layouts/Navbar";
 import Card from "@/components/ui/Card";
+import FormInput from "@/components/ui/FormInput";
 
 const passwordRules = [
   { test: (v: string) => v.length >= 8, message: "At least 8 characters" },
@@ -141,19 +142,18 @@ export default function ResetPasswordForm({ token }: { token: string }) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
-            <label htmlFor="new-password" className="text-sm font-semibold">
-              New password
-            </label>
-            <input
+            <FormInput
+              label="New password"
               id="new-password"
+              name="new-password"
               type="password"
+              passwordToggle
               value={password}
               onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
                 setPassword(event.target.value)
               }
               autoComplete="new-password"
               required
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
             />
             <p className="text-xs text-gray-500">
               At least 8 characters, with an uppercase letter, a lowercase
@@ -162,22 +162,18 @@ export default function ResetPasswordForm({ token }: { token: string }) {
           </div>
 
           <div className="space-y-1">
-            <label
-              htmlFor="confirm-password"
-              className="text-sm font-semibold"
-            >
-              Confirm new password
-            </label>
-            <input
+            <FormInput
+              label="Confirm new password"
               id="confirm-password"
+              name="confirm-password"
               type="password"
+              passwordToggle
               value={confirm}
               onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
                 setConfirm(event.target.value)
               }
               autoComplete="new-password"
               required
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
             />
           </div>
 
