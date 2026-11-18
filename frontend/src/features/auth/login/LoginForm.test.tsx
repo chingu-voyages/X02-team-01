@@ -39,7 +39,7 @@ describe("LoginForm Component", () => {
       ).toBeInTheDocument();
 
       expect(
-        screen.getByLabelText(/password/i),
+        screen.getByLabelText(/^password$/i),
       ).toBeInTheDocument();
 
       expect(
@@ -114,7 +114,7 @@ describe("LoginForm Component", () => {
 
       await userEvent.type(
         screen.getByLabelText(
-          /password/i,
+          /^password$/i,
         ),
         "Str0ngEn0ugh1",
       );
@@ -188,7 +188,7 @@ describe("LoginForm Component", () => {
 
       await userEvent.type(
         screen.getByLabelText(
-          /password/i,
+          /^password$/i,
         ),
         "AdminPassword123!",
       );
@@ -247,7 +247,7 @@ describe("LoginForm Component", () => {
 
       await userEvent.type(
         screen.getByLabelText(
-          /password/i,
+          /^password$/i,
         ),
         "Contributor123!",
       );
@@ -295,7 +295,7 @@ describe("LoginForm Component", () => {
 
       await userEvent.type(
         screen.getByLabelText(
-          /password/i,
+          /^password$/i,
         ),
         "WrongPassword",
       );
@@ -349,7 +349,7 @@ describe("LoginForm Component", () => {
 
       await userEvent.type(
         screen.getByLabelText(
-          /password/i,
+          /^password$/i,
         ),
         "Password123!",
       );
