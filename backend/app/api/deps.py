@@ -11,6 +11,7 @@ from fastapi.security import (
 )
 from sqlmodel import Session
 
+from app.core.config import settings
 from app.core.roles import UserRole
 from app.core.security import decode_access_token, decode_access_token_issued_at
 from app.db.session import get_session
@@ -76,6 +77,30 @@ def get_current_user(
             detail="Invalid or expired authentication token",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+
+    # JHEP-109 AC2: a pending-MFA challenge token authorizes NOTHING
+    # except /auth/mfa/verify — protected routes reject it outright.
+    try:
+        payload = jwt.decode(
+            credentials.credentials,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+            options={"require": ["sub", "iat", "exp"]},
+        )
+        if payload.get("mfa") == "pending":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Multi-factor verification required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    except jwt.InvalidTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    except HTTPException:
+        raise
 
     try:
         user_id = UUID(subject)

@@ -1,4 +1,3 @@
-
 # FastAPI application server
 fastapi
 uvicorn[standard]
@@ -30,6 +29,10 @@ boto3
 
 # Question image validation
 Pillow
+
+# Multi-factor authentication (JHEP-109)
+pyotp
+cryptography
 
 # Excel question-bank imports
 openpyxl

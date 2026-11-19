@@ -104,6 +104,13 @@ class AuthTokenOut(BaseModel):
     access_token: str
     token_type: Literal["bearer"]
     learner: LearnerOut
+    # JHEP-109: present ONLY when the password stage passed but the
+    # account requires the second factor — `access_token` is then a
+    # 5-minute challenge token that authorizes nothing but
+    # /auth/mfa/verify.
+    mfa_required: bool = False
+    challenge_id: str | None = None
+    mfa_expires_in_seconds: int | None = None
 
 
 class PasswordResetRequestIn(BaseModel):
