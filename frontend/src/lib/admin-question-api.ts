@@ -4,6 +4,7 @@ import {
 
 import type {
   AdminQuestionBankListResponse,
+  AdminQuestionBankQuery,
   AdminQuestionDetail,
   AdminQuestionDraftCreateRequest,
   AdminQuestionDraftCreated,
@@ -13,11 +14,102 @@ import type {
 } from "@/types/admin-question-api.types";
 
 
+function questionBankQueryString(
+  query: AdminQuestionBankQuery,
+) {
+  const params =
+    new URLSearchParams();
+
+  if (query.search?.trim()) {
+    params.set(
+      "search",
+      query.search.trim(),
+    );
+  }
+
+  if (query.certification_id) {
+    params.set(
+      "certification_id",
+      query.certification_id,
+    );
+  }
+
+  if (query.category_id) {
+    params.set(
+      "category_id",
+      query.category_id,
+    );
+  }
+
+  if (query.difficulty) {
+    params.set(
+      "difficulty",
+      query.difficulty,
+    );
+  }
+
+  if (query.question_type) {
+    params.set(
+      "question_type",
+      query.question_type,
+    );
+  }
+
+  if (query.review_status) {
+    params.set(
+      "review_status",
+      query.review_status,
+    );
+  }
+
+  if (query.publication_status) {
+    params.set(
+      "publication_status",
+      query.publication_status,
+    );
+  }
+
+  if (
+    query.has_image !== undefined
+  ) {
+    params.set(
+      "has_image",
+      String(query.has_image),
+    );
+  }
+
+  if (query.page !== undefined) {
+    params.set(
+      "page",
+      String(query.page),
+    );
+  }
+
+  if (
+    query.page_size !== undefined
+  ) {
+    params.set(
+      "page_size",
+      String(query.page_size),
+    );
+  }
+
+  const value = params.toString();
+
+  return value
+    ? `?${value}`
+    : "";
+}
+
+
 export async function getManagedQuestions(
   token: string,
+  query: AdminQuestionBankQuery = {},
 ): Promise<AdminQuestionBankListResponse> {
   return apiRequest<AdminQuestionBankListResponse>(
-    "/admin/questions",
+    `/admin/questions${questionBankQueryString(
+      query,
+    )}`,
     token,
     {
       method: "GET",
