@@ -54,6 +54,17 @@ class QuestionImageAltTextError(QuestionImageValidationError):
 
 
 @dataclass(frozen=True)
+class ValidatedQuestionImageFile:
+    """Validated image bytes independent of any question-specific alt text."""
+
+    content: bytes
+    media_type: str
+    extension: str
+    width: int
+    height: int
+
+
+@dataclass(frozen=True)
 class ValidatedQuestionImage:
     """Safe image bytes and metadata ready for R2 persistence."""
 
@@ -100,16 +111,11 @@ def _normalize_alt_text(
     return normalized
 
 
-def validate_question_image(
+def validate_question_image_file(
     *,
     content: bytes,
-    alt_text: str,
-) -> ValidatedQuestionImage:
-    """Validate bytes, format, dimensions, integrity, and accessibility text."""
-
-    normalized_alt_text = _normalize_alt_text(
-        alt_text,
-    )
+) -> ValidatedQuestionImageFile:
+    """Validate image bytes, format, dimensions, and integrity only."""
 
     if not content:
         raise QuestionImageInvalidContentError("Image file is empty")
@@ -170,11 +176,35 @@ def validate_question_image(
 
     format_metadata = SUPPORTED_IMAGE_FORMATS[detected_format]
 
-    return ValidatedQuestionImage(
+    return ValidatedQuestionImageFile(
         content=content,
         media_type=format_metadata["media_type"],
         extension=format_metadata["extension"],
         width=width,
         height=height,
+    )
+
+
+def validate_question_image(
+    *,
+    content: bytes,
+    alt_text: str,
+) -> ValidatedQuestionImage:
+    """Validate bytes plus question-specific accessible alternative text."""
+
+    normalized_alt_text = _normalize_alt_text(
+        alt_text,
+    )
+
+    validated_file = validate_question_image_file(
+        content=content,
+    )
+
+    return ValidatedQuestionImage(
+        content=validated_file.content,
+        media_type=validated_file.media_type,
+        extension=validated_file.extension,
+        width=validated_file.width,
+        height=validated_file.height,
         alt_text=normalized_alt_text,
     )

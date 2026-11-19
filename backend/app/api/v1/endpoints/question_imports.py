@@ -20,16 +20,31 @@ from app.api.deps import (
     get_current_user,
     require_contributor_or_administrator,
 )
+from app.core.config import settings
 from app.core.roles import UserRole
 from app.db.session import get_session
 from app.models.question_import_batch import QuestionImportBatch
 from app.models.question_import_row import QuestionImportRow
 from app.models.user import User
 from app.schemas.question_import import (
+    QuestionImportAssetOut,
+    QuestionImportAssetUploadOut,
     QuestionImportBatchOut,
     QuestionImportIssueOut,
     QuestionImportRowOut,
     QuestionImportRowsPage,
+)
+from app.services.question_image_validation import (
+    QuestionImageDimensionsError,
+    QuestionImageInvalidContentError,
+    QuestionImageTooLargeError,
+    QuestionImageUnsupportedTypeError,
+)
+from app.services.question_import_asset_service import (
+    QuestionImportAssetConflictError,
+    QuestionImportAssetInputError,
+    QuestionImportAssetStateError,
+    stage_question_import_asset,
 )
 from app.services.question_import_parser import (
     MAX_WORKBOOK_BYTES,
@@ -39,8 +54,26 @@ from app.services.question_import_parser import (
 from app.services.question_import_validation_service import (
     validate_question_import_batch,
 )
+from app.services.r2_storage import (
+    R2ConfigurationError,
+    R2Storage,
+    R2StorageError,
+)
 
 router = APIRouter(dependencies=[Depends(require_contributor_or_administrator)])
+
+
+def get_import_r2_storage() -> R2Storage:
+    """Resolve backend-only object storage for staged import assets."""
+
+    try:
+        return R2Storage()
+
+    except R2ConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Question image storage is unavailable",
+        ) from exc
 
 
 @router.post(
@@ -148,6 +181,109 @@ async def upload_question_import(
     session.refresh(batch)
 
     return _batch_response(batch)
+
+
+@router.post(
+    "/{batch_id}/assets",
+    response_model=QuestionImportAssetUploadOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_question_import_asset(
+    batch_id: UUID,
+    response: Response,
+    current_user: Annotated[
+        User,
+        Depends(get_current_user),
+    ],
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
+    storage: Annotated[
+        R2Storage,
+        Depends(get_import_r2_storage),
+    ],
+    file: Annotated[
+        UploadFile,
+        File(...),
+    ],
+) -> QuestionImportAssetUploadOut:
+    """Validate and stage one PNG/JPEG/WebP import asset, then revalidate."""
+
+    batch = _visible_batch(
+        session,
+        batch_id=batch_id,
+        actor=current_user,
+    )
+
+    try:
+        content = await file.read(settings.max_question_image_bytes + 1)
+    finally:
+        await file.close()
+
+    source_filename = file.filename or ""
+
+    try:
+        staged = stage_question_import_asset(
+            session,
+            batch=batch,
+            source_filename=(source_filename),
+            content=content,
+            storage=storage,
+        )
+
+    except QuestionImageTooLargeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=str(exc),
+        ) from exc
+
+    except QuestionImageUnsupportedTypeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=str(exc),
+        ) from exc
+
+    except (
+        QuestionImageInvalidContentError,
+        QuestionImageDimensionsError,
+        QuestionImportAssetInputError,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    except (
+        QuestionImportAssetConflictError,
+        QuestionImportAssetStateError,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    except R2StorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Question image storage is unavailable",
+        ) from exc
+
+    if staged.reused_existing:
+        response.status_code = status.HTTP_200_OK
+
+    session.refresh(batch)
+
+    return QuestionImportAssetUploadOut(
+        asset=QuestionImportAssetOut(
+            id=staged.id,
+            source_filename=(staged.source_filename),
+            media_type=(staged.media_type),
+            byte_size=(staged.byte_size),
+            status=staged.status,
+        ),
+        batch=_batch_response(batch),
+    )
 
 
 @router.get(

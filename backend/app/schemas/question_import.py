@@ -92,3 +92,30 @@ class QuestionImportRowsPage(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class QuestionImportAssetOut(BaseModel):
+    """Safe staged-image metadata for the import UI."""
+
+    id: UUID
+    source_filename: str
+    media_type: Literal[
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+    ]
+    byte_size: int
+    status: Literal[
+        "uploaded",
+        "valid",
+        "invalid",
+        "committed",
+        "discarded",
+    ]
+
+
+class QuestionImportAssetUploadOut(BaseModel):
+    """Asset upload result plus the batch's new validation state."""
+
+    asset: QuestionImportAssetOut
+    batch: QuestionImportBatchOut
