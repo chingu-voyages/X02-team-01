@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -24,6 +25,7 @@ import { useDemoSession } from "@/features/auth/AuthProvider";
 import {
   commitQuestionImport,
   getQuestionImport,
+  getQuestionImportHistory,
   getQuestionImportRows,
   uploadQuestionImport,
   uploadQuestionImportAsset,
@@ -32,7 +34,9 @@ import { ApiError } from "@/lib/api-client";
 
 import type {
   QuestionImportBatch,
+  QuestionImportBatchStatus,
   QuestionImportCommitResponse,
+  QuestionImportHistoryItem,
   QuestionImportRow,
   QuestionImportRowStatus,
 } from "@/types/question-import-api.types";
@@ -225,9 +229,116 @@ async function collectMissingImageNames(
   );
 }
 
+function importStatusLabel(
+  status: QuestionImportBatchStatus,
+) {
+  if (status === "imported") {
+    return "Imported";
+  }
+
+  if (status === "ready") {
+    return "Ready to Import";
+  }
+
+  if (status === "invalid") {
+    return "Needs Attention";
+  }
+
+  if (status === "validating") {
+    return "Validating";
+  }
+
+  if (status === "importing") {
+    return "Importing";
+  }
+
+  if (status === "failed") {
+    return "Failed";
+  }
+
+  if (status === "cancelled") {
+    return "Cancelled";
+  }
+
+  return "Uploaded";
+}
+
+function importStatusClasses(
+  status: QuestionImportBatchStatus,
+) {
+  if (status === "imported") {
+    return (
+      "border-green-200 bg-green-50 " +
+      "text-green-800"
+    );
+  }
+
+  if (status === "ready") {
+    return (
+      "border-blue-200 bg-blue-50 " +
+      "text-blue-800"
+    );
+  }
+
+  if (
+    status === "invalid" ||
+    status === "failed"
+  ) {
+    return (
+      "border-red-200 bg-red-50 " +
+      "text-red-800"
+    );
+  }
+
+  return (
+    "border-gray-200 bg-gray-50 " +
+    "text-gray-700"
+  );
+}
+
+function importActionLabel(
+  status: QuestionImportBatchStatus,
+) {
+  if (status === "ready") {
+    return "Continue";
+  }
+
+  if (status === "invalid") {
+    return "Review";
+  }
+
+  return "View";
+}
+
+function formatImportDate(
+  value: string,
+) {
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
+    return "Unknown date";
+  }
+
+  return new Intl.DateTimeFormat(
+    "en-US",
+    {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    },
+  ).format(date);
+}
+
+
 export default function QuestionImportPage() {
   const {
     token,
+    role,
     ready,
     handleError,
   } =
@@ -313,6 +424,105 @@ export default function QuestionImportPage() {
       null,
     );
 
+
+  const [
+    history,
+    setHistory,
+  ] =
+    useState<QuestionImportHistoryItem[]>(
+      [],
+    );
+
+  const [
+    historyLoading,
+    setHistoryLoading,
+  ] =
+    useState(true);
+
+  const [
+    historyError,
+    setHistoryError,
+  ] =
+    useState("");
+
+  const [
+    historyReloadKey,
+    setHistoryReloadKey,
+  ] =
+    useState(0);
+
+  useEffect(() => {
+    if (
+      !ready ||
+      !token
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    getQuestionImportHistory(
+      token,
+      {
+        page: 1,
+        page_size: 8,
+      },
+    )
+      .then(
+        (response) => {
+          if (cancelled) {
+            return;
+          }
+
+          setHistory(
+            response.items,
+          );
+          setHistoryError("");
+          setHistoryLoading(
+            false,
+          );
+        },
+      )
+      .catch(
+        (
+          caught: unknown,
+        ) => {
+          if (cancelled) {
+            return;
+          }
+
+          if (
+            caught instanceof
+              ApiError &&
+            caught.status === 401
+          ) {
+            handleError(
+              caught,
+            );
+            return;
+          }
+
+          setHistoryError(
+            errorMessage(
+              caught,
+            ),
+          );
+          setHistoryLoading(
+            false,
+          );
+        },
+      );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    ready,
+    token,
+    historyReloadKey,
+    handleError,
+  ]);
+
   const pageCount =
     Math.max(
       1,
@@ -395,6 +605,80 @@ export default function QuestionImportPage() {
 
     setMissingImages(
       filenames,
+    );
+  }
+
+  async function openHistoryImport(
+    item: QuestionImportHistoryItem,
+  ) {
+    if (!token) {
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    setCommitResult(
+      null,
+    );
+
+    try {
+      const refreshed =
+        await getQuestionImport(
+          token,
+          item.id,
+        );
+
+      setBatch(
+        refreshed,
+      );
+      setStep(
+        "preview",
+      );
+
+      await Promise.all([
+        loadRows(
+          refreshed.id,
+          "all",
+          1,
+        ),
+        refreshMissingImages(
+          refreshed.id,
+        ),
+      ]);
+
+    } catch (
+      caught: unknown
+    ) {
+      if (
+        caught instanceof
+          ApiError &&
+        caught.status === 401
+      ) {
+        handleError(
+          caught,
+        );
+        return;
+      }
+
+      setError(
+        errorMessage(
+          caught,
+        ),
+      );
+
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function retryHistory() {
+    setHistoryError("");
+    setHistoryLoading(
+      true,
+    );
+    setHistoryReloadKey(
+      (value) =>
+        value + 1,
     );
   }
 
@@ -599,6 +883,10 @@ export default function QuestionImportPage() {
       setStep(
         "complete",
       );
+      setHistoryReloadKey(
+        (value) =>
+          value + 1,
+      );
 
     } catch (
       caught: unknown
@@ -786,7 +1074,8 @@ export default function QuestionImportPage() {
 
       {step ===
         "select" && (
-        <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+        <>
+          <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
           <div className="rounded-md border border-[#d8dbde] bg-white p-6">
             <h2 className="text-lg font-semibold text-[#303438]">
               Upload question bank
@@ -923,7 +1212,150 @@ export default function QuestionImportPage() {
               </ol>
             </div>
           </aside>
-        </div>
+          </div>
+
+          <section className="mt-6 overflow-hidden rounded-md border border-[#d8dbde] bg-white">
+            <div className="flex items-center justify-between gap-4 border-b border-[#d8dbde] p-5">
+              <div>
+                <h2 className="font-semibold text-[#303438]">
+                  Recent Imports
+                </h2>
+                <p className="mt-1 text-sm text-[#6a7176]">
+                  Reopen a recent
+                  validation or
+                  review completed
+                  imports.
+                </p>
+              </div>
+
+              {historyError && (
+                <button
+                  type="button"
+                  onClick={
+                    retryHistory
+                  }
+                  className="text-sm font-medium underline underline-offset-4"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+
+            {historyLoading ? (
+              <div
+                role="status"
+                className="p-6 text-sm text-[#6a7176]"
+              >
+                Loading recent
+                imports...
+              </div>
+            ) : historyError ? (
+              <div
+                role="alert"
+                className="p-6 text-sm text-red-700"
+              >
+                {historyError}
+              </div>
+            ) : history.length ===
+              0 ? (
+              <div className="p-6 text-sm text-[#6a7176]">
+                No imports yet.
+                Your recent bulk
+                uploads will appear
+                here.
+              </div>
+            ) : (
+              <div className="divide-y divide-[#e1e3e5]">
+                {history.map(
+                  (item) => (
+                    <div
+                      key={
+                        item.id
+                      }
+                      className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate font-medium">
+                            {
+                              item.original_filename
+                            }
+                          </p>
+
+                          <span
+                            className={`rounded-full border px-2.5 py-1 text-xs font-medium ${importStatusClasses(
+                              item.status,
+                            )}`}
+                          >
+                            {importStatusLabel(
+                              item.status,
+                            )}
+                          </span>
+                        </div>
+
+                        <p className="mt-1 text-sm text-[#666d72]">
+                          {
+                            item.total_rows
+                          }{" "}
+                          question
+                          {item.total_rows ===
+                          1
+                            ? ""
+                            : "s"}
+                          {" · "}
+                          {
+                            item.error_rows
+                          }{" "}
+                          error
+                          {item.error_rows ===
+                          1
+                            ? ""
+                            : "s"}
+                          {" · "}
+                          {
+                            item.warning_rows
+                          }{" "}
+                          warning
+                          {item.warning_rows ===
+                          1
+                            ? ""
+                            : "s"}
+                        </p>
+
+                        <p className="mt-1 text-xs text-[#7a8186]">
+                          {formatImportDate(
+                            item.created_at,
+                          )}
+                          {role ===
+                          "administrator"
+                            ? ` · ${item.uploaded_by_name || item.uploaded_by_email}`
+                            : ""}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void openHistoryImport(
+                            item,
+                          )
+                        }
+                        disabled={
+                          busy
+                        }
+                        className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-md border border-[#cfd2d5] bg-white px-4 text-sm font-semibold text-[#3f4549] hover:bg-[#f5f6f7] disabled:opacity-50"
+                      >
+                        {importActionLabel(
+                          item.status,
+                        )}
+                      </button>
+                    </div>
+                  ),
+                )}
+              </div>
+            )}
+          </section>
+        </>
       )}
 
       {step ===
@@ -1233,7 +1665,43 @@ export default function QuestionImportPage() {
           </div>
 
           <div className="mt-5 rounded-md border border-[#d8dbde] bg-white p-5">
-            {batch.can_import ? (
+            {batch.status ===
+            "imported" ? (
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex items-start gap-3">
+                  <CheckCircle2
+                    aria-hidden="true"
+                    className="mt-0.5 size-5 text-green-700"
+                  />
+
+                  <div>
+                    <h2 className="font-semibold">
+                      Already imported
+                    </h2>
+                    <p className="mt-1 text-sm text-[#646b70]">
+                      This batch
+                      created{" "}
+                      {
+                        batch.imported_rows
+                      }{" "}
+                      pending Draft
+                      question
+                      {batch.imported_rows ===
+                      1
+                        ? ""
+                        : "s"}.
+                    </p>
+                  </div>
+                </div>
+
+                <Link
+                  href="/admin/questions"
+                  className="inline-flex min-h-11 items-center justify-center rounded-md bg-[#3d4145] px-6 text-sm font-semibold text-white hover:bg-[#292d30]"
+                >
+                  View Question Bank
+                </Link>
+              </div>
+            ) : batch.can_import ? (
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex items-start gap-3">
                   <CheckCircle2

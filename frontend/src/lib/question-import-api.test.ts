@@ -8,6 +8,7 @@ import {
 
 import {
   commitQuestionImport,
+  getQuestionImportHistory,
   getQuestionImportRows,
   uploadQuestionImport,
   uploadQuestionImportAsset,
@@ -47,6 +48,86 @@ describe(
     afterEach(() => {
       vi.unstubAllGlobals();
     });
+
+
+    it(
+      "loads recent import history with filters and pagination",
+      async () => {
+        const mockFetch =
+          mockResponse(
+            200,
+            {
+              items: [],
+              total: 0,
+              page: 2,
+              page_size: 10,
+            },
+          );
+
+        await getQuestionImportHistory(
+          "token",
+          {
+            status:
+              "imported",
+            page:
+              2,
+            page_size:
+              10,
+          },
+        );
+
+        const [
+          rawUrl,
+          options,
+        ] =
+          mockFetch.mock
+            .calls[0]!;
+
+        const url =
+          new URL(
+            String(
+              rawUrl,
+            ),
+            "http://localhost",
+          );
+
+        expect(
+          url.pathname,
+        ).toBe(
+          "/api/v1/admin/question-imports",
+        );
+
+        expect(
+          url.searchParams.get(
+            "status",
+          ),
+        ).toBe(
+          "imported",
+        );
+
+        expect(
+          url.searchParams.get(
+            "page",
+          ),
+        ).toBe(
+          "2",
+        );
+
+        expect(
+          url.searchParams.get(
+            "page_size",
+          ),
+        ).toBe(
+          "10",
+        );
+
+        expect(
+          options?.method,
+        ).toBe(
+          "GET",
+        );
+      },
+    );
 
 
     it(

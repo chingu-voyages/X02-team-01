@@ -100,3 +100,24 @@ export interface QuestionImportRowsQuery {
   page?: number;
   page_size?: number;
 }
+
+export interface QuestionImportHistoryItem
+  extends QuestionImportBatch {
+  uploaded_by_id: string;
+  uploaded_by_email: string;
+  uploaded_by_name: string;
+}
+
+export interface QuestionImportHistoryPage {
+  items: QuestionImportHistoryItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface QuestionImportHistoryQuery {
+  status?: QuestionImportBatchStatus;
+  page?: number;
+  page_size?: number;
+}
+

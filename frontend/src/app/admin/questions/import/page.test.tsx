@@ -21,6 +21,7 @@ import QuestionImportPage from "./page";
 import {
   commitQuestionImport,
   getQuestionImport,
+  getQuestionImportHistory,
   getQuestionImportRows,
   uploadQuestionImport,
   uploadQuestionImportAsset,
@@ -33,6 +34,8 @@ vi.mock(
     useDemoSession: () => ({
       token:
         "contributor-token",
+      role:
+        "contributor",
       ready:
         true,
       handleError:
@@ -47,6 +50,8 @@ vi.mock(
     uploadQuestionImport:
       vi.fn(),
     getQuestionImport:
+      vi.fn(),
+    getQuestionImportHistory:
       vi.fn(),
     getQuestionImportRows:
       vi.fn(),
@@ -66,6 +71,12 @@ const mockedUpload =
 const mockedGetBatch =
   vi.mocked(
     getQuestionImport,
+  );
+
+
+const mockedGetHistory =
+  vi.mocked(
+    getQuestionImportHistory,
   );
 
 const mockedGetRows =
@@ -135,6 +146,17 @@ const importedBatch = {
     "2026-11-18T12:05:00Z",
 };
 
+
+const readyHistoryItem = {
+  ...readyBatch,
+  uploaded_by_id:
+    "55555555-5555-4555-8555-555555555555",
+  uploaded_by_email:
+    "contributor@example.test",
+  uploaded_by_name:
+    "Contributor One",
+};
+
 const readyRow = {
   id:
     "22222222-2222-4222-8222-222222222222",
@@ -189,6 +211,17 @@ const missingImageRow = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+
+  mockedGetHistory
+    .mockResolvedValue({
+      items: [],
+      total:
+        0,
+      page:
+        1,
+      page_size:
+        8,
+    });
 
   mockedGetBatch
     .mockResolvedValue(
@@ -249,6 +282,77 @@ afterEach(() => {
 describe(
   "QuestionImportPage",
   () => {
+    it(
+      "shows recent imports and reopens a ready batch",
+      async () => {
+        const user =
+          userEvent.setup();
+
+        mockedGetHistory
+          .mockResolvedValue({
+            items: [
+              readyHistoryItem,
+            ],
+            total:
+              1,
+            page:
+              1,
+            page_size:
+              8,
+          });
+
+        mockedGetBatch
+          .mockResolvedValue(
+            readyBatch,
+          );
+
+        render(
+          <QuestionImportPage />,
+        );
+
+        expect(
+          await screen.findByText(
+            "Recent Imports",
+          ),
+        ).toBeTruthy();
+
+        expect(
+          await screen.findByText(
+            "questions.xlsx",
+          ),
+        ).toBeTruthy();
+
+        await user.click(
+          screen.getByRole(
+            "button",
+            {
+              name:
+                "Continue",
+            },
+          ),
+        );
+
+        expect(
+          await screen.findByText(
+            "What is IAM?",
+          ),
+        ).toBeTruthy();
+
+        expect(
+          screen.getByText(
+            "Ready to import",
+          ),
+        ).toBeTruthy();
+
+        expect(
+          mockedGetBatch,
+        ).toHaveBeenCalledWith(
+          "contributor-token",
+          readyBatch.id,
+        );
+      },
+    );
+
     it(
       "uploads a workbook, previews rows, and confirms the import",
       async () => {

@@ -535,3 +535,139 @@ def test_missing_image_reference_is_visible_in_row_preview(
     codes = {issue["code"] for issue in rows.json()["items"][0]["issues"]}
 
     assert "MISSING_IMAGE_FILE" in codes
+
+
+def test_import_history_is_scoped_by_role_and_includes_uploader(
+    client: TestClient,
+    session: Session,
+):
+    first = create_user(
+        session,
+        UserRole.CONTRIBUTOR,
+    )
+    first.full_name = "First Contributor"
+
+    second = create_user(
+        session,
+        UserRole.CONTRIBUTOR,
+    )
+    second.full_name = "Second Contributor"
+
+    administrator = create_user(
+        session,
+        UserRole.ADMINISTRATOR,
+    )
+
+    session.add(first)
+    session.add(second)
+    session.commit()
+
+    seed_catalog(session)
+
+    first_upload = upload(
+        client,
+        user=first,
+        content=workbook_bytes(
+            [valid_row(question_text=("First contributor question"))]
+        ),
+        filename=("first-import.xlsx"),
+    )
+
+    second_upload = upload(
+        client,
+        user=second,
+        content=workbook_bytes(
+            [valid_row(question_text=("Second contributor question"))]
+        ),
+        filename=("second-import.xlsx"),
+    )
+
+    assert first_upload.status_code == 201
+    assert second_upload.status_code == 201
+
+    contributor_history = client.get(
+        "/admin/question-imports",
+        headers=auth_header(first),
+    )
+
+    assert contributor_history.status_code == 200
+
+    contributor_body = contributor_history.json()
+
+    assert contributor_body["total"] == 1
+    assert len(contributor_body["items"]) == 1
+    assert contributor_body["items"][0]["id"] == first_upload.json()["id"]
+    assert contributor_body["items"][0]["uploaded_by_id"] == str(first.id)
+    assert contributor_body["items"][0]["uploaded_by_email"] == first.email
+    assert contributor_body["items"][0]["uploaded_by_name"] == "First Contributor"
+
+    admin_history = client.get(
+        "/admin/question-imports",
+        headers=auth_header(administrator),
+    )
+
+    assert admin_history.status_code == 200
+
+    admin_body = admin_history.json()
+
+    assert admin_body["total"] == 2
+    assert {item["id"] for item in admin_body["items"]} == {
+        first_upload.json()["id"],
+        second_upload.json()["id"],
+    }
+
+
+def test_import_history_filters_status_and_paginates(
+    client: TestClient,
+    session: Session,
+):
+    contributor = create_user(
+        session,
+        UserRole.CONTRIBUTOR,
+    )
+    seed_catalog(session)
+
+    ready = upload(
+        client,
+        user=contributor,
+        content=workbook_bytes([valid_row(question_text=("Ready history question"))]),
+        filename="ready.xlsx",
+    )
+
+    invalid_row = valid_row(question_text=("Invalid history question"))
+    invalid_row["certification_code"] = "UNKNOWN"
+
+    invalid = upload(
+        client,
+        user=contributor,
+        content=workbook_bytes([invalid_row]),
+        filename="invalid.xlsx",
+    )
+
+    assert ready.status_code == 201
+    assert invalid.status_code == 201
+    assert ready.json()["status"] == "ready"
+    assert invalid.json()["status"] == "invalid"
+
+    invalid_history = client.get(
+        ("/admin/question-imports?status=invalid&page=1&page_size=1"),
+        headers=auth_header(contributor),
+    )
+
+    assert invalid_history.status_code == 200
+
+    body = invalid_history.json()
+
+    assert body["total"] == 1
+    assert body["page"] == 1
+    assert body["page_size"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["id"] == invalid.json()["id"]
+    assert body["items"][0]["status"] == "invalid"
+
+    invalid_page = client.get(
+        ("/admin/question-imports?page=0"),
+        headers=auth_header(contributor),
+    )
+
+    assert invalid_page.status_code == 422

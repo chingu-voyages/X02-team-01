@@ -128,3 +128,20 @@ class QuestionImportCommitOut(BaseModel):
     created_count: int
     created_question_ids: list[UUID]
     already_imported: bool
+
+
+class QuestionImportHistoryItemOut(QuestionImportBatchOut):
+    """One recent import with uploader identity for audit/history views."""
+
+    uploaded_by_id: UUID
+    uploaded_by_email: str
+    uploaded_by_name: str
+
+
+class QuestionImportHistoryPage(BaseModel):
+    """Paginated recent question-import history."""
+
+    items: list[QuestionImportHistoryItemOut]
+    total: int
+    page: int
+    page_size: int

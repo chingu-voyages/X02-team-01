@@ -6,6 +6,8 @@ import type {
   QuestionImportAssetUploadResponse,
   QuestionImportBatch,
   QuestionImportCommitResponse,
+  QuestionImportHistoryPage,
+  QuestionImportHistoryQuery,
   QuestionImportRowsPage,
   QuestionImportRowsQuery,
 } from "@/types/question-import-api.types";
@@ -43,6 +45,59 @@ function rowsQueryString(
   return value
     ? `?${value}`
     : "";
+}
+
+
+function historyQueryString(
+  query: QuestionImportHistoryQuery,
+) {
+  const params =
+    new URLSearchParams();
+
+  if (query.status) {
+    params.set(
+      "status",
+      query.status,
+    );
+  }
+
+  if (query.page !== undefined) {
+    params.set(
+      "page",
+      String(query.page),
+    );
+  }
+
+  if (
+    query.page_size !== undefined
+  ) {
+    params.set(
+      "page_size",
+      String(query.page_size),
+    );
+  }
+
+  const value = params.toString();
+
+  return value
+    ? `?${value}`
+    : "";
+}
+
+
+export async function getQuestionImportHistory(
+  token: string,
+  query: QuestionImportHistoryQuery = {},
+): Promise<QuestionImportHistoryPage> {
+  return apiRequest<QuestionImportHistoryPage>(
+    `/admin/question-imports${historyQueryString(
+      query,
+    )}`,
+    token,
+    {
+      method: "GET",
+    },
+  );
 }
 
 

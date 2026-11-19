@@ -31,6 +31,8 @@ from app.schemas.question_import import (
     QuestionImportAssetUploadOut,
     QuestionImportBatchOut,
     QuestionImportCommitOut,
+    QuestionImportHistoryItemOut,
+    QuestionImportHistoryPage,
     QuestionImportIssueOut,
     QuestionImportRowOut,
     QuestionImportRowsPage,
@@ -189,6 +191,93 @@ async def upload_question_import(
     session.refresh(batch)
 
     return _batch_response(batch)
+
+
+@router.get(
+    "",
+    response_model=QuestionImportHistoryPage,
+)
+def list_question_import_history(
+    current_user: Annotated[
+        User,
+        Depends(get_current_user),
+    ],
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
+    batch_status: Annotated[
+        Literal[
+            "uploaded",
+            "validating",
+            "invalid",
+            "ready",
+            "importing",
+            "imported",
+            "failed",
+            "cancelled",
+        ]
+        | None,
+        Query(alias="status"),
+    ] = None,
+    page: Annotated[
+        int,
+        Query(ge=1),
+    ] = 1,
+    page_size: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=100,
+        ),
+    ] = 20,
+) -> QuestionImportHistoryPage:
+    """List recent imports visible to the current question manager."""
+
+    statement = select(
+        QuestionImportBatch,
+        User,
+    ).join(
+        User,
+        User.id == QuestionImportBatch.uploaded_by_id,
+    )
+
+    if current_user.role == UserRole.CONTRIBUTOR:
+        statement = statement.where(
+            QuestionImportBatch.uploaded_by_id == current_user.id
+        )
+
+    if batch_status is not None:
+        statement = statement.where(QuestionImportBatch.status == batch_status)
+
+    count_statement = select(func.count()).select_from(statement.subquery())
+
+    total = int(session.exec(count_statement).one())
+
+    records = session.exec(
+        statement.order_by(
+            QuestionImportBatch.created_at.desc(),
+            QuestionImportBatch.id.desc(),
+        )
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+
+    return QuestionImportHistoryPage(
+        items=[
+            _history_response(
+                batch,
+                uploader,
+            )
+            for (
+                batch,
+                uploader,
+            ) in records
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post(
@@ -478,6 +567,20 @@ def _visible_batch(
         )
 
     return batch
+
+
+def _history_response(
+    batch: QuestionImportBatch,
+    uploader: User,
+) -> QuestionImportHistoryItemOut:
+    base = _batch_response(batch)
+
+    return QuestionImportHistoryItemOut(
+        **base.model_dump(),
+        uploaded_by_id=(uploader.id),
+        uploaded_by_email=(uploader.email),
+        uploaded_by_name=(uploader.full_name),
+    )
 
 
 def _batch_response(
