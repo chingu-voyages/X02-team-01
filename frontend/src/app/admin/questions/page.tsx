@@ -761,12 +761,21 @@ export default function AdminQuestionsPage() {
           subtitle="Search, filter and manage practice questions across the bank."
         />
 
-        <Link
-          href="/admin/questions/new"
-          className="inline-flex min-h-11 items-center justify-center rounded-md bg-[#3d4145] px-6 text-sm font-semibold text-white hover:bg-[#292d30] focus-visible:outline-2 focus-visible:outline-offset-2"
-        >
-          + Create Question
-        </Link>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Link
+            href="/admin/questions/import"
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-[#cfd2d5] bg-white px-5 text-sm font-semibold text-[#3f4549] hover:bg-[#f5f6f7] focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            Import Questions
+          </Link>
+
+          <Link
+            href="/admin/questions/new"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-[#3d4145] px-6 text-sm font-semibold text-white hover:bg-[#292d30] focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            + Create Question
+          </Link>
+        </div>
       </div>
 
       {loadStatus ===
