@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import unicodedata
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import UUID
 
@@ -235,6 +236,7 @@ def validate_question_import_batch(
     batch.warning_rows = warning_rows + len(unused_asset_filenames)
 
     batch.status = "ready" if error_rows == 0 else "invalid"
+    batch.validated_at = datetime.now(UTC)
 
     session.add(batch)
     session.commit()
