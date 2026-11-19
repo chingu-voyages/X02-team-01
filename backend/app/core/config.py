@@ -101,6 +101,15 @@ class Settings(BaseSettings):
     # challenge per account.
     reset_token_ttl_hours: int = Field(default=1, ge=1, le=24)
     reset_min_interval_seconds: int = Field(default=60, ge=1, le=86400)
+    # JHEP-109: TOTP MFA. The encryption key is OPTIONAL at startup (the
+    # R2-style graceful pattern): without it the MFA endpoints return a
+    # clean "not configured" error and the rest of the app runs — no
+    # deploy-blocking fail-fast. Generate once per deployment:
+    #   python -c "import secrets; print(secrets.token_urlsafe(32))"
+    mfa_encryption_key: str | None = None
+    mfa_challenge_minutes: int = Field(default=5, ge=1, le=30)
+    mfa_max_attempts: int = Field(default=5, ge=1, le=20)
+    mfa_recovery_code_count: int = Field(default=8, ge=4, le=20)
 
     # JHEP-25: learner session TTL. The default 30-minute token expires
     # mid-exam, so learner sessions get a dedicated, longer lifetime.

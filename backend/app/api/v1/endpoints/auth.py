@@ -25,16 +25,21 @@ module.
 """
 
 from typing import Annotated
+from uuid import UUID
 
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from app.api.deps import get_current_subject
+from app.api.deps import bearer_scheme, get_current_subject, get_current_user
 from app.core.config import settings
 from app.core.security import (
+    create_access_token,
     create_access_token_for_learner,
+    decode_mfa_challenge,
     verify_password,
 )
 from app.db.session import get_session
@@ -47,6 +52,16 @@ from app.schemas.auth import (
     PasswordResetRequestIn,
     ResendVerificationIn,
     UserRegistrationIn,
+)
+from app.services.mfa_service import (
+    ChallengeLockedError,
+    EnrollmentNotAllowedError,
+    InvalidMfaCodeError,
+    MfaAlreadyEnrolledError,
+    MfaNotConfiguredError,
+    MfaNotEnrolledError,
+    begin_challenge,
+    mfa_required_for,
 )
 from app.services.password_reset_service import (
     GENERIC_RESET_MESSAGE,
@@ -235,6 +250,27 @@ def login(
 
     access_token = create_access_token_for_learner(user)
 
+    # JHEP-109 AC2: an MFA-required account must complete the second
+    # factor before ANY session is established — the challenge token
+    # authorizes nothing but /auth/mfa/verify.
+    if mfa_required_for(user):
+        payload, challenge_id = begin_challenge(session, user=user)
+        from datetime import timedelta
+
+        challenge_token = create_access_token(
+            subject=str(user.id),
+            expires_delta=timedelta(minutes=settings.mfa_challenge_minutes),
+            extra_claims={"mfa": "pending", "jti": challenge_id},
+        )
+        return AuthTokenOut(
+            access_token=challenge_token,
+            token_type="bearer",
+            learner=_learner_out(user),
+            mfa_required=True,
+            challenge_id=challenge_id,
+            mfa_expires_in_seconds=payload["expires_in_seconds"],
+        )
+
     return AuthTokenOut(
         access_token=access_token,
         token_type="bearer",
@@ -305,3 +341,154 @@ def reset_account_password(
         ) from exc
 
     return {"message": "Password updated. Sign in with your new password."}
+
+
+def get_mfa_context(
+    session: Annotated[Session, Depends(get_session)],
+) -> None:
+    """The MFA service functions are module-level; this provider keeps
+    the endpoints on the request-scoped session dependency."""
+    return None
+
+
+@router.post("/mfa/enroll/setup", status_code=status.HTTP_200_OK)
+def mfa_enroll_setup(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+) -> dict:
+    """JHEP-109 AC1: start TOTP enrollment — the secret (encrypted at
+    rest) plus the provisioning URI the frontend renders as a QR."""
+    from app.services import mfa_service
+
+    try:
+        setup = mfa_service.begin_enrollment(session, actor=current_user)
+    except EnrollmentNotAllowedError as exc:
+        raise CodedAuthError(
+            status.HTTP_403_FORBIDDEN, "MFA_NOT_AVAILABLE", str(exc)
+        ) from exc
+    except MfaNotConfiguredError as exc:
+        raise CodedAuthError(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "MFA_NOT_CONFIGURED", str(exc)
+        ) from exc
+
+    return {
+        "otpauth_uri": setup["otpauth_uri"],
+        "secret": setup["secret"],
+        "issuer": "The Job Hackers",
+    }
+
+
+@router.post("/mfa/enroll/verify", status_code=status.HTTP_200_OK)
+def mfa_enroll_verify(
+    payload: dict,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+) -> dict:
+    """JHEP-109 AC1: confirm the enrollment with a live code; the
+    recovery codes are returned ONCE (only digests are stored)."""
+    from app.services import mfa_service
+
+    code = str(payload.get("code") or "")
+    if not code:
+        raise CodedAuthError(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "VALIDATION_ERROR",
+            "The 6-digit code is required",
+        )
+    try:
+        result = mfa_service.confirm_enrollment(session, actor=current_user, code=code)
+    except MfaNotEnrolledError as exc:
+        raise CodedAuthError(
+            status.HTTP_409_CONFLICT, "MFA_NOT_ENROLLED", str(exc)
+        ) from exc
+    except MfaAlreadyEnrolledError as exc:
+        raise CodedAuthError(
+            status.HTTP_409_CONFLICT, "MFA_ALREADY_ENROLLED", str(exc)
+        ) from exc
+    except MfaNotConfiguredError as exc:
+        raise CodedAuthError(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "MFA_NOT_CONFIGURED", str(exc)
+        ) from exc
+    except InvalidMfaCodeError as exc:
+        raise CodedAuthError(
+            status.HTTP_400_BAD_REQUEST, "INVALID_MFA_CODE", str(exc)
+        ) from exc
+
+    return {
+        "message": "MFA enabled. Store your recovery codes safely — they "
+        "are shown once and never again.",
+        "recovery_codes": result["recovery_codes"],
+    }
+
+
+@router.post("/mfa/verify", status_code=status.HTTP_200_OK)
+def mfa_verify(
+    payload: dict,
+    session: Annotated[Session, Depends(get_session)],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+) -> AuthTokenOut:
+    """JHEP-109 AC2/AC5: complete the second factor; only then is the
+    real session established."""
+    from app.services import mfa_service
+
+    code = str(payload.get("code") or "")
+    use_recovery = bool(payload.get("recovery_code"))
+    if not code:
+        raise CodedAuthError(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "VALIDATION_ERROR",
+            "The 6-digit code is required",
+        )
+
+    if credentials is None:
+        raise CodedAuthError(
+            status.HTTP_401_UNAUTHORIZED,
+            "INVALID_MFA_CHALLENGE",
+            "Start again with your email and password",
+        )
+
+    try:
+        subject, challenge_id = decode_mfa_challenge(credentials.credentials)
+    except jwt.InvalidTokenError as exc:
+        raise CodedAuthError(
+            status.HTTP_401_UNAUTHORIZED,
+            "INVALID_MFA_CHALLENGE",
+            "Start again with your email and password",
+        ) from exc
+
+    user = session.get(User, UUID(subject))
+    if user is None:
+        raise CodedAuthError(
+            status.HTTP_401_UNAUTHORIZED,
+            "INVALID_MFA_CHALLENGE",
+            "Start again with your email and password",
+        )
+
+    try:
+        if use_recovery:
+            mfa_service.verify_recovery_code(
+                session, user=user, challenge_id=challenge_id, code=code
+            )
+        else:
+            mfa_service.verify_challenge(
+                session, user=user, challenge_id=challenge_id, code=code
+            )
+    except InvalidMfaCodeError as exc:
+        raise CodedAuthError(
+            status.HTTP_400_BAD_REQUEST, "INVALID_MFA_CODE", str(exc)
+        ) from exc
+    except ChallengeLockedError as exc:
+        raise CodedAuthError(
+            status.HTTP_403_FORBIDDEN, "MFA_CHALLENGE_LOCKED", str(exc)
+        ) from exc
+    except (MfaNotEnrolledError, MfaNotConfiguredError) as exc:
+        raise CodedAuthError(
+            status.HTTP_409_CONFLICT, "MFA_NOT_AVAILABLE", str(exc)
+        ) from exc
+
+    token = create_access_token_for_learner(user)
+    return AuthTokenOut(
+        access_token=token,
+        token_type="bearer",
+        learner=_learner_out(user),
+    )
