@@ -3,7 +3,8 @@ name: CD - Verified Render deployments for Jira
 # JHEP-176: Report actual Render deploys to GitHub, which the GitHub for
 # Atlassian app can forward into Jira's Deployment Frequency report.
 # Render is the deployer; this workflow only verifies and reports its state.
-# No deployment is marked successful until BOTH services serve the exact SHA.
+# A deployment is successful only when the services changed by this commit
+# are live on that SHA; frontend/backend can be deployed independently.
 
 on:
   push:
@@ -11,7 +12,6 @@ on:
     paths:
       - "frontend/**"
       - "backend/**"
-      - ".github/workflows/cd-deployment-status.yml"
   # Use this after a manual Render deployment or to report an already-live SHA.
   # A manual run does not itself redeploy anything.
   workflow_dispatch:
@@ -24,9 +24,18 @@ on:
           - development
           - production
       deployed_sha:
-        description: "Full SHA currently live on BOTH services (blank = this workflow's SHA)"
+        description: "Full SHA currently live on selected services (blank = workflow SHA)"
         required: false
         type: string
+      service_scope:
+        description: "Service(s) to verify (manual reports only)"
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - frontend
+          - backend
 
 permissions:
   contents: read
@@ -43,6 +52,12 @@ jobs:
     timeout-minutes: 25
 
     steps:
+      - name: Check out source for changed-path detection
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Select environment and commit
         id: config
         env:
@@ -51,12 +66,20 @@ jobs:
           GIT_SHA: ${{ github.sha }}
           REQUESTED_ENV: ${{ inputs.target_environment }}
           REQUESTED_SHA: ${{ inputs.deployed_sha }}
+          REQUESTED_SCOPE: ${{ inputs.service_scope }}
+          PREVIOUS_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
 
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             ENVIRONMENT="$REQUESTED_ENV"
             SHA="${REQUESTED_SHA:-$GIT_SHA}"
+            case "${REQUESTED_SCOPE:-both}" in
+              both) CHECK_FRONTEND=true; CHECK_BACKEND=true ;;
+              frontend) CHECK_FRONTEND=true; CHECK_BACKEND=false ;;
+              backend) CHECK_FRONTEND=false; CHECK_BACKEND=true ;;
+              *) echo "Invalid service_scope" >&2; exit 1 ;;
+            esac
           else
             case "$BRANCH" in
               dev) ENVIRONMENT="development" ;;
@@ -64,6 +87,27 @@ jobs:
               *) echo "Unexpected branch: $BRANCH" >&2; exit 1 ;;
             esac
             SHA="$GIT_SHA"
+
+            # Render root directories deploy independently. A frontend-only
+            # change must not require the backend to run the same SHA.
+            if [[ ! "$PREVIOUS_SHA" =~ ^[0-9a-f]{40}$ ]] || \
+               [[ "$PREVIOUS_SHA" =~ ^0{40}$ ]]; then
+              echo "Invalid previous commit SHA: $PREVIOUS_SHA" >&2
+              exit 1
+            fi
+            CHANGED_PATHS="$(git diff --name-only "$PREVIOUS_SHA" "$SHA")"
+            CHECK_FRONTEND=false
+            CHECK_BACKEND=false
+            if grep -q '^frontend/' <<< "$CHANGED_PATHS"; then
+              CHECK_FRONTEND=true
+            fi
+            if grep -q '^backend/' <<< "$CHANGED_PATHS"; then
+              CHECK_BACKEND=true
+            fi
+            if [[ "$CHECK_FRONTEND" != "true" && "$CHECK_BACKEND" != "true" ]]; then
+              echo "No deployable frontend/ or backend/ changes" >&2
+              exit 1
+            fi
           fi
 
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || {
@@ -97,9 +141,12 @@ jobs:
             echo "frontend_url=$FRONTEND_URL"
             echo "backend_url=$BACKEND_URL"
             echo "is_production=$IS_PRODUCTION"
+            echo "check_frontend=$CHECK_FRONTEND"
+            echo "check_backend=$CHECK_BACKEND"
           } >> "$GITHUB_OUTPUT"
 
           echo "Checking $ENVIRONMENT against commit $SHA"
+          echo "Verify frontend=$CHECK_FRONTEND backend=$CHECK_BACKEND"
 
       - name: Require Render API key
         env:
@@ -163,7 +210,7 @@ jobs:
             -f "log_url=https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             -f description="Waiting for real Render deployments"
 
-      - name: Wait for matching live frontend and backend
+      - name: Wait for matching live Render service deployments
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           SHA: ${{ steps.config.outputs.sha }}
@@ -171,12 +218,22 @@ jobs:
           BACKEND_ID: ${{ steps.config.outputs.backend_id }}
           FRONTEND_URL: ${{ steps.config.outputs.frontend_url }}
           BACKEND_URL: ${{ steps.config.outputs.backend_url }}
+          CHECK_FRONTEND: ${{ steps.config.outputs.check_frontend }}
+          CHECK_BACKEND: ${{ steps.config.outputs.check_backend }}
         run: |
           set -euo pipefail
 
+          SERVICES=()
+          if [[ "$CHECK_FRONTEND" == "true" ]]; then SERVICES+=("$FRONTEND_ID"); fi
+          if [[ "$CHECK_BACKEND" == "true" ]]; then SERVICES+=("$BACKEND_ID"); fi
+          if [[ ${#SERVICES[@]} -eq 0 ]]; then
+            echo "No services were selected for verification" >&2
+            exit 1
+          fi
+
           for attempt in $(seq 1 48); do
             LIVE_COUNT=0
-            for SERVICE in "$FRONTEND_ID" "$BACKEND_ID"; do
+            for SERVICE in "${SERVICES[@]}"; do
               RESPONSE="$(curl --fail --silent --show-error \
                 --retry 2 --max-time 20 \
                 -H "Authorization: Bearer $RENDER_API_KEY" \
@@ -198,19 +255,19 @@ jobs:
               esac
             done
 
-            if [[ "$LIVE_COUNT" == "2" ]]; then
+            if [[ "$LIVE_COUNT" == "${#SERVICES[@]}" ]]; then
               curl --fail --silent --show-error --location --max-time 20 \
                 "$BACKEND_URL/health" >/dev/null
               curl --fail --silent --show-error --location --max-time 20 \
                 "$FRONTEND_URL/login" >/dev/null
-              echo "Both Render services serve SHA $SHA and respond over HTTPS."
+              echo "All ${#SERVICES[@]} selected Render services are live on $SHA; application URLs respond."
               exit 0
             fi
 
             sleep 25
           done
 
-          echo "Timed out waiting for both Render services to run SHA $SHA" >&2
+          echo "Timed out waiting for selected Render services to run SHA $SHA" >&2
           exit 1
 
       - name: Mark verified deployment successful
@@ -226,7 +283,7 @@ jobs:
             -f state=success \
             -f "environment_url=$FRONTEND_URL" \
             -f "log_url=https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            -f description="Both Render services live on the expected commit"
+            -f description="Verified Render deployment for the selected services"
 
       - name: Mark deployment failed
         if: failure() && steps.deployment.outputs.deployment_id != ''
