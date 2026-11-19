@@ -12,7 +12,7 @@ import {
 
 
 const navLink =
-  "rounded-xs text-base text-[#303639] transition-colors hover:text-black hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400";
+  "rounded-xs text-white transition-colors hover:text-black hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400";
 
 
 export default function Navbar() {
@@ -39,7 +39,7 @@ export default function Navbar() {
   return (
     <nav
       aria-label="Main navigation"
-      className="m-4 flex flex-wrap items-center justify-between gap-x-8 gap-y-3 rounded-md border border-[#d4d8db] bg-white px-6 py-5 shadow-xs"
+      className="m-4 flex flex-wrap items-center justify-between gap-x-8 gap-y-3 rounded-md border border-brand-border bg-brand-primary-dark text-brand-text px-6 py-5 shadow-xs"
     >
       <div className="flex flex-wrap items-center gap-8">
         <Link
@@ -48,7 +48,7 @@ export default function Navbar() {
               ? "/categories"
               : "/login"
           }
-          className="text-base font-bold tracking-tight text-[#303639] hover:underline"
+          className="text-base font-bold text-white tracking-tight hover:underline"
         >
           THE JOB HACKERS
         </Link>
@@ -70,7 +70,7 @@ export default function Navbar() {
               {staff && (
                 <>
                   <span
-                    className="select-none text-gray-300"
+                    className="select-none text-white"
                     aria-hidden="true"
                   >
                     •

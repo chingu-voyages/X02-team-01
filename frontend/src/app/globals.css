@@ -5,6 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --color-brand-primary-dark: #161641;
   --color-brand-primary: #333399;
   --color-brand-secondary: #cac4ed;
   --color-brand-accent: #ff9933;
