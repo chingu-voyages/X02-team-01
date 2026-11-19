@@ -66,8 +66,41 @@ export default function SecurityScreen() {
 
   useEffect(() => {
     if (!ready || !token) return;
-    void loadStatus(token);
-  }, [ready, token, loadStatus]);
+
+    let cancelled = false;
+
+    // state updates only after the await (no synchronous setState in
+    // the effect); explicit reloads stay in event handlers via loadStatus
+    fetch("/api/v1/auth/mfa/status", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (response) => {
+        if (cancelled) return;
+        if (!response.ok) {
+          throw new Error("Unable to load your security settings");
+        }
+        const data = (await response.json()) as MfaStatus;
+        setMfaStatus(data);
+        setStatus("ready");
+      })
+      .catch(async (error: unknown) => {
+        if (cancelled) return;
+        if (error instanceof ApiError) {
+          handleError(error);
+          return;
+        }
+        setPageError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load your security settings",
+        );
+        setStatus("ready");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, token, handleError]);
 
   const startSetup = useCallback(async () => {
     if (!token) return;
