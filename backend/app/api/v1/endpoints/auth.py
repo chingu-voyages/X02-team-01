@@ -492,3 +492,19 @@ def mfa_verify(
         token_type="bearer",
         learner=_learner_out(user),
     )
+
+
+@router.get("/mfa/status", status_code=status.HTTP_200_OK)
+def mfa_status(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict:
+    """JHEP-109: the account's MFA posture — drives the Security page
+    and the forced-enrollment prompt for mandatory roles."""
+    from app.services import mfa_service
+
+    return {
+        "configured": mfa_service.mfa_configured(),
+        "available": mfa_service.mfa_available_for(current_user),
+        "mandatory": current_user.role in mfa_service.MFA_MANDATORY_ROLES,
+        "enrolled": current_user.mfa_enrolled_at is not None,
+    }
