@@ -30,6 +30,7 @@ from app.schemas.question_import import (
     QuestionImportAssetOut,
     QuestionImportAssetUploadOut,
     QuestionImportBatchOut,
+    QuestionImportCommitOut,
     QuestionImportIssueOut,
     QuestionImportRowOut,
     QuestionImportRowsPage,
@@ -45,6 +46,13 @@ from app.services.question_import_asset_service import (
     QuestionImportAssetInputError,
     QuestionImportAssetStateError,
     stage_question_import_asset,
+)
+from app.services.question_import_commit_service import (
+    QuestionImportCommitConflictError,
+    QuestionImportCommitDataError,
+    QuestionImportCommitNotFoundError,
+    QuestionImportCommitNotReadyError,
+    commit_question_import_batch,
 )
 from app.services.question_import_parser import (
     MAX_WORKBOOK_BYTES,
@@ -283,6 +291,78 @@ async def upload_question_import_asset(
             status=staged.status,
         ),
         batch=_batch_response(batch),
+    )
+
+
+@router.post(
+    "/{batch_id}/commit",
+    response_model=QuestionImportCommitOut,
+)
+def commit_question_import(
+    batch_id: UUID,
+    current_user: Annotated[
+        User,
+        Depends(get_current_user),
+    ],
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
+) -> QuestionImportCommitOut:
+    """Atomically create real pending Draft questions from a ready batch."""
+
+    try:
+        result = commit_question_import_batch(
+            session,
+            batch_id=batch_id,
+            actor=current_user,
+        )
+
+    except QuestionImportCommitNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Question import not found",
+        ) from exc
+
+    except QuestionImportCommitNotReadyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "IMPORT_NOT_READY",
+                "message": str(exc),
+            },
+        ) from exc
+
+    except QuestionImportCommitConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "IMPORT_STALE",
+                "message": str(exc),
+            },
+        ) from exc
+
+    except QuestionImportCommitDataError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "IMPORT_DATA_INVALID",
+                "message": str(exc),
+            },
+        ) from exc
+
+    batch = session.get(
+        QuestionImportBatch,
+        batch_id,
+    )
+
+    assert batch is not None
+
+    return QuestionImportCommitOut(
+        batch=_batch_response(batch),
+        created_count=(result.imported_rows),
+        created_question_ids=list(result.created_question_ids),
+        already_imported=(result.already_imported),
     )
 
 

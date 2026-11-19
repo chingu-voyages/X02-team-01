@@ -105,10 +105,8 @@ def stage_question_import_asset(
             )
 
         raise QuestionImportAssetConflictError(
-            
-                "An image with the same normalized filename already exists "
-                "in this import batch."
-            
+            "An image with the same normalized filename already exists "
+            "in this import batch."
         )
 
     validated = validate_question_image_file(

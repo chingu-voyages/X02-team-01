@@ -119,3 +119,12 @@ class QuestionImportAssetUploadOut(BaseModel):
 
     asset: QuestionImportAssetOut
     batch: QuestionImportBatchOut
+
+
+class QuestionImportCommitOut(BaseModel):
+    """Result of an explicit import confirmation."""
+
+    batch: QuestionImportBatchOut
+    created_count: int
+    created_question_ids: list[UUID]
+    already_imported: bool
