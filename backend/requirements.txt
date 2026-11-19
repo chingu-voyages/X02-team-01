@@ -30,3 +30,6 @@ boto3
 
 # Question image validation
 Pillow
+
+# Excel question-bank imports
+openpyxl
