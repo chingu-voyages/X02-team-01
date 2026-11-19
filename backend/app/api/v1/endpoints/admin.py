@@ -1,6 +1,6 @@
 """Role-protected administrative API routes."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import (
@@ -9,6 +9,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     Response,
     UploadFile,
     status,
@@ -71,6 +72,9 @@ from app.services.admin_certification_service import (
     list_certifications,
     set_certification_publication,
 )
+from app.services.admin_question_bank_query_service import (
+    query_question_bank,
+)
 from app.services.admin_question_image_service import (
     ManagedQuestionImage,
     QuestionImageLimitError,
@@ -92,7 +96,6 @@ from app.services.admin_question_service import (
     create_question_draft,
     edit_question_draft,
     get_question_bank_details,
-    list_question_bank,
     publish_question_draft,
     reject_question_draft,
 )
@@ -515,10 +518,58 @@ def list_managed_questions(
         Session,
         Depends(get_session),
     ],
+    search: str | None = None,
+    certification_id: UUID | None = None,
+    category_id: UUID | None = None,
+    difficulty: Literal[
+        "easy",
+        "medium",
+        "hard",
+    ]
+    | None = None,
+    question_type: Literal[
+        "multiple_choice",
+        "short_answer",
+    ]
+    | None = None,
+    review_status: Literal[
+        "pending",
+        "approved",
+        "rejected",
+    ]
+    | None = None,
+    publication_status: Literal[
+        "draft",
+        "active",
+        "retired",
+    ]
+    | None = None,
+    has_image: bool | None = None,
+    page: Annotated[
+        int,
+        Query(ge=1),
+    ] = 1,
+    page_size: Annotated[
+        int | None,
+        Query(
+            ge=1,
+            le=100,
+        ),
+    ] = None,
 ) -> QuestionBankList:
-    records = list_question_bank(
+    result = query_question_bank(
         session,
         actor=current_user,
+        search=search,
+        certification_id=certification_id,
+        category_id=category_id,
+        difficulty=difficulty,
+        question_type=question_type,
+        review_status=review_status,
+        publication_status=publication_status,
+        has_image=has_image,
+        page=page,
+        page_size=page_size,
     )
 
     return QuestionBankList(
@@ -537,12 +588,13 @@ def list_managed_questions(
                 review_status=item.review_status,
                 publication_status=(item.publication_status),
                 is_flagged=item.is_flagged,
+                has_image=item.has_image,
                 created_by_id=item.created_by_id,
                 last_updated=item.last_updated,
             )
-            for item in records
+            for item in result.items
         ],
-        count=len(records),
+        count=result.total,
     )
 
 

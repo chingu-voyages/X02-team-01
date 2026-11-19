@@ -232,6 +232,7 @@ class QuestionBankItem(BaseModel):
     ]
 
     is_flagged: bool
+    has_image: bool = False
 
     created_by_id: UUID
     last_updated: datetime
