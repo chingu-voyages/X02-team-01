@@ -6,6 +6,8 @@ Local development uses the repository-root `.env` for FastAPI/backend settings. 
 
 Deployed services use Render environment variables. Secrets must never be committed to Git.
 
+---
+
 ## Quick start
 
 Backend/shared configuration:
@@ -20,14 +22,14 @@ Frontend configuration:
 cp frontend/.env.example frontend/.env.local
 ```
 
-For the current local development stack:
+Current local development defaults:
 
 ```dotenv
 BACKEND_PROXY_TARGET=http://127.0.0.1:8010
 NEXT_PUBLIC_API_URL=
 ```
 
-Leaving `NEXT_PUBLIC_API_URL` unset or empty makes the browser call the same-origin Next.js proxy:
+Leaving `NEXT_PUBLIC_API_URL` unset or empty makes the browser use the same-origin Next.js proxy:
 
 ```text
 Browser
@@ -43,18 +45,16 @@ FastAPI
 
 The proxy reads `BACKEND_PROXY_TARGET` at request time. It does not require rebuilding the frontend when the target changes.
 
-Real credentials belong only in ignored local environment files or deployment-provider secret settings.
-
 ---
 
-## Core variables
+# Core variables
 
 | Variable | Used by | Local/recommended value | Notes |
 |---|---|---|---|
 | `POSTGRES_DB` | backend, compose | `jhep_db` | Required. |
 | `POSTGRES_USER` | backend, compose | `jhep` | Required. |
 | `POSTGRES_PASSWORD` | backend, compose | local password | Required secret. Never commit. |
-| `POSTGRES_HOST` | backend | `127.0.0.1` | Code default. Use `postgres` inside Compose. |
+| `POSTGRES_HOST` | backend | `127.0.0.1` | Use `postgres` inside Compose. |
 | `POSTGRES_PORT` | backend | `5432` | Code default. |
 | `JWT_SECRET_KEY` | backend | long random value | Required secret. |
 | `JWT_ALGORITHM` | backend | `HS256` | Current supported algorithm. |
@@ -62,11 +62,13 @@ Real credentials belong only in ignored local environment files or deployment-pr
 | `LEARNER_ACCESS_TOKEN_HOURS` | backend | `12` | Learner-session lifetime. |
 | `MAX_EXAM_QUESTIONS` | backend | `100` | Exam-size ceiling. |
 | `CORS_ORIGINS` | backend | `http://localhost:3030` | Comma-separated direct-browser origins. |
-| `FRONTEND_BASE_URL` | backend | `http://127.0.0.1:3030` | Browser redirect base for email verification and password reset. |
-| `BACKEND_PROXY_TARGET` | frontend server | `http://127.0.0.1:8010` | Runtime target for the Next.js same-origin proxy. |
-| `NEXT_PUBLIC_API_URL` | frontend/browser | empty | Optional public build-time override. Prefer the runtime proxy. |
+| `FRONTEND_BASE_URL` | backend | `http://127.0.0.1:3030` | Redirect base for verification/reset flows. |
+| `BACKEND_PROXY_TARGET` | frontend server | `http://127.0.0.1:8010` | Runtime FastAPI target. |
+| `NEXT_PUBLIC_API_URL` | frontend/browser | empty | Optional public build-time override; normally leave empty. |
 
-### Frontend proxy configuration
+---
+
+# Frontend proxy configuration
 
 The frontend requests API resources through:
 
@@ -74,52 +76,52 @@ The frontend requests API resources through:
 /api/v1/*
 ```
 
-A Next.js catch-all route handler forwards those requests to FastAPI using `BACKEND_PROXY_TARGET`.
+A Next.js catch-all route forwards those requests using `BACKEND_PROXY_TARGET`.
 
-The target is read at request time, avoiding the build-time destination issues associated with Next.js configuration rewrites.
-
-For local development:
+Local:
 
 ```dotenv
 BACKEND_PROXY_TARGET=http://127.0.0.1:8010
 NEXT_PUBLIC_API_URL=
 ```
 
-For Render:
+Render:
 
 ```dotenv
 BACKEND_PROXY_TARGET=https://jhep-backend.onrender.com
 ```
 
-Do not append `/api/v1` to `BACKEND_PROXY_TARGET`; the proxy handler adds the API path.
+Do not append `/api/v1` to `BACKEND_PROXY_TARGET`.
 
-`NEXT_PUBLIC_API_URL` should normally remain unset. An absolute `localhost` override breaks deployed frontends because visitors' browsers attempt to connect to their own computers.
+`NEXT_PUBLIC_API_URL` should normally remain unset. An absolute `localhost` override breaks deployed frontends because visitors' browsers would attempt to connect to their own computers.
 
-### Frontend redirect configuration
+---
+
+# Frontend redirect configuration
 
 `FRONTEND_BASE_URL` is configured on the backend.
 
-It identifies where the browser should go after email verification or when using a password-reset link.
-
-Example:
+Example production value:
 
 ```dotenv
 FRONTEND_BASE_URL=https://jhep-frontend.onrender.com
 ```
 
-The local default is:
+Local default:
 
 ```text
 http://127.0.0.1:3030
 ```
 
+It is used for email-verification and password-reset browser redirects.
+
 ---
 
-## Cloudflare R2 question media — JHEP-158 / JHEP-165
+# Cloudflare R2 question media — JHEP-158 / JHEP-165 / JHEP-118
 
 Question images are stored as objects in Cloudflare R2.
 
-Public image delivery and storage write access are separate.
+Public image delivery and storage write access are separate:
 
 ```text
 Learner / Admin browser
@@ -137,19 +139,19 @@ Backend-only R2 credentials
 Cloudflare R2 S3-compatible API
 ```
 
-### R2 environment variables
+## R2 environment variables
 
 | Variable | Used by | Example | Secret? | Notes |
 |---|---|---|---|---|
-| `MEDIA_BASE_URL` | backend | `https://pub-xxxxxxxx.r2.dev` | No | Public HTTPS delivery base. Do not include a trailing slash or object key. Production should prefer a Cloudflare custom domain. |
+| `MEDIA_BASE_URL` | backend | `https://pub-xxxxxxxx.r2.dev` | No | Public HTTPS delivery base. |
 | `R2_ACCOUNT_ID` | backend | Cloudflare account ID | Private | Used to construct the R2 S3 API endpoint. |
-| `R2_ACCESS_KEY_ID` | backend | generated access-key ID | Yes | Backend-only R2 credential. |
-| `R2_SECRET_ACCESS_KEY` | backend | generated secret | Yes | Backend-only R2 credential. |
-| `R2_BUCKET_NAME` | backend | `jhep-question-images-dev` | No | Question-image bucket. |
-| `MAX_QUESTION_IMAGE_BYTES` | backend | `5242880` | No | Default maximum encoded upload size of 5 MiB. |
-| `MAX_QUESTION_IMAGE_PIXELS` | backend | `20000000` | No | Default maximum decoded pixel count. |
+| `R2_ACCESS_KEY_ID` | backend | generated access-key ID | Yes | Backend-only credential. |
+| `R2_SECRET_ACCESS_KEY` | backend | generated secret | Yes | Backend-only credential. |
+| `R2_BUCKET_NAME` | backend | `jhep-question-images-dev` | No | Question-image/import-asset bucket. |
+| `MAX_QUESTION_IMAGE_BYTES` | backend | `5242880` | No | Default max encoded image upload size, 5 MiB. |
+| `MAX_QUESTION_IMAGE_PIXELS` | backend | `20000000` | No | Default max decoded pixel count. |
 
-Recommended local root `.env` configuration:
+Recommended local root `.env`:
 
 ```dotenv
 MEDIA_BASE_URL=https://pub-xxxxxxxx.r2.dev
@@ -165,19 +167,19 @@ MAX_QUESTION_IMAGE_PIXELS=20000000
 
 Never commit actual R2 access keys or secret access keys.
 
-The R2 credentials should be scoped to the question-image bucket and only the permissions required by the backend.
+The R2 credentials should be scoped to the question-image bucket and only the permissions the backend requires.
 
-### Read vs. write configuration
+## Read vs. write configuration
 
 `MEDIA_BASE_URL` controls public image delivery.
 
-R2 account, access-key, secret-key, and bucket settings control image upload, replacement, and removal.
+The R2 account/access/secret/bucket values control upload, replacement, removal, and JHEP-118 staged import assets.
 
-R2 write credentials are optional at general application startup so read-only environments and tests can run without them.
+R2 write credentials are optional at general application startup so read-only environments and unit tests can run without them.
 
-An image-management request fails safely with HTTP `503` when R2 write access is unavailable.
+Image-management or import-asset requests fail safely with HTTP `503` when write access is unavailable.
 
-### Image validation
+## Image validation
 
 Accepted formats:
 
@@ -187,7 +189,7 @@ image/jpeg
 image/webp
 ```
 
-Validation inspects actual image bytes using Pillow rather than trusting only the filename or browser-provided MIME type.
+Validation inspects actual image bytes using Pillow rather than trusting only the filename or browser MIME type.
 
 Current defaults:
 
@@ -198,41 +200,90 @@ Maximum alt text:          1,000 characters
 Images per version:        1
 ```
 
-Invalid, corrupt, or unsupported images are rejected before being uploaded to Cloudflare R2.
+Invalid, corrupt, unsupported, or unsafe-dimension images are rejected before they become question media.
 
-### Object keys and version integrity
+---
 
-Conceptual storage-key format:
+# JHEP-118 bulk-import storage behavior
+
+JHEP-118 does **not** introduce new environment variables.
+
+It reuses:
+
+```text
+R2_ACCOUNT_ID
+R2_ACCESS_KEY_ID
+R2_SECRET_ACCESS_KEY
+R2_BUCKET_NAME
+MAX_QUESTION_IMAGE_BYTES
+MAX_QUESTION_IMAGE_PIXELS
+```
+
+The Excel workbook itself is parsed by FastAPI and is not stored as an R2 object by the current implementation.
+
+Referenced image files are staged as immutable R2 objects under conceptual internal keys:
+
+```text
+imports/<batch-id>/<asset-id>.<extension>
+```
+
+Those raw keys remain backend-private.
+
+Workflow:
+
+```text
+Upload XLSX
+   ↓
+Rows staged in PostgreSQL
+   ↓
+Workbook references image filename
+   ↓
+Contributor/Admin uploads image
+   ↓
+Image byte/dimension validation
+   ↓
+Temporary import object in R2
+   ↓
+Batch revalidation
+   ↓
+Atomic commit
+   ↓
+QuestionImage references the validated immutable object
+```
+
+A staged asset can be reused by more than one imported question row.
+
+Question-import asset upload is the only part of the import workflow that requires R2 write configuration. A workbook containing no image references can validate and commit without an import-asset upload.
+
+Current hard-coded contract limits:
+
+```text
+Workbook authoring format: .xlsx
+Maximum workbook size:     5 MiB
+Maximum question rows:     1,000
+Import preview page max:   100
+Import history page max:   100
+```
+
+These are implementation limits, not environment variables in the current version.
+
+---
+
+# Question media object keys and version integrity
+
+Normal question-image object keys are conceptually:
 
 ```text
 questions/<question-version-id>/<generated-object-id>.<extension>
 ```
 
-Replacing an image creates a new immutable storage key rather than overwriting the original object.
+Replacement creates a new immutable object key rather than overwriting the original object.
 
-```text
-Published question v1
-        ↓
-References original R2 image
+Historical versions retain their prior media references.
 
-Administrator edits media
-        ↓
-Creates pending/draft revision v2
-        ↓
-References new R2 image
+An object is deleted only when no stored question-image row still references it.
 
-Historical question v1
-        ↓
-Still references original image
-```
-
-Historical question versions retain their existing media references.
-
-An old object is deleted only when no stored question-image row still references it.
-
-### PostgreSQL media storage
-
-PostgreSQL stores image metadata and storage references:
+PostgreSQL stores:
 
 ```text
 storage_key
@@ -243,11 +294,11 @@ position
 
 PostgreSQL does not store image binaries.
 
-`storage_key` remains backend-private. API responses expose a resolved public hosted `url` instead.
+API responses expose a resolved hosted `url`, not the private `storage_key`.
 
 ---
 
-## Local development ports
+# Local development ports
 
 | Service | Address |
 |---|---|
@@ -262,7 +313,7 @@ Start PostgreSQL:
 sudo docker compose up -d postgres
 ```
 
-Start the backend from the repository root:
+Start backend:
 
 ```bash
 cd backend
@@ -274,7 +325,7 @@ uvicorn app.main:app \
   --port 8010
 ```
 
-Start the frontend in another terminal:
+Start frontend:
 
 ```bash
 cd frontend
@@ -283,7 +334,51 @@ npm run dev -- --port 3030
 
 ---
 
-## Settings-file behavior
+# Local demo accounts / content
+
+Verified local administrator:
+
+```bash
+cd backend
+source .venv/bin/activate
+python -m scripts.seed_demo_admin --confirm-local
+```
+
+Current demo admin credentials are printed by the script.
+
+Seed the local demo learner/certification content:
+
+```bash
+python -m scripts.seed_demo_exams --confirm-local
+```
+
+The demo learner can be promoted to Contributor through the Administrator Users & Access screen for role-boundary/manual JHEP-118 testing.
+
+All seed scripts include local-database safety checks and must never be run against production.
+
+---
+
+# JHEP-118 frontend template
+
+The current import page serves the approved workbook from:
+
+```text
+frontend/public/templates/question-bank-import-template-v2.xlsx
+```
+
+The browser route is:
+
+```text
+/admin/questions/import
+```
+
+The frontend talks to FastAPI through the same `/api/v1/*` proxy as the rest of the application.
+
+No import-specific frontend secret is required.
+
+---
+
+# Settings-file behavior
 
 Backend settings load from the repository root:
 
@@ -291,7 +386,7 @@ Backend settings load from the repository root:
 <repository>/.env
 ```
 
-Not:
+not:
 
 ```text
 backend/.env
@@ -299,13 +394,13 @@ backend/.env
 
 `backend/app/core/config.py` resolves the repository root and configures `pydantic-settings` to read that file.
 
-Process environment variables take precedence over values in `.env`.
+Process environment variables take precedence over `.env`.
 
-Required database and JWT settings fail fast if missing.
+Required database/JWT settings fail fast when missing.
 
 ---
 
-## Rules of thumb
+# Rules of thumb
 
 - `.env` and `frontend/.env.local` must never be committed.
 - Never place backend credentials in `NEXT_PUBLIC_*`.
@@ -313,18 +408,16 @@ Required database and JWT settings fail fast if missing.
 - Prefer `BACKEND_PROXY_TARGET` for Next.js-to-FastAPI communication.
 - `BACKEND_PROXY_TARGET` is evaluated at request time.
 - `NEXT_PUBLIC_API_URL` should normally remain unset.
-- `POSTGRES_HOST` depends on where FastAPI runs:
-  - Host machine: `127.0.0.1`
-  - Compose network: `postgres`
-- Required database and JWT settings fail fast when missing.
+- Host-machine PostgreSQL uses `127.0.0.1`; Compose-network FastAPI uses `postgres`.
 - R2 write credentials remain backend-only.
 - `MEDIA_BASE_URL` is public configuration and must use HTTPS when set.
+- Question-import responses must never expose raw R2 keys.
 - Docker images must not contain `.env` files.
-- Containers receive configuration through runtime environment variables or environment files.
+- Containers receive configuration through runtime environment variables or env files.
 
 ---
 
-## Render deployment
+# Render deployment
 
 Services are defined in:
 
@@ -340,17 +433,17 @@ jhep-frontend
 jhep-db
 ```
 
-### Backend Render environment
+## Backend Render environment
 
 Database settings are supplied through the Render database binding.
 
-`JWT_SECRET_KEY` is generated by Render.
+`JWT_SECRET_KEY` is generated/configured by Render.
 
 `FRONTEND_BASE_URL` should point to the deployed frontend.
 
-`MEDIA_BASE_URL` can be supplied as non-secret public configuration.
+`MEDIA_BASE_URL` can be non-secret public configuration.
 
-JHEP-165 backend variables:
+R2 variables:
 
 ```text
 R2_ACCOUNT_ID
@@ -369,11 +462,11 @@ MAX_QUESTION_IMAGE_BYTES=5242880
 MAX_QUESTION_IMAGE_PIXELS=20000000
 ```
 
-Configure `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` through Render environment/secret settings rather than committing actual credentials.
+Configure account/access/secret values through Render environment/secret settings.
 
-### Frontend Render environment
+If image-backed imports are expected in deployed environments, the backend service needs the same valid R2 write configuration used by ordinary question-image management.
 
-The Next.js frontend uses the same-origin runtime proxy.
+## Frontend Render environment
 
 Configure:
 
@@ -383,119 +476,77 @@ BACKEND_PROXY_TARGET=https://jhep-backend.onrender.com
 
 Do not append `/api/v1`.
 
-Leave `NEXT_PUBLIC_API_URL` unset unless an explicit absolute API override is required.
-
-Without `BACKEND_PROXY_TARGET`, the proxy uses its local fallback of `http://127.0.0.1:8010`, which is unsuitable for separately deployed Render services.
+Leave `NEXT_PUBLIC_API_URL` unset unless an explicit absolute public API override is required.
 
 ---
 
-## Email delivery — JHEP-24
+# Email delivery — JHEP-24 / JHEP-124
 
 Registration verification and password-reset delivery use environment configuration.
 
-| Variable | Used by | Values / purpose |
-|---|---|---|
-| `EMAIL_DELIVERY` | backend | `console`, `mailpit`, `smtp`, `resend` |
-| `EMAIL_FROM` | backend | Email sender address |
-| `EMAIL_SMTP_HOST` | backend | SMTP hostname |
-| `EMAIL_SMTP_PORT` | backend | SMTP port |
-| `EMAIL_SMTP_USER` | backend | SMTP authentication |
-| `EMAIL_SMTP_PASSWORD` | backend | SMTP credential |
-| `EMAIL_SMTP_STARTTLS` | backend | STARTTLS toggle |
-| `EMAIL_API_KEY` | backend | Resend API key |
-| `VERIFICATION_LINK_BASE` | backend | Backend verification endpoint URL |
-| `FRONTEND_BASE_URL` | backend | Frontend redirect origin |
-| `VERIFY_TOKEN_TTL_HOURS` | backend | Verification-link lifetime; default 24 hours |
-| `RESEND_INTERVAL_SECONDS` | backend | Verification resend throttle; default 60 seconds |
-| `RESET_TOKEN_TTL_HOURS` | backend | Password-reset challenge lifetime; default 1 hour, allowed 1–24 |
-| `RESET_MIN_INTERVAL_SECONDS` | backend | Forgot-password request throttle per account; default 60 seconds |
+| Variable | Purpose |
+|---|---|
+| `EMAIL_DELIVERY` | `console`, `mailpit`, `smtp`, or `resend` |
+| `EMAIL_FROM` | sender address |
+| `EMAIL_SMTP_HOST` | SMTP host |
+| `EMAIL_SMTP_PORT` | SMTP port |
+| `EMAIL_SMTP_USER` | SMTP user |
+| `EMAIL_SMTP_PASSWORD` | SMTP secret |
+| `EMAIL_SMTP_STARTTLS` | STARTTLS toggle |
+| `EMAIL_API_KEY` | Resend API key |
+| `VERIFICATION_LINK_BASE` | verification endpoint base |
+| `FRONTEND_BASE_URL` | frontend redirect origin |
+| `VERIFY_TOKEN_TTL_HOURS` | verification lifetime; default 24h |
+| `RESEND_INTERVAL_SECONDS` | verification resend throttle; default 60s |
+| `RESET_TOKEN_TTL_HOURS` | password reset lifetime; default 1h |
+| `RESET_MIN_INTERVAL_SECONDS` | forgot-password throttle; default 60s |
 
-### Email delivery behavior
-
-- `console` logs links for development and testing.
-- `mailpit` captures email locally.
-- `smtp` sends through a configured SMTP provider.
-- `resend` sends using the Resend API.
-
-Selecting a production email transport without its required credentials causes startup validation to fail rather than silently falling back.
-
-Password-reset tokens have a shorter default lifetime than email-verification tokens.
-
-For production, configure sender details, the email provider, and `FRONTEND_BASE_URL` before enabling real email delivery.
+Production transports fail startup validation when required credentials are absent rather than silently falling back.
 
 ---
 
-## GitHub Actions and secrets
+# GitHub Actions and secrets
 
 Runtime secrets must not be committed to workflow files.
 
-Use repository or environment secrets only when a workflow requires them.
+Use repository/environment secrets only where a workflow requires them.
 
 `GITHUB_TOKEN` is supplied automatically for normal repository operations.
 
 Forked pull requests do not receive repository secrets.
 
-Cloudflare R2 credentials are not required by mocked/unit test suites because storage operations are isolated through the test configuration.
-
-Public `NEXT_PUBLIC_*` values are build-time variables. Avoid unnecessary absolute API overrides by using the runtime proxy.
+R2 credentials are not required by mocked/unit test suites because storage operations are isolated behind test doubles.
 
 ---
 
-## Deployment tracking — JHEP-56
+# Deployment tracking — JHEP-56
 
 Render automatically deploys the `dev` branch outside GitHub.
 
-The repository records deployment information through:
+The repository records deployment status through:
 
 ```text
 .github/workflows/cd-deployment-status.yml
 ```
 
-### GitHub deployment environments
-
-| Environment | Trigger | Notes |
-|---|---|---|
-| `dev` | Push to `dev` affecting frontend/backend/deployment configuration | Tracks the Render frontend URL. Uses Jira's built-in development environment mapping. |
-| `production` | Not configured | Reserved for an eventual production deployment from `main`. |
-
-The GitHub deployment environment is:
+GitHub deployment environment:
 
 ```text
 dev
 ```
 
-Not:
+The environment name is intentionally compatible with Jira's development-environment recognition.
 
-```text
-preview
-```
-
-The environment was renamed to `dev` to match Jira's built-in development-environment recognition.
-
-No `.jira/config.yml` is required.
-
-Jira associates deployments with issues using `JHEP-XXX` identifiers in commits and merge messages.
-
-Jira recognizes deployment environment names such as:
-
-```text
-dev
-development
-test
-staging
-production
-```
-
-Earlier custom `preview` environment mappings and manually created deployment records may not display correctly in Jira's development panel.
+Jira associates deployments with issues by `JHEP-XXX` identifiers in commit/merge messages.
 
 ---
 
-## When adding a new environment variable
+# When adding a new environment variable
 
-1. Add the variable to the appropriate `.env.example`.
-2. Add backend settings to `backend/app/core/config.py` when required.
-3. Document the variable in this file.
+1. Add it to the appropriate `.env.example`.
+2. Add backend settings to `backend/app/core/config.py` when needed.
+3. Document it here.
 4. Keep secret credentials out of Git.
-5. Configure deployment-provider environment variables separately.
+5. Configure deployment-provider values separately.
 6. Never expose server credentials through `NEXT_PUBLIC_*`.
-7. Update relevant tests when the variable changes application behavior.
+7. Update tests when the variable changes application behavior.

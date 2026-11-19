@@ -1,9 +1,10 @@
 # JHEP-71 / JHEP-118 — Question Bank Bulk Import Contract v2
 
-**Status:** Implementation contract for JHEP-118  
+**Status:** Implemented JHEP-118 contract; final regression verification pending  
 **Contract version:** 2.0  
 **Prepared:** 18 November 2026  
-**Repository baseline:** `dev` at `301a3241b66064bdc2957024c7a7fef2edf9480e`  
+**Implementation verified:** 19 November 2026  
+**Repository baseline:** `feat/JHEP-118-bulk-question-import` through import history/audit checkpoint  
 **Supersedes for implementation:** the earlier JHEP-71 contract 1.0 review draft and `question-bank-import-template-v1.xlsx`
 
 ## 1. Goal
@@ -487,38 +488,52 @@ Do not expose:
 
 ## 16. Validation preview
 
-The UI must show a readable batch summary before confirmation.
+The implemented UI shows a readable batch summary before confirmation.
 
-Example:
+Current summary counts include:
 
 ```text
-500 Questions
-
-✓ 500 Ready
-⚠ 12 Warnings
-✕ 0 Errors
-
-418 Multiple Choice
-82 Short Answer
-17 With Images
-483 Without Images
+Total
+Ready
+Errors
+Warnings
 ```
 
-The preview must allow the user to:
+The preview currently allows the user to:
 
-- filter errors/warnings;
-- see row and field;
-- see an actionable message;
-- inspect image-match status;
-- render a learner-style preview of question text/options/math/image;
+- view all staged rows;
+- filter rows to `Ready` or `Needs Attention`;
+- see the original physical Excel row number;
+- see question text, certification, category, type and image filename;
+- see actionable row issues with stable error/warning codes;
+- see missing image filenames;
+- upload referenced PNG/JPEG/WebP files;
+- trigger automatic revalidation after image upload;
 - confirm only when there are no blocking errors.
 
-If blocking errors exist:
+Current image workflow example:
 
 ```text
-Import unavailable.
-Fix the errors and upload the corrected workbook.
+3 Questions
+
+1 Ready
+2 Errors
+
+Missing:
+segmented-network.png
+mfa-login-flow.png
+
+Upload both files
+        ↓
+3 Ready
+0 Errors
+        ↓
+Import 3 Questions
 ```
+
+Blocking errors produce an explicit `Import blocked` state and no partial-import action.
+
+A richer learner-renderer preview of the fully formatted question/options/math/media is a future UX enhancement and is not required by the implemented JHEP-118 acceptance path.
 
 ---
 
@@ -575,45 +590,70 @@ Bulk import does not grant an importing Contributor any Administrator-only revie
 
 The import feature and Question Bank scale work are intentionally related.
 
-Each created question should retain import provenance through the import-row/batch relationship so the management UI can filter:
-
-```text
-Source → Import: AWS November Bank
-```
-
-The Question Bank must move to server-side pagination/search/filtering before large imports become routine.
-
-At minimum the management API should support filtering by:
+The implemented Question Bank now uses server-side search/filtering/pagination and supports:
 
 - search text;
 - certification;
 - category;
+- difficulty;
 - question type;
 - review status;
 - publication status;
 - image presence;
-- import batch;
-- owner where authorized.
+- page/page size.
 
-Batch actions are a separate management layer built on top of that scalable list.
+Imported questions are immediately visible to the authorized manager as ordinary:
+
+```text
+review_status = pending
+publication_status = draft
+```
+
+Import provenance is retained through:
+
+```text
+QuestionImportBatch
+    ↓
+QuestionImportRow
+    ↓
+created_question_id
+created_question_version_id
+```
+
+The current JHEP-118 UI exposes that provenance through **Recent Imports** and the ability to reopen a batch.
+
+Question Bank filtering directly by `import_batch_id` and owner, plus multi-select/batch management actions, remain separate management scope after JHEP-118.
 
 ---
 
-## 21. Implementation checkpoints
+## 21. Implementation status
 
-Recommended delivery order:
+Implemented for JHEP-118:
 
 1. contract/template v2;
 2. scalable Question Bank query API;
 3. scalable Question Bank frontend;
-4. import batch/row/asset staging models;
-5. XLSX parser and image matching;
-6. validation/duplicates/preview;
-7. atomic Draft persistence and R2 integration;
-8. import frontend workflow;
-9. question-bank batch actions;
-10. batch-action frontend;
-11. full end-to-end/regression coverage and docs.
+4. import batch/row/asset staging models + Alembic migration;
+5. XLSX parser and normalized image filename matching;
+6. validation, duplicate detection and row-level issue persistence;
+7. workbook upload + validation-preview API;
+8. R2-backed import image staging + automatic batch revalidation;
+9. atomic all-or-nothing Draft persistence;
+10. import frontend workflow;
+11. Recent Imports history/audit + reopen/continue behavior;
+12. API/configuration/spec documentation.
+
+Final acceptance verification is performed as three explicit gates:
+
+```text
+Unit tests
+    ↓
+Integration tests
+    ↓
+Browser E2E tests
+```
+
+Question Bank batch actions such as bulk approve/publish/retire/category changes are intentionally deferred to separate scope.
 
 ---
 
@@ -635,27 +675,37 @@ Recommended delivery order:
 
 ---
 
-## 23. Source files to preserve/reuse
+## 23. Current implementation source files
 
-Implementation should reuse existing behavior rather than replace it wholesale:
+The implementation reuses the existing question/image lifecycle and adds dedicated import components:
 
 ```text
-backend/app/schemas/admin_question.py
+backend/app/api/v1/endpoints/question_imports.py
+backend/app/schemas/question_import.py
+
+backend/app/models/question_import_batch.py
+backend/app/models/question_import_row.py
+backend/app/models/question_import_asset.py
+
+backend/app/services/question_import_parser.py
+backend/app/services/question_import_validation_service.py
+backend/app/services/question_import_asset_service.py
+backend/app/services/question_import_commit_service.py
+
 backend/app/services/admin_question_service.py
+backend/app/services/admin_question_bank_query_service.py
 backend/app/services/admin_question_image_service.py
 backend/app/services/question_image_validation.py
-backend/app/models/question.py
-backend/app/models/question_version.py
-backend/app/models/answer_option.py
-backend/app/models/text_answer_key.py
-backend/app/models/question_image.py
-frontend/src/features/exams/QuestionRenderer.tsx
-frontend/src/features/exams/QuestionMedia.tsx
-frontend/src/lib/api-client.ts
+backend/app/services/r2_storage.py
+
 frontend/src/app/admin/questions/page.tsx
+frontend/src/app/admin/questions/import/page.tsx
+frontend/src/lib/question-import-api.ts
+frontend/src/types/question-import-api.types.ts
+frontend/src/lib/api-client.ts
 ```
 
-In particular, the current single-question creation service commits internally. The bulk importer must introduce/reuse a transaction-neutral persistence helper under one outer batch transaction while preserving existing single-question endpoint behavior.
+`admin_question_service.py` now exposes a transaction-neutral draft-add helper used by the atomic importer while preserving the existing single-question creation endpoint's normal commit behavior.
 
 ---
 
@@ -664,13 +714,62 @@ In particular, the current single-question creation service commits internally. 
 Contract 2.0 is paired with:
 
 ```text
-question-bank-import-template-v2.xlsx
+docs/question-import/question-bank-import-template-v2.xlsx
 ```
 
-The workbook contains the exact 18-column contract and a worked image example using:
+The frontend serves the same approved template from:
 
 ```text
-image_filename = vpc-layout.png
+frontend/public/templates/question-bank-import-template-v2.xlsx
 ```
 
-The example image itself is intentionally not bundled with the workbook; the import screen will demonstrate matching it as a separately supplied asset.
+The workbook contains the exact 18-column contract and worked examples for single-select MCQ, multi-select MCQ, short answer, math, Unicode and image-backed questions.
+
+Image files are intentionally supplied separately through the import UI rather than embedded in the workbook.
+
+---
+
+## 25. Implemented API workflow
+
+Current JHEP-118 routes:
+
+```text
+GET  /api/v1/admin/question-imports
+POST /api/v1/admin/question-imports
+
+GET  /api/v1/admin/question-imports/{batch_id}
+GET  /api/v1/admin/question-imports/{batch_id}/rows
+
+POST /api/v1/admin/question-imports/{batch_id}/assets
+POST /api/v1/admin/question-imports/{batch_id}/commit
+```
+
+Current batch lifecycle:
+
+```text
+uploaded
+   ↓
+validating
+   ↓
+invalid ── upload missing image(s) ──┐
+   ↓                                │
+ready ◀─────────────────────────────┘
+   ↓
+importing
+   ↓
+imported
+```
+
+Contributor scope:
+
+```text
+own uploads only
+```
+
+Administrator scope:
+
+```text
+all uploads + uploader identity in history
+```
+
+Successful commit is atomic and creates only new `pending / draft` questions. Existing approved/published questions are never overwritten.
