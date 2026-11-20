@@ -520,10 +520,14 @@ def list_managed_questions(
         Session,
         Depends(get_session),
     ],
+    review_status: str | None = None,
+    author_email: str | None = None,
 ) -> QuestionBankList:
     records = list_question_bank(
         session,
         actor=current_user,
+        review_status=review_status,
+        author_email=author_email,
     )
 
     return QuestionBankList(

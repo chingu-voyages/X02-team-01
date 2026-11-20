@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.core.roles import UserRole
@@ -652,7 +653,11 @@ def list_question_bank(
     session: Session,
     *,
     actor: User,
+    review_status: str | None = None,
+    author_email: str | None = None,
 ) -> list[QuestionBankRecord]:
+    """JHEP-119 AC2: the review queue — optional server-side filters for
+    the review status and the author email, on top of the role scoping."""
     statement = select(Question)
 
     if actor.role == UserRole.CONTRIBUTOR:
@@ -660,6 +665,18 @@ def list_question_bank(
 
     elif actor.role != UserRole.ADMINISTRATOR:
         return []
+
+    if review_status:
+        # a queue is built from the review-workflow states
+        statement = statement.join(
+            QuestionVersion,
+            QuestionVersion.question_id == Question.id,
+        ).where(QuestionVersion.review_status == review_status)
+    if author_email:
+        statement = statement.join(
+            User,
+            User.id == Question.created_by_id,
+        ).where(func.lower(User.email) == author_email.strip().lower())
 
     records = [
         _question_bank_record(
