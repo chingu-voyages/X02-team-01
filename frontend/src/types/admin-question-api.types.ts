@@ -4,12 +4,15 @@ export type AdminQuestionType =
 
 export type AdminReviewStatus =
   | "pending"
+  | "submitted"
+  | "in_review"
   | "approved"
   | "rejected";
 
 export type AdminPublicationStatus =
   | "draft"
   | "active"
+  | "inactive"
   | "retired";
 
 export type AdminDifficulty =
