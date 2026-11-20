@@ -13,33 +13,33 @@ import {
 import path from "node:path";
 
 
-const ADMIN_EMAIL =
+const adminEmail =
   process.env
     .E2E_ADMIN_EMAIL ??
   "jhep159-demo-admin@example.test";
 
-const ADMIN_PASSWORD =
+const adminPassword =
   process.env
     .E2E_ADMIN_PASSWORD ??
   "DemoAdm1n!";
 
-const CONTRIBUTOR_EMAIL =
+const contributorEmail =
   process.env
     .E2E_CONTRIBUTOR_EMAIL ??
   "jhep29-demo-learner@example.test";
 
-const CONTRIBUTOR_PASSWORD =
+const contributorPassword =
   process.env
     .E2E_CONTRIBUTOR_PASSWORD ??
   "DemoL3arner!";
 
-const CERTIFICATION_CODE =
+const certificationCode =
   "JHEP29-DEMO-SECPLUS";
 
-const CATEGORY_NAME =
+const categoryName =
   "Core concepts";
 
-const IMPORT_HEADERS = [
+const importHeaders = [
   "template_version",
   "certification_code",
   "category_name",
@@ -117,9 +117,9 @@ async function ensureContributor(
       {
         data: {
           email:
-            ADMIN_EMAIL,
+            adminEmail,
           password:
-            ADMIN_PASSWORD,
+            adminPassword,
         },
       },
     );
@@ -144,7 +144,7 @@ async function ensureContributor(
           authorization,
         params: {
           q:
-            CONTRIBUTOR_EMAIL,
+            contributorEmail,
           limit:
             "20",
           offset:
@@ -163,7 +163,7 @@ async function ensureContributor(
     users.items.find(
       (user) =>
         user.email ===
-        CONTRIBUTOR_EMAIL,
+        contributorEmail,
     );
 
   if (!target) {
@@ -215,7 +215,7 @@ async function loginAsContributor(
       "Email address",
     )
     .fill(
-      CONTRIBUTOR_EMAIL,
+      contributorEmail,
     );
 
   await page
@@ -227,7 +227,7 @@ async function loginAsContributor(
       },
     )
     .fill(
-      CONTRIBUTOR_PASSWORD,
+      contributorPassword,
     );
 
   await page
@@ -292,13 +292,13 @@ async function createValidWorkbook(
     );
 
   sheet.addRow(
-    [...IMPORT_HEADERS],
+    [...importHeaders],
   );
 
   sheet.addRow([
     "2.0",
-    CERTIFICATION_CODE,
-    CATEGORY_NAME,
+    certificationCode,
+    categoryName,
     "easy",
     "multiple_choice",
     false,
@@ -318,8 +318,8 @@ async function createValidWorkbook(
 
   sheet.addRow([
     "2.0",
-    CERTIFICATION_CODE,
-    CATEGORY_NAME,
+    certificationCode,
+    categoryName,
     "medium",
     "multiple_choice",
     true,
@@ -339,8 +339,8 @@ async function createValidWorkbook(
 
   sheet.addRow([
     "2.0",
-    CERTIFICATION_CODE,
-    CATEGORY_NAME,
+    certificationCode,
+    categoryName,
     "easy",
     "short_answer",
     false,
@@ -401,13 +401,13 @@ async function createInvalidWorkbook(
     );
 
   sheet.addRow(
-    [...IMPORT_HEADERS],
+    [...importHeaders],
   );
 
   sheet.addRow([
     "2.0",
-    CERTIFICATION_CODE,
-    CATEGORY_NAME,
+    certificationCode,
+    categoryName,
     "easy",
     "multiple_choice",
     false,
@@ -428,7 +428,7 @@ async function createInvalidWorkbook(
   sheet.addRow([
     "2.0",
     "CERTIFICATION-DOES-NOT-EXIST",
-    CATEGORY_NAME,
+    categoryName,
     "easy",
     "multiple_choice",
     false,

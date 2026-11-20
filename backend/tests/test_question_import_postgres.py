@@ -238,9 +238,7 @@ def test_postgres_commit_persists_entire_ready_batch_with_provenance(
         role=UserRole.CONTRIBUTOR,
     )
 
-    certification, category = seed_catalog(
-        pg_session
-    )
+    certification, category = seed_catalog(pg_session)
 
     batch = create_ready_batch(
         pg_session,
@@ -271,29 +269,20 @@ def test_postgres_commit_persists_entire_ready_batch_with_provenance(
     assert result.imported_rows == 2
     assert len(result.created_question_ids) == 2
 
-    questions = pg_session.exec(
-        select(Question).order_by(Question.created_at)
-    ).all()
+    questions = pg_session.exec(select(Question).order_by(Question.created_at)).all()
 
     versions = pg_session.exec(
-        select(QuestionVersion).order_by(
-            QuestionVersion.submitted_at
-        )
+        select(QuestionVersion).order_by(QuestionVersion.submitted_at)
     ).all()
 
     rows = pg_session.exec(
-        select(QuestionImportRow).order_by(
-            QuestionImportRow.row_number
-        )
+        select(QuestionImportRow).order_by(QuestionImportRow.row_number)
     ).all()
 
     assert len(questions) == 2
     assert len(versions) == 2
 
-    assert all(
-        question.created_by_id == contributor.id
-        for question in questions
-    )
+    assert all(question.created_by_id == contributor.id for question in questions)
 
     assert all(
         version.review_status == "pending"
@@ -303,13 +292,9 @@ def test_postgres_commit_persists_entire_ready_batch_with_provenance(
         for version in versions
     )
 
-    assert len(
-        pg_session.exec(select(AnswerOption)).all()
-    ) == 2
+    assert len(pg_session.exec(select(AnswerOption)).all()) == 2
 
-    assert len(
-        pg_session.exec(select(TextAnswerKey)).all()
-    ) == 1
+    assert len(pg_session.exec(select(TextAnswerKey)).all()) == 1
 
     assert all(
         row.status == "imported"
@@ -333,9 +318,7 @@ def test_postgres_commit_rolls_back_all_rows_when_later_payload_is_invalid(
         role=UserRole.CONTRIBUTOR,
     )
 
-    certification, category = seed_catalog(
-        pg_session
-    )
+    certification, category = seed_catalog(pg_session)
 
     first = normalized_mc(
         certification=certification,
@@ -362,26 +345,17 @@ def test_postgres_commit_rolls_back_all_rows_when_later_payload_is_invalid(
         ],
     )
 
-    with pytest.raises(
-        QuestionImportCommitDataError
-    ):
+    with pytest.raises(QuestionImportCommitDataError):
         commit_question_import_batch(
             pg_session,
             batch_id=batch.id,
             actor=contributor,
         )
 
-    assert (
-        pg_session.exec(
-            select(Question)
-        ).all()
-        == []
-    )
+    assert pg_session.exec(select(Question)).all() == []
 
     rows = pg_session.exec(
-        select(QuestionImportRow).order_by(
-            QuestionImportRow.row_number
-        )
+        select(QuestionImportRow).order_by(QuestionImportRow.row_number)
     ).all()
 
     assert len(rows) == 2
@@ -415,9 +389,7 @@ def test_postgres_commit_is_idempotent_and_preserves_original_uploader(
         role=UserRole.ADMINISTRATOR,
     )
 
-    certification, category = seed_catalog(
-        pg_session
-    )
+    certification, category = seed_catalog(pg_session)
 
     batch = create_ready_batch(
         pg_session,
@@ -447,29 +419,16 @@ def test_postgres_commit_is_idempotent_and_preserves_original_uploader(
 
     assert first.already_imported is False
     assert second.already_imported is True
-    assert (
-        second.created_question_ids
-        == first.created_question_ids
-    )
+    assert second.created_question_ids == first.created_question_ids
 
-    questions = pg_session.exec(
-        select(Question)
-    ).all()
+    questions = pg_session.exec(select(Question)).all()
 
     assert len(questions) == 1
-    assert (
-        questions[0].created_by_id
-        == contributor.id
-    )
+    assert questions[0].created_by_id == contributor.id
 
-    version = pg_session.exec(
-        select(QuestionVersion)
-    ).one()
+    version = pg_session.exec(select(QuestionVersion)).one()
 
-    assert (
-        version.submitted_by_id
-        == contributor.id
-    )
+    assert version.submitted_by_id == contributor.id
 
 
 def test_postgres_contributor_cannot_commit_another_contributors_batch(
@@ -485,9 +444,7 @@ def test_postgres_contributor_cannot_commit_another_contributors_batch(
         role=UserRole.CONTRIBUTOR,
     )
 
-    certification, category = seed_catalog(
-        pg_session
-    )
+    certification, category = seed_catalog(pg_session)
 
     batch = create_ready_batch(
         pg_session,
@@ -503,18 +460,11 @@ def test_postgres_contributor_cannot_commit_another_contributors_batch(
         ],
     )
 
-    with pytest.raises(
-        QuestionImportCommitNotFoundError
-    ):
+    with pytest.raises(QuestionImportCommitNotFoundError):
         commit_question_import_batch(
             pg_session,
             batch_id=batch.id,
             actor=other,
         )
 
-    assert (
-        pg_session.exec(
-            select(Question)
-        ).all()
-        == []
-    )
+    assert pg_session.exec(select(Question)).all() == []
