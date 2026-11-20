@@ -1,6 +1,8 @@
+import type { ReactNode } from "react";
+
 interface PageHeaderProps {
-  title: React.ReactNode;
-  subtitle?: React.ReactNode;
+  title: ReactNode;
+  subtitle?: ReactNode;
   status?: string;
   stepLabel?: string;
 }
@@ -11,28 +13,27 @@ export default function PageHeader({
   status,
   stepLabel,
 }: PageHeaderProps) {
-  
-
   return (
-    <div>
-      <div className="mx-4 pb-4 border-b border-gray-300">
-        {stepLabel && (
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-500">
-            {stepLabel}
-          </p>
+    <header className="my-6 border-b border-brand-border pb-4">
+      {stepLabel && (
+        <p className="text-xs font-bold uppercase tracking-widest text-brand-text/60">
+          {stepLabel}
+        </p>
+      )}
+      <h1 className="flex flex-wrap items-baseline text-xl font-bold tracking-tight text-brand-text sm:text-2xl">
+        <span>{title}</span>
+        {status && (
+          <span
+            aria-hidden="true"
+            className="ml-2 font-normal text-brand-text/60"
+          >
+            · {status}
+          </span>
         )}
-        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-gray-900 flex items-baseline">
-          <span>{title}</span>
-          {status && (
-            <span aria-hidden="true" className="font-normal text-gray-500 ml-2">
-              · {status}
-            </span>
-          )}
-        </h1>
-        {subtitle && (
-          <p className="text-xs sm:text-sm text-gray-500 mt-1">{subtitle}</p>
-        )}
-      </div>
-    </div>
+      </h1>
+      {subtitle && (
+        <p className="mt-1 text-xs text-brand-text/70 sm:text-sm">{subtitle}</p>
+      )}
+    </header>
   );
 }

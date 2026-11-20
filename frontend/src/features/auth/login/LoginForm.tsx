@@ -1,15 +1,13 @@
 "use client";
 
+import Link from "next/link";
+import { useState, type ChangeEvent, type FormEvent } from "react";
+
 import FormInput from "@/components/ui/FormInput";
 import { Button } from "@/components/ui/button";
-import Link from "next/link";
-import { useState } from "react";
 import { useAuth } from "../AuthProvider";
 
-type UserRole =
-  | "learner"
-  | "contributor"
-  | "administrator";
+type UserRole = "learner" | "contributor" | "administrator";
 
 type LoginResponse = {
   access_token: string;
@@ -33,24 +31,12 @@ export default function LoginForm() {
     password: "",
   });
 
-  const [errors, setErrors] = useState<
-    Record<string, string>
-  >({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  const [touched, setTouched] = useState<
-    Record<string, boolean>
-  >({});
-
-  const [isSubmitting, setIsSubmitting] =
-    useState(false);
-
-  const [authError, setAuthError] = useState<
-    string | null
-  >(null);
-
-  const handleChange = (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target;
 
     setFormData((previous) => ({
@@ -77,9 +63,7 @@ export default function LoginForm() {
     }));
   };
 
-  const handleSubmit = async (
-    event: React.FormEvent<HTMLFormElement>,
-  ) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     setTouched({
@@ -110,34 +94,24 @@ export default function LoginForm() {
     setAuthError(null);
 
     try {
-      const response = await fetch(
-        "/api/v1/auth/login",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            email: formData.email.trim(),
-            password: formData.password,
-          }),
+      const response = await fetch("/api/v1/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          email: formData.email.trim(),
+          password: formData.password,
+        }),
+      });
 
       const data: unknown = await response.json();
 
       if (!response.ok) {
-        let message =
-          "Invalid email or password.";
+        let message = "Invalid email or password.";
 
-        if (
-          data !== null &&
-          typeof data === "object"
-        ) {
-          if (
-            "message" in data &&
-            typeof data.message === "string"
-          ) {
+        if (data !== null && typeof data === "object") {
+          if ("message" in data && typeof data.message === "string") {
             message = data.message;
           } else if (
             "detail" in data &&
@@ -156,18 +130,12 @@ export default function LoginForm() {
       const loginData = data as LoginResponse;
 
       const isStaff =
-        loginData.learner.role ===
-          "administrator" ||
+        loginData.learner.role === "administrator" ||
         loginData.learner.role === "contributor";
 
-      const destination = isStaff
-        ? "/admin/questions"
-        : "/categories";
+      const destination = isStaff ? "/admin/questions" : "/categories";
 
-      setToken(
-        loginData.access_token,
-        destination,
-      );
+      setToken(loginData.access_token, destination);
     } catch (error) {
       setAuthError(
         error instanceof Error
@@ -180,25 +148,26 @@ export default function LoginForm() {
   };
 
   return (
-    <div>
-      <h2 className="font-bold text-2xl">
-        Sign in to your account
-      </h2>
+    <div className="space-y-5 text-brand-text">
+      <div className="space-y-1">
+        <h2 className="text-2xl font-bold tracking-tight text-brand-text">
+          Sign in to your account
+        </h2>
+        <p className="text-sm text-brand-text/70">
+          Enter your credentials to continue.
+        </p>
+      </div>
 
       {authError && (
         <div
-          className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-sm"
+          className="rounded-md border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700"
           role="alert"
         >
           {authError}
         </div>
       )}
 
-      <form
-        onSubmit={handleSubmit}
-        className="space-y-4"
-        noValidate
-      >
+      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         <FormInput
           label="Email address"
           id="email"
@@ -208,11 +177,7 @@ export default function LoginForm() {
           value={formData.email}
           onChange={handleChange}
           onBlur={() => handleBlur("email")}
-          error={
-            touched.email
-              ? errors.email
-              : undefined
-          }
+          error={touched.email ? errors.email : undefined}
         />
 
         <FormInput
@@ -225,37 +190,33 @@ export default function LoginForm() {
           value={formData.password}
           onChange={handleChange}
           onBlur={() => handleBlur("password")}
-          error={
-            touched.password
-              ? errors.password
-              : undefined
-          }
+          error={touched.password ? errors.password : undefined}
         />
 
-        <div className="flex flex-col gap-3">
+        <div className="pt-1">
           <Button
             type="submit"
             disabled={isSubmitting}
-            className="self-start py-6 px-4 text-base hover:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="min-h-11 w-full cursor-pointer rounded-md bg-brand-accent px-6 text-sm font-semibold text-brand-text shadow-xs transition-colors hover:bg-brand-accent-tint focus-visible:ring-2 focus-visible:ring-brand-accent disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
-            {isSubmitting
-              ? "Signing in..."
-              : "Sign in"}
+            {isSubmitting ? "Signing in..." : "Sign in"}
           </Button>
+        </div>
 
-          <p className="text-sm text-gray-600">
+        <div className="space-y-2 border-t border-brand-border pt-4 text-sm text-brand-text/75">
+          <p>
             <Link
               href="/forgot-password"
-              className="text-primary hover:underline font-medium"
+              className="font-semibold text-brand-text underline-offset-4 hover:underline"
             >
               Forgot your password?
             </Link>
           </p>
-          <p className="text-sm text-gray-600">
+          <p>
             New to the platform?{" "}
             <Link
               href="/register"
-              className="text-primary hover:underline font-medium"
+              className="font-semibold text-brand-text underline-offset-4 hover:underline"
             >
               Create an account
             </Link>
