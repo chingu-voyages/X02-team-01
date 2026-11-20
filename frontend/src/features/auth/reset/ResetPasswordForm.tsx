@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-
-import Navbar from "@/components/layouts/Navbar";
 import Card from "@/components/ui/Card";
 import FormInput from "@/components/ui/FormInput";
 

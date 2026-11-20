@@ -1689,7 +1689,7 @@ export default function AdminQuestionForm(
               categories.length ===
                 0
             }
-            className="rounded-md bg-[#3d4145] px-7 py-2.5 text-sm font-medium text-white hover:bg-[#292d30] disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-brand-accent px-7 py-2.5 text-sm font-medium text-white hover:bg-brand-accent/80 hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving
               ? "Saving..."
