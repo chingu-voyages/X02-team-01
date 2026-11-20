@@ -221,6 +221,8 @@ class QuestionBankItem(BaseModel):
 
     review_status: Literal[
         "pending",
+        "submitted",
+        "in_review",
         "approved",
         "rejected",
     ]
@@ -228,6 +230,7 @@ class QuestionBankItem(BaseModel):
     publication_status: Literal[
         "draft",
         "active",
+        "inactive",
         "retired",
     ]
 
@@ -301,6 +304,8 @@ class QuestionBankDetail(BaseModel):
 
     review_status: Literal[
         "pending",
+        "submitted",
+        "in_review",
         "approved",
         "rejected",
     ]
@@ -308,6 +313,7 @@ class QuestionBankDetail(BaseModel):
     publication_status: Literal[
         "draft",
         "active",
+        "inactive",
         "retired",
     ]
 

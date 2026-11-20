@@ -637,3 +637,65 @@ def test_question_detail_returns_safe_hosted_image_metadata(
     ]
 
     assert "storage_key" not in body["images"][0]
+
+
+def test_review_queue_filters_by_review_status_and_author(
+    client: TestClient,
+    session: Session,
+):
+    """JHEP-119 AC2: the review queue — server-side review-status and
+    author filtering on top of the role scoping."""
+    from app.services.admin_question_service import (
+        submit_question_for_review,
+    )
+    from tests.test_admin_question_reject_api import create_draft, seed_scope
+
+    administrator = create_user(session, UserRole.ADMINISTRATOR)
+    contributor = create_user(session, UserRole.CONTRIBUTOR)
+    certification, category = seed_scope(session)
+
+    create_draft(
+        session,
+        owner=contributor,
+        certification=certification,
+        category=category,
+    )
+    submitted = create_draft(
+        session,
+        owner=contributor,
+        certification=certification,
+        category=category,
+    )
+    submit_question_for_review(
+        session,
+        submitted.question_id,
+        actor=contributor,
+    )
+
+    admin_headers = auth_header(administrator)
+
+    # the unfiltered list still returns everything
+    all_items = client.get("/admin/questions", headers=admin_headers).json()["items"]
+    assert len(all_items) == 2
+
+    # the queue filter: only the submitted question
+    queue = client.get(
+        "/admin/questions",
+        params={"review_status": "submitted"},
+        headers=admin_headers,
+    ).json()["items"]
+    assert len(queue) == 1
+    assert queue[0]["question_id"] == str(submitted.question_id)
+
+    # the author filter
+    by_author = client.get(
+        "/admin/questions",
+        params={"author_email": contributor.email},
+        headers=admin_headers,
+    ).json()["items"]
+    assert len(by_author) == 2
+
+    # a learner's scoping is unaffected
+    learner = create_user(session, UserRole.LEARNER)
+    learner_response = client.get("/admin/questions", headers=auth_header(learner))
+    assert learner_response.status_code == 403  # the router guard

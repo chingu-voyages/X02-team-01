@@ -25,8 +25,11 @@ function formatStatus(
   reviewStatus: AdminReviewStatus,
 ) {
   if (publicationStatus === "retired") return "Retired";
+  if (publicationStatus === "inactive") return "Rejected";
   if (publicationStatus === "active") return "Published";
   if (reviewStatus === "rejected") return "Rejected";
+  if (reviewStatus === "in_review") return "In Review";
+  if (reviewStatus === "submitted") return "Submitted";
   return "Draft";
 }
 
@@ -259,6 +262,8 @@ export default function AdminQuestionsPage() {
             >
               <option value="all">Status</option>
               <option value="Published">Published</option>
+              <option value="In Review">In Review</option>
+              <option value="Submitted">Submitted</option>
               <option value="Draft">Draft</option>
               <option value="Rejected">Rejected</option>
               <option value="Retired">Retired</option>
