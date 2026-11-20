@@ -64,6 +64,9 @@ from app.services.question_import_parser import (
 from app.services.question_import_validation_service import (
     validate_question_import_batch,
 )
+from app.services.question_import_workflow_service import (
+    reactivate_cancelled_question_import_batch,
+)
 from app.services.r2_storage import (
     R2ConfigurationError,
     R2Storage,
@@ -127,7 +130,19 @@ async def upload_question_import(
     if existing is not None:
         response.status_code = status.HTTP_200_OK
 
-        return _batch_response(existing)
+        if existing.status == "cancelled":
+            reactivate_cancelled_question_import_batch(
+                session,
+                batch=existing,
+            )
+
+            session.refresh(
+                existing,
+            )
+
+        return _batch_response(
+            existing,
+        )
 
     try:
         parsed = parse_question_bank_workbook(
