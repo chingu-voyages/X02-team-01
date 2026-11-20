@@ -654,7 +654,7 @@ def test_review_queue_filters_by_review_status_and_author(
     contributor = create_user(session, UserRole.CONTRIBUTOR)
     certification, category = seed_scope(session)
 
-    draft = create_draft(
+    create_draft(
         session,
         owner=contributor,
         certification=certification,
