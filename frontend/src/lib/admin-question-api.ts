@@ -218,3 +218,30 @@ export async function retireManagedQuestion(
     },
   );
 }
+
+
+export async function submitManagedQuestion(
+  token: string,
+  questionId: string,
+): Promise<AdminQuestionDetail> {
+  return apiRequest<AdminQuestionDetail>(
+    `/admin/questions/${encodeURIComponent(questionId)}/submit`,
+    token,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function startQuestionReview(
+  token: string,
+  questionId: string,
+): Promise<AdminQuestionDetail> {
+  return apiRequest<AdminQuestionDetail>(
+    `/admin/questions/${encodeURIComponent(questionId)}/start-review`,
+    token,
+    {
+      method: "POST",
+    },
+  );
+}
