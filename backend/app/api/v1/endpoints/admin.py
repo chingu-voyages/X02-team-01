@@ -300,6 +300,7 @@ def _question_detail_response(
         explanation=detail.explanation,
         review_status=detail.review_status,
         publication_status=detail.publication_status,
+        review_note=detail.review_note,
         is_flagged=detail.is_flagged,
         created_by_id=detail.created_by_id,
         submitted_by_id=detail.submitted_by_id,

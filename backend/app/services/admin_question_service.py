@@ -69,6 +69,7 @@ class QuestionBankRecord:
     question_type: str
     review_status: str
     publication_status: str
+    review_note: str | None
     is_flagged: bool
     created_by_id: UUID
     last_updated: datetime
@@ -109,6 +110,7 @@ class QuestionBankDetails:
     explanation: str | None
     review_status: str
     publication_status: str
+    review_note: str | None
     is_flagged: bool
     created_by_id: UUID
     submitted_by_id: UUID
@@ -678,6 +680,7 @@ def get_question_bank_details(
         explanation=(version.explanation),
         review_status=(version.review_status),
         publication_status=(version.publication_status),
+        review_note=(version.review_note),
         is_flagged=(version.is_flagged),
         created_by_id=(question.created_by_id),
         submitted_by_id=(version.submitted_by_id),

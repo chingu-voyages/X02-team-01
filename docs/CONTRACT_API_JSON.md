@@ -560,6 +560,12 @@ PATCH /api/v1/admin/questions/{question_id}
 
 Single-question create and edit use the same question validation rules reused by bulk import.
 
+For authorized question-detail responses, `review_note` contains the
+Administrator's latest rejection feedback when the current draft is rejected.
+An owning Contributor can read that feedback so they know what to revise.
+Editing/resubmitting the rejected draft clears `review_note` and returns the
+question to `pending / draft`.
+
 ## 9.4 Images — CURRENT
 
 ```http

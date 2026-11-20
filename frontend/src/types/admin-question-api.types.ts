@@ -95,6 +95,8 @@ export interface AdminQuestionDetail {
   review_status: AdminReviewStatus;
   publication_status: AdminPublicationStatus;
 
+  review_note: string | null;
+
   is_flagged: boolean;
 
   created_by_id: string;
