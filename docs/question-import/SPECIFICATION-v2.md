@@ -1,10 +1,10 @@
-# JHEP-71 / JHEP-118 — Question Bank Bulk Import Contract v2
+# JHEP-71 / JHEP-118 / JHEP-189 — Question Bank Bulk Import Contract v2
 
-**Status:** Implemented JHEP-118 contract; final regression verification pending  
+**Status:** Implemented JHEP-118 contract with JHEP-189 recovery workflow  
 **Contract version:** 2.0  
 **Prepared:** 18 November 2026  
 **Implementation verified:** 19 November 2026  
-**Repository baseline:** `feat/JHEP-118-bulk-question-import` through import history/audit checkpoint  
+**Repository baseline:** `feat/JHEP-189-refine-import-workflow`  
 **Supersedes for implementation:** the earlier JHEP-71 contract 1.0 review draft and `question-bank-import-template-v1.xlsx`
 
 ## 1. Goal
@@ -437,7 +437,12 @@ Required behaviors:
 - concurrent confirmations cannot create two copies;
 - validation receipt is bound to the actor and immutable uploaded content;
 - commit rechecks authorization, catalog state, duplicates and validation freshness;
-- invalid/rolled-back attempts do not block a corrected workbook.
+- invalid/rolled-back attempts do not block a corrected workbook;
+- an authorized manager can cancel an uncommitted batch;
+- cancellation preserves an audit record and discards temporary image assets;
+- repeated cancellation is idempotent;
+- a cancelled identical workbook can be reactivated and revalidated;
+- active uncommitted batches can be revalidated after catalog, duplicate or image conditions change.
 
 ---
 
@@ -509,6 +514,11 @@ The preview currently allows the user to:
 - see missing image filenames;
 - upload referenced PNG/JPEG/WebP files;
 - trigger automatic revalidation after image upload;
+- group repeated row errors by code/message/value;
+- manually revalidate after catalog/database changes;
+- cancel an uncommitted import after confirmation;
+- upload a corrected workbook without leaving the page;
+- reopen cancelled imports as read-only audit records;
 - confirm only when there are no blocking errors.
 
 Current image workflow example:
@@ -628,7 +638,7 @@ Question Bank filtering directly by `import_batch_id` and owner, plus multi-sele
 
 ## 21. Implementation status
 
-Implemented for JHEP-118:
+Implemented for JHEP-118 and JHEP-189:
 
 1. contract/template v2;
 2. scalable Question Bank query API;
@@ -641,7 +651,9 @@ Implemented for JHEP-118:
 9. atomic all-or-nothing Draft persistence;
 10. import frontend workflow;
 11. Recent Imports history/audit + reopen/continue behavior;
-12. API/configuration/spec documentation.
+12. API/configuration/spec documentation;
+13. cancel/revalidate/corrected-workbook recovery actions;
+14. grouped issue summaries and cancelled audit state.
 
 Final acceptance verification is performed as three explicit gates:
 
@@ -681,6 +693,7 @@ The implementation reuses the existing question/image lifecycle and adds dedicat
 
 ```text
 backend/app/api/v1/endpoints/question_imports.py
+backend/app/api/v1/endpoints/question_import_actions.py
 backend/app/schemas/question_import.py
 
 backend/app/models/question_import_batch.py
@@ -691,6 +704,7 @@ backend/app/services/question_import_parser.py
 backend/app/services/question_import_validation_service.py
 backend/app/services/question_import_asset_service.py
 backend/app/services/question_import_commit_service.py
+backend/app/services/question_import_workflow_service.py
 
 backend/app/services/admin_question_service.py
 backend/app/services/admin_question_bank_query_service.py
@@ -741,6 +755,8 @@ GET  /api/v1/admin/question-imports/{batch_id}
 GET  /api/v1/admin/question-imports/{batch_id}/rows
 
 POST /api/v1/admin/question-imports/{batch_id}/assets
+POST /api/v1/admin/question-imports/{batch_id}/cancel
+POST /api/v1/admin/question-imports/{batch_id}/revalidate
 POST /api/v1/admin/question-imports/{batch_id}/commit
 ```
 
@@ -752,8 +768,14 @@ uploaded
 validating
    ↓
 invalid ── upload missing image(s) ──┐
+   │                                │
+   ├── revalidate ──────────────────┤
+   │                                │
+   ├── cancel ────────────────> cancelled
    ↓                                │
 ready ◀─────────────────────────────┘
+   │
+   ├── cancel ────────────────> cancelled
    ↓
 importing
    ↓

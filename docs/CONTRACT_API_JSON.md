@@ -216,6 +216,8 @@ Bulk-imported questions begin as `pending / draft`, so they are not learner-visi
 | GET | `/api/v1/admin/question-imports/{batch_id}` | CURRENT | Contributor/Admin* |
 | GET | `/api/v1/admin/question-imports/{batch_id}/rows` | CURRENT | Contributor/Admin* |
 | POST | `/api/v1/admin/question-imports/{batch_id}/assets` | CURRENT | Contributor/Admin* |
+| POST | `/api/v1/admin/question-imports/{batch_id}/cancel` | CURRENT (JHEP-189) | Contributor/Admin* |
+| POST | `/api/v1/admin/question-imports/{batch_id}/revalidate` | CURRENT (JHEP-189) | Contributor/Admin* |
 | POST | `/api/v1/admin/question-imports/{batch_id}/commit` | CURRENT | Contributor/Admin* |
 
 \* Contributors can access only their own import batches. Administrators can access contributor batches.
@@ -814,7 +816,7 @@ Example ready response:
 
 A structurally valid workbook can return `201` with `status = invalid` when row-level issues exist. No Question rows are created at this stage.
 
-Identical same-user re-upload returns the existing batch rather than creating another batch.
+Identical same-user re-upload returns the existing batch rather than creating another batch. If that batch was cancelled, the same workbook reactivates the batch and runs validation again so the user is not trapped in a cancelled record.
 
 ## 10.3 Recent import history
 
@@ -943,7 +945,80 @@ If the asset satisfies the final missing image reference, the batch may transiti
 invalid -> ready
 ```
 
-## 10.7 Confirm atomic import
+## 10.7 Cancel uncommitted import — CURRENT (JHEP-189)
+
+**POST** `/api/v1/admin/question-imports/{batch_id}/cancel`
+
+Contributor/Admin within batch scope.
+
+Allowed for uncommitted batch states:
+
+```text
+uploaded
+validating
+invalid
+ready
+failed
+```
+
+Cancellation:
+
+1. locks the batch;
+2. verifies ownership/Administrator scope;
+3. rejects `importing` and `imported` batches;
+4. removes temporary R2 objects when staged images exist;
+5. marks staged assets `discarded`;
+6. sets the batch status to `cancelled`;
+7. preserves the batch and rows as a read-only audit record;
+8. creates no Question records.
+
+Repeated cancellation is idempotent.
+
+Example:
+
+```json
+{
+  "batch": {
+    "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "status": "cancelled",
+    "can_import": false
+  },
+  "discarded_asset_count": 2,
+  "already_cancelled": false
+}
+```
+
+Important conflict/error codes:
+
+```text
+IMPORT_CANNOT_BE_CANCELLED
+IMPORT_ASSET_CLEANUP_UNAVAILABLE
+```
+
+## 10.8 Revalidate active import — CURRENT (JHEP-189)
+
+**POST** `/api/v1/admin/question-imports/{batch_id}/revalidate`
+
+Contributor/Admin within batch scope.
+
+Revalidation is allowed for active uncommitted states:
+
+```text
+uploaded
+invalid
+ready
+failed
+```
+
+It reruns the existing catalog, answer, duplicate, math and image rules
+against current database state. This supports workflows such as an
+Administrator creating a previously missing certification/category while
+the Contributor keeps the staged workbook open.
+
+The response is the refreshed batch summary. The batch becomes `ready`
+only when no blocking row errors remain.
+
+## 10.9 Confirm atomic import
 
 **POST** `/api/v1/admin/question-imports/{batch_id}/commit`
 
@@ -1010,7 +1085,7 @@ IMPORT_STALE
 IMPORT_DATA_INVALID
 ```
 
-## 10.8 Duplicate policy
+## 10.10 Duplicate policy
 
 Import creates new questions only.
 
@@ -1031,7 +1106,7 @@ Duplicates are checked:
 
 No upsert/update/merge/silent-skip behavior is implemented.
 
-## 10.9 Import UI
+## 10.11 Import UI
 
 Current frontend route:
 
@@ -1051,7 +1126,12 @@ The UI supports:
 - explicit all-or-nothing confirmation;
 - success summary;
 - Recent Imports history;
-- reopen/continue/review behavior.
+- reopen/continue/review behavior;
+- grouped repeated validation errors;
+- explicit revalidation after catalog/database changes;
+- confirmed cancellation with temporary-asset cleanup;
+- corrected-workbook replacement without leaving the page;
+- read-only cancelled audit records.
 
 The frontend does not expose an "import valid rows anyway" action.
 

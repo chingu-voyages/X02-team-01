@@ -643,10 +643,6 @@ export default function QuestionImportPage() {
 
     let cancelled = false;
 
-    setHistoryLoading(
-      true,
-    );
-
     getQuestionImportHistory(
       token,
       {
