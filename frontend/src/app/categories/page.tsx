@@ -2,8 +2,6 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-
-import Navbar from "@/components/layouts/Navbar";
 import { useDemoSession } from "@/features/auth/AuthProvider";
 import { ApiError } from "@/lib/api-client";
 import {
@@ -197,7 +195,6 @@ export default function CategoriesPage() {
       style={{ fontFamily: "Arial, Helvetica, sans-serif" }}
     >
       <div className="mx-auto max-w-7xl space-y-6">
-        <Navbar />
 
         <header className="space-y-2">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
@@ -309,7 +306,7 @@ export default function CategoriesPage() {
                 return (
                   <article
                     key={category.id}
-                    className={`flex min-h-[265px] flex-col rounded-md border bg-white p-5 transition-colors ${
+                    className={`flex min-h-66.25 flex-col rounded-md border bg-white p-5 transition-colors ${
                       isSelected
                         ? "border-[#343a3e] ring-1 ring-[#343a3e]"
                         : "border-[#cbd0d3]"

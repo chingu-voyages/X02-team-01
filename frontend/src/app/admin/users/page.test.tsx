@@ -55,10 +55,6 @@ vi.mock("@/lib/admin-users-api", () => ({
   changeAdminUserRole: vi.fn(),
 }));
 
-vi.mock("@/components/layouts/Navbar", () => ({
-  default: () => <nav data-testid="navbar" />,
-}));
-
 const mockedGet = vi.mocked(getAdminUsers);
 const mockedChange = vi.mocked(changeAdminUserRole);
 

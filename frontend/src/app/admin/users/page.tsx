@@ -1,8 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-
-import Navbar from "@/components/layouts/Navbar";
 import { useDemoSession } from "@/features/auth/AuthProvider";
 import { ApiError } from "@/lib/api-client";
 import {
@@ -104,7 +102,6 @@ export default function AdminUsersPage() {
   if (!ready || !token || status === "loading") {
     return (
       <main className="min-h-screen bg-[#f3f4f5] p-4 text-[#2c3134]">
-        <Navbar />
         <p role="status" className="p-6">
           Checking session...
         </p>
@@ -115,7 +112,6 @@ export default function AdminUsersPage() {
   if (status === "error") {
     return (
       <main className="min-h-screen bg-[#f3f4f5] p-4 text-[#2c3134]">
-        <Navbar />
         <div className="mx-auto max-w-3xl p-6">
           <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             {loadError}
@@ -156,7 +152,6 @@ export default function AdminUsersPage() {
 
   return (
     <main className="min-h-screen bg-[#f3f4f5] px-4 py-6 text-[#2c3134] sm:px-6 lg:px-8">
-      <Navbar />
 
       <div className="mx-auto max-w-5xl space-y-6">
         <header className="space-y-2">
