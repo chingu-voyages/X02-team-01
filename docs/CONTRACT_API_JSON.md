@@ -157,6 +157,11 @@ Bulk-imported questions begin as `pending / draft`, so they are not learner-visi
 | POST | `/api/v1/auth/logout` | CURRENT | Bearer |
 | POST | `/api/v1/auth/forgot-password` | CURRENT | No |
 | POST | `/api/v1/auth/reset-password` | CURRENT | No |
+| GET | `/api/v1/auth/mfa/status` | CURRENT (JHEP-109) | Bearer |
+| POST | `/api/v1/auth/mfa/enroll/setup` | CURRENT (JHEP-109) | Bearer |
+| POST | `/api/v1/auth/mfa/enroll/verify` | CURRENT (JHEP-109) | Bearer |
+| POST | `/api/v1/auth/mfa/verify` | CURRENT (JHEP-109) | Challenge token |
+
 
 ## 2.2 Learner discovery and delivery
 
@@ -334,6 +339,126 @@ A successful reset:
 - applies the normal password policy;
 - invalidates access tokens issued before the reset timestamp;
 - does not change role/ownership.
+
+---
+
+
+## 3.9 Multi-factor authentication — enrollment — CURRENT (JHEP-109)
+
+**Role policy (PO-confirmed):** Administrators MUST enroll; Contributors
+MAY; Learners are not offered enrollment. The feature is dormant by
+default — accounts without a confirmed enrollment get a byte-identical
+sign-in response.
+
+### GET `/api/v1/auth/mfa/status`
+
+The account's MFA posture drives the Security page and the forced-enrollment
+prompt:
+
+```json
+{
+  "configured": true,
+  "available": true,
+  "mandatory": true,
+  "enrolled": false
+}
+```
+
+`configured: false` means the deployment lacks `MFA_ENCRYPTION_KEY`.
+MFA is disabled and the rest of the application continues to run normally.
+
+### POST `/api/v1/auth/mfa/enroll/setup`
+
+Generates the account's TOTP secret. The secret is Fernet-encrypted at rest
+with `MFA_ENCRYPTION_KEY`, which is optional at application startup.
+
+```json
+{
+  "otpauth_uri": "otpauth://totp/The%20Job%20Hackers:learner%40example.com?secret=…&issuer=The%20Job%20Hackers",
+  "secret": "<base32 secret for manual entry>",
+  "issuer": "The Job Hackers"
+}
+```
+
+The frontend renders `otpauth_uri` as a QR code for an authenticator app.
+Calling setup again invalidates the prior unconfirmed secret.
+
+### POST `/api/v1/auth/mfa/enroll/verify`
+
+Confirms enrollment with a live six-digit code and issues recovery codes.
+Recovery codes are shown once and stored only as SHA-256 digests.
+
+```json
+{
+  "message": "MFA enabled. Store your recovery codes safely — they are shown once and never again.",
+  "recovery_codes": ["4F7A2B91C0", "9C31E5D8A7", "..."]
+}
+```
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `INVALID_MFA_CODE` | the code does not match |
+| 403 | `MFA_NOT_AVAILABLE` | the role is outside the enrollment policy |
+| 409 | `MFA_NOT_ENROLLED` / `MFA_ALREADY_ENROLLED` | setup was not started / enrollment was already confirmed |
+| 503 | `MFA_NOT_CONFIGURED` | the deployment lacks `MFA_ENCRYPTION_KEY` |
+
+## 3.10 Multi-factor authentication — sign-in challenge — CURRENT (JHEP-109)
+
+For an MFA-required account with a confirmed enrollment, a correct password
+does not establish the final session. `POST /api/v1/auth/login` returns:
+
+```json
+{
+  "access_token": "<5-minute challenge token — authorizes only /auth/mfa/verify>",
+  "token_type": "bearer",
+  "learner": { "...": "..." },
+  "mfa_required": true,
+  "challenge_id": "<challenge uuid>",
+  "mfa_expires_in_seconds": 300
+}
+```
+
+Use the challenge token as the Bearer credential for:
+
+```http
+POST /api/v1/auth/mfa/verify
+```
+
+Authenticator-code request:
+
+```json
+{
+  "code": "123456"
+}
+```
+
+Recovery-code request:
+
+```json
+{
+  "code": "4F7A2B91C0",
+  "recovery_code": true
+}
+```
+
+Success returns the real authenticated session. Protected learner,
+Contributor, and Administrator behavior unlocks only after the second factor.
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `INVALID_MFA_CODE` | wrong, repeated, or expired code |
+| 403 | `MFA_CHALLENGE_LOCKED` | five failed attempts; a new login is required |
+| 401 | `INVALID_MFA_CHALLENGE` | missing or expired challenge token |
+
+Behavioral guarantees:
+
+- Challenge tokens carry an `mfa: pending` claim and are rejected by
+  `get_current_user` on every protected route.
+- Password reset never bypasses MFA; the next sign-in still challenges.
+- Failed or abandoned challenges expire after `MFA_CHALLENGE_MINUTES`,
+  which defaults to five minutes.
+- Enrollment is offered through `/account/security`, with a forced prompt
+  for un-enrolled Administrators.
 
 ---
 

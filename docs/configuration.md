@@ -505,6 +505,34 @@ Production transports fail startup validation when required credentials are abse
 
 ---
 
+
+# Multi-factor authentication — JHEP-109
+
+MFA is optional at application startup. Without `MFA_ENCRYPTION_KEY`, the MFA
+endpoints return `503 MFA_NOT_CONFIGURED`, while the rest of the application
+continues to operate.
+
+| Variable | Purpose |
+|---|---|
+| `MFA_ENCRYPTION_KEY` | Long random value used to encrypt TOTP secrets at rest. Generate once per deployment with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
+| `MFA_CHALLENGE_MINUTES` | Sign-in challenge lifetime after the password stage; default 5 minutes. |
+| `MFA_MAX_ATTEMPTS` | Failed codes permitted before a challenge locks; default 5. |
+| `MFA_RECOVERY_CODE_COUNT` | Single-use recovery codes issued during enrollment; default 8. |
+
+Role policy:
+
+```text
+Administrators MUST enroll
+Contributors MAY enroll
+Learners are not offered enrollment
+```
+
+Enrollment is available through `/account/security`. Un-enrolled
+Administrators receive a forced enrollment prompt after sign-in. Lost-device
+recovery uses the single-use recovery codes displayed during enrollment.
+
+---
+
 # GitHub Actions and secrets
 
 Runtime secrets must not be committed to workflow files.
