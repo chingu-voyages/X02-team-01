@@ -5,6 +5,7 @@ from app.api.v1.endpoints import (
     auth,
     categories,
     exams,
+    question_imports,
     questions,
 )
 
@@ -38,4 +39,10 @@ api_router.include_router(
     admin.router,
     prefix="/admin",
     tags=["admin"],
+)
+
+api_router.include_router(
+    question_imports.router,
+    prefix="/admin/question-imports",
+    tags=["admin", "question-imports"],
 )

@@ -12,6 +12,9 @@ from .mfa import MfaRecoveryCode as MfaRecoveryCode
 from .password_reset_token import PasswordResetToken as PasswordResetToken
 from .question import Question as Question
 from .question_image import QuestionImage as QuestionImage
+from .question_import_asset import QuestionImportAsset as QuestionImportAsset
+from .question_import_batch import QuestionImportBatch as QuestionImportBatch
+from .question_import_row import QuestionImportRow as QuestionImportRow
 from .question_version import QuestionVersion as QuestionVersion
 from .role_change_audit import RoleChangeAudit as RoleChangeAudit
 from .text_answer_key import TextAnswerKey as TextAnswerKey
