@@ -130,6 +130,14 @@ class QuestionImportCommitOut(BaseModel):
     already_imported: bool
 
 
+class QuestionImportCancelOut(BaseModel):
+    """Result of cancelling or repeating cancellation for one batch."""
+
+    batch: QuestionImportBatchOut
+    discarded_asset_count: int
+    already_cancelled: bool
+
+
 class QuestionImportHistoryItemOut(QuestionImportBatchOut):
     """One recent import with uploader identity for audit/history views."""
 

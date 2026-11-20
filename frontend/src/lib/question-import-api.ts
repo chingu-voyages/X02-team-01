@@ -5,6 +5,7 @@ import {
 import type {
   QuestionImportAssetUploadResponse,
   QuestionImportBatch,
+  QuestionImportCancelResponse,
   QuestionImportCommitResponse,
   QuestionImportHistoryPage,
   QuestionImportHistoryQuery,
@@ -180,6 +181,38 @@ export async function uploadQuestionImportAsset(
     {
       method: "POST",
       body: formData,
+    },
+  );
+}
+
+
+export async function revalidateQuestionImport(
+  token: string,
+  batchId: string,
+): Promise<QuestionImportBatch> {
+  return apiRequest<QuestionImportBatch>(
+    `/admin/question-imports/${encodeURIComponent(
+      batchId,
+    )}/revalidate`,
+    token,
+    {
+      method: "POST",
+    },
+  );
+}
+
+
+export async function cancelQuestionImport(
+  token: string,
+  batchId: string,
+): Promise<QuestionImportCancelResponse> {
+  return apiRequest<QuestionImportCancelResponse>(
+    `/admin/question-imports/${encodeURIComponent(
+      batchId,
+    )}/cancel`,
+    token,
+    {
+      method: "POST",
     },
   );
 }

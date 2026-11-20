@@ -95,6 +95,12 @@ export interface QuestionImportCommitResponse {
   already_imported: boolean;
 }
 
+export interface QuestionImportCancelResponse {
+  batch: QuestionImportBatch;
+  discarded_asset_count: number;
+  already_cancelled: boolean;
+}
+
 export interface QuestionImportRowsQuery {
   row_status?: QuestionImportRowStatus;
   page?: number;
@@ -120,4 +126,3 @@ export interface QuestionImportHistoryQuery {
   page?: number;
   page_size?: number;
 }
-

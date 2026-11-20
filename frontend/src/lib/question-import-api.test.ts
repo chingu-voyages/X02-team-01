@@ -7,9 +7,11 @@ import {
 } from "vitest";
 
 import {
+  cancelQuestionImport,
   commitQuestionImport,
   getQuestionImportHistory,
   getQuestionImportRows,
+  revalidateQuestionImport,
   uploadQuestionImport,
   uploadQuestionImportAsset,
 } from "./question-import-api";
@@ -133,15 +135,15 @@ describe(
     it(
       "uploads the workbook as FormData",
       async () => {
-        const response = {
-          id: "batch-1",
-          status: "ready",
-        };
-
         const mockFetch =
           mockResponse(
             201,
-            response,
+            {
+              id:
+                "batch-1",
+              status:
+                "ready",
+            },
           );
 
         const file =
@@ -312,6 +314,56 @@ describe(
           ),
         ).toBe(
           "2",
+        );
+      },
+    );
+
+
+    it(
+      "posts cancel and revalidate recovery actions",
+      async () => {
+        const mockFetch =
+          mockResponse(
+            200,
+            {},
+          );
+
+        await cancelQuestionImport(
+          "token",
+          "batch-1",
+        );
+
+        await revalidateQuestionImport(
+          "token",
+          "batch-1",
+        );
+
+        expect(
+          mockFetch.mock
+            .calls[0]?.[0],
+        ).toBe(
+          "/api/v1/admin/question-imports/batch-1/cancel",
+        );
+
+        expect(
+          mockFetch.mock
+            .calls[0]?.[1]?.method,
+        ).toBe(
+          "POST",
+        );
+
+        expect(
+          mockFetch.mock
+            .calls[1]?.[0],
+        ).toBe(
+          "/api/v1/admin/question-imports/batch-1/revalidate",
+        );
+
+        expect(
+          mockFetch.mock
+            .calls[1]?.[1]?.method,
+        ).toBe(
+          "POST",
         );
       },
     );
