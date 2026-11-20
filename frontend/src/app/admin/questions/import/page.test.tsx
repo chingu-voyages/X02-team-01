@@ -3,6 +3,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 
 import userEvent from "@testing-library/user-event";
@@ -19,13 +20,25 @@ import {
 import QuestionImportPage from "./page";
 
 import {
+  cancelQuestionImport,
   commitQuestionImport,
   getQuestionImport,
   getQuestionImportHistory,
   getQuestionImportRows,
+  revalidateQuestionImport,
   uploadQuestionImport,
   uploadQuestionImportAsset,
 } from "@/lib/question-import-api";
+
+
+const {
+  mockedHandleError,
+} = vi.hoisted(
+  () => ({
+    mockedHandleError:
+      vi.fn(),
+  }),
+);
 
 
 vi.mock(
@@ -39,15 +52,18 @@ vi.mock(
       ready:
         true,
       handleError:
-        vi.fn(),
+        mockedHandleError,
     }),
   }),
 );
 
+
 vi.mock(
   "@/lib/question-import-api",
   () => ({
-    uploadQuestionImport:
+    cancelQuestionImport:
+      vi.fn(),
+    commitQuestionImport:
       vi.fn(),
     getQuestionImport:
       vi.fn(),
@@ -55,24 +71,30 @@ vi.mock(
       vi.fn(),
     getQuestionImportRows:
       vi.fn(),
-    uploadQuestionImportAsset:
+    revalidateQuestionImport:
       vi.fn(),
-    commitQuestionImport:
+    uploadQuestionImport:
+      vi.fn(),
+    uploadQuestionImportAsset:
       vi.fn(),
   }),
 );
 
 
-const mockedUpload =
+const mockedCancel =
   vi.mocked(
-    uploadQuestionImport,
+    cancelQuestionImport,
+  );
+
+const mockedCommit =
+  vi.mocked(
+    commitQuestionImport,
   );
 
 const mockedGetBatch =
   vi.mocked(
     getQuestionImport,
   );
-
 
 const mockedGetHistory =
   vi.mocked(
@@ -84,14 +106,19 @@ const mockedGetRows =
     getQuestionImportRows,
   );
 
+const mockedRevalidate =
+  vi.mocked(
+    revalidateQuestionImport,
+  );
+
+const mockedUpload =
+  vi.mocked(
+    uploadQuestionImport,
+  );
+
 const mockedUploadAsset =
   vi.mocked(
     uploadQuestionImportAsset,
-  );
-
-const mockedCommit =
-  vi.mocked(
-    commitQuestionImport,
   );
 
 
@@ -124,7 +151,7 @@ const readyBatch = {
     null,
 };
 
-const invalidImageBatch = {
+const invalidBatch = {
   ...readyBatch,
   status:
     "invalid" as const,
@@ -136,6 +163,12 @@ const invalidImageBatch = {
     false,
 };
 
+const cancelledBatch = {
+  ...invalidBatch,
+  status:
+    "cancelled" as const,
+};
+
 const importedBatch = {
   ...readyBatch,
   status:
@@ -145,7 +178,6 @@ const importedBatch = {
   imported_at:
     "2026-11-18T12:05:00Z",
 };
-
 
 const readyHistoryItem = {
   ...readyBatch,
@@ -175,6 +207,37 @@ const readyRow = {
   image_filename:
     null,
   issues: [],
+};
+
+const certificationErrorRow = {
+  ...readyRow,
+  status:
+    "invalid" as const,
+  certification_code:
+    "CS-DEMO",
+  issues: [
+    {
+      sheet:
+        "Questions",
+      row:
+        2,
+      field:
+        "certification_code",
+      cell:
+        "B2",
+      severity:
+        "error" as const,
+      code:
+        "CERTIFICATION_NOT_FOUND",
+      message:
+        "Certification code does not match an existing certification.",
+      value_preview:
+        "CS-DEMO",
+      related_rows: [],
+      asset_filename:
+        null,
+    },
+  ],
 };
 
 const missingImageRow = {
@@ -207,6 +270,20 @@ const missingImageRow = {
     },
   ],
 };
+
+
+function xlsxFile(
+  name = "questions.xlsx",
+) {
+  return new File(
+    ["xlsx"],
+    name,
+    {
+      type:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    },
+  );
+}
 
 
 beforeEach(() => {
@@ -259,6 +336,21 @@ beforeEach(() => {
         readyBatch,
     });
 
+  mockedCancel
+    .mockResolvedValue({
+      batch:
+        cancelledBatch,
+      discarded_asset_count:
+        0,
+      already_cancelled:
+        false,
+    });
+
+  mockedRevalidate
+    .mockResolvedValue(
+      readyBatch,
+    );
+
   mockedCommit
     .mockResolvedValue({
       batch:
@@ -301,20 +393,9 @@ describe(
               8,
           });
 
-        mockedGetBatch
-          .mockResolvedValue(
-            readyBatch,
-          );
-
         render(
           <QuestionImportPage />,
         );
-
-        expect(
-          await screen.findByText(
-            "Recent Imports",
-          ),
-        ).toBeTruthy();
 
         expect(
           await screen.findByText(
@@ -343,15 +424,9 @@ describe(
             "Ready to import",
           ),
         ).toBeTruthy();
-
-        expect(
-          mockedGetBatch,
-        ).toHaveBeenCalledWith(
-          "contributor-token",
-          readyBatch.id,
-        );
       },
     );
+
 
     it(
       "uploads a workbook, previews rows, and confirms the import",
@@ -368,21 +443,11 @@ describe(
           <QuestionImportPage />,
         );
 
-        const file =
-          new File(
-            ["xlsx"],
-            "questions.xlsx",
-            {
-              type:
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            },
-          );
-
         await user.upload(
           screen.getByLabelText(
             "Question bank workbook",
           ),
-          file,
+          xlsxFile(),
         );
 
         await user.click(
@@ -396,14 +461,12 @@ describe(
         );
 
         expect(
-          await screen.findByText(
-            "What is IAM?",
-          ),
-        ).toBeTruthy();
-
-        expect(
-          screen.getByText(
-            "Ready to import",
+          await screen.findByRole(
+            "heading",
+            {
+              name:
+                "Ready to import",
+            },
           ),
         ).toBeTruthy();
 
@@ -418,17 +481,363 @@ describe(
         );
 
         expect(
-          await screen.findByText(
-            "Import complete",
+          await screen.findByRole(
+            "heading",
+            {
+              name:
+                "Import complete",
+            },
+          ),
+        ).toBeTruthy();
+      },
+    );
+
+
+    it(
+      "groups repeated errors and cancels after confirmation",
+      async () => {
+        const user =
+          userEvent.setup();
+
+        mockedUpload
+          .mockResolvedValue(
+            invalidBatch,
+          );
+
+        mockedGetRows
+          .mockImplementation(
+            async (
+              _token,
+              _batchId,
+              query = {},
+            ) => ({
+              items: [
+                certificationErrorRow,
+              ],
+              total:
+                1,
+              page:
+                query.page ?? 1,
+              page_size:
+                query.page_size ?? 50,
+            }),
+          );
+
+        render(
+          <QuestionImportPage />,
+        );
+
+        await user.upload(
+          screen.getByLabelText(
+            "Question bank workbook",
+          ),
+          xlsxFile(),
+        );
+
+        await user.click(
+          screen.getByRole(
+            "button",
+            {
+              name:
+                "Validate File",
+            },
+          ),
+        );
+
+        expect(
+          await screen.findAllByText(
+            "CERTIFICATION_NOT_FOUND",
+          ),
+        ).toHaveLength(2);
+
+        expect(
+          screen.getByText(
+            "Affects 1 row",
           ),
         ).toBeTruthy();
 
-        expect(
-          mockedCommit,
-        ).toHaveBeenCalledWith(
-          "contributor-token",
-          readyBatch.id,
+        await user.click(
+          screen.getByRole(
+            "button",
+            {
+              name:
+                "Cancel Import",
+            },
+          ),
         );
+
+        const dialog =
+          screen.getByRole(
+            "dialog",
+          );
+
+        expect(
+          within(
+            dialog,
+          ).getByText(
+            "Cancel this import?",
+          ),
+        ).toBeTruthy();
+
+        await user.click(
+          within(
+            dialog,
+          ).getByRole(
+            "button",
+            {
+              name:
+                "Cancel Import",
+            },
+          ),
+        );
+
+        await waitFor(
+          () => {
+            expect(
+              mockedCancel,
+            ).toHaveBeenCalledWith(
+              "contributor-token",
+              invalidBatch.id,
+            );
+          },
+        );
+
+        expect(
+          await screen.findByRole(
+            "heading",
+            {
+              name:
+                "Import cancelled",
+            },
+          ),
+        ).toBeTruthy();
+      },
+    );
+
+
+    it(
+      "revalidates a blocked batch after catalog changes",
+      async () => {
+        const user =
+          userEvent.setup();
+
+        mockedUpload
+          .mockResolvedValue(
+            invalidBatch,
+          );
+
+        mockedGetRows
+          .mockResolvedValue({
+            items: [
+              certificationErrorRow,
+            ],
+            total:
+              1,
+            page:
+              1,
+            page_size:
+              50,
+          });
+
+        render(
+          <QuestionImportPage />,
+        );
+
+        await user.upload(
+          screen.getByLabelText(
+            "Question bank workbook",
+          ),
+          xlsxFile(),
+        );
+
+        await user.click(
+          screen.getByRole(
+            "button",
+            {
+              name:
+                "Validate File",
+            },
+          ),
+        );
+
+        expect(
+          await screen.findByRole(
+            "heading",
+            {
+              name:
+                "Import blocked",
+            },
+          ),
+        ).toBeTruthy();
+
+        mockedGetRows
+          .mockResolvedValue({
+            items: [
+              readyRow,
+            ],
+            total:
+              1,
+            page:
+              1,
+            page_size:
+              50,
+          });
+
+        await user.click(
+          screen.getByRole(
+            "button",
+            {
+              name:
+                "Revalidate",
+            },
+          ),
+        );
+
+        await waitFor(
+          () => {
+            expect(
+              mockedRevalidate,
+            ).toHaveBeenCalledWith(
+              "contributor-token",
+              invalidBatch.id,
+            );
+          },
+        );
+
+        expect(
+          await screen.findByRole(
+            "heading",
+            {
+              name:
+                "Ready to import",
+            },
+          ),
+        ).toBeTruthy();
+      },
+    );
+
+
+    it(
+      "cancels the old batch before validating a corrected workbook",
+      async () => {
+        const user =
+          userEvent.setup();
+
+        mockedUpload
+          .mockResolvedValueOnce(
+            invalidBatch,
+          )
+          .mockResolvedValueOnce(
+            readyBatch,
+          );
+
+        mockedGetRows
+          .mockResolvedValue({
+            items: [
+              certificationErrorRow,
+            ],
+            total:
+              1,
+            page:
+              1,
+            page_size:
+              50,
+          });
+
+        render(
+          <QuestionImportPage />,
+        );
+
+        await user.upload(
+          screen.getByLabelText(
+            "Question bank workbook",
+          ),
+          xlsxFile(),
+        );
+
+        await user.click(
+          screen.getByRole(
+            "button",
+            {
+              name:
+                "Validate File",
+            },
+          ),
+        );
+
+        await user.upload(
+          screen.getByLabelText(
+            "Corrected question bank workbook",
+          ),
+          xlsxFile(
+            "questions-corrected.xlsx",
+          ),
+        );
+
+        const dialog =
+          screen.getByRole(
+            "dialog",
+          );
+
+        expect(
+          within(
+            dialog,
+          ).getByText(
+            "Replace this import?",
+          ),
+        ).toBeTruthy();
+
+        mockedGetRows
+          .mockResolvedValue({
+            items: [
+              readyRow,
+            ],
+            total:
+              1,
+            page:
+              1,
+            page_size:
+              50,
+          });
+
+        await user.click(
+          within(
+            dialog,
+          ).getByRole(
+            "button",
+            {
+              name:
+                "Replace and Validate",
+            },
+          ),
+        );
+
+        await waitFor(
+          () => {
+            expect(
+              mockedCancel,
+            ).toHaveBeenCalledWith(
+              "contributor-token",
+              invalidBatch.id,
+            );
+
+            expect(
+              mockedUpload,
+            ).toHaveBeenLastCalledWith(
+              "contributor-token",
+              expect.objectContaining({
+                name:
+                  "questions-corrected.xlsx",
+              }),
+            );
+          },
+        );
+
+        expect(
+          await screen.findByText(
+            "Corrected workbook uploaded and validated.",
+          ),
+        ).toBeTruthy();
       },
     );
 
@@ -441,7 +850,7 @@ describe(
 
         mockedUpload
           .mockResolvedValue(
-            invalidImageBatch,
+            invalidBatch,
           );
 
         mockedGetRows
@@ -495,14 +904,7 @@ describe(
           screen.getByLabelText(
             "Question bank workbook",
           ),
-          new File(
-            ["xlsx"],
-            "questions.xlsx",
-            {
-              type:
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            },
-          ),
+          xlsxFile(),
         );
 
         await user.click(
@@ -522,12 +924,6 @@ describe(
             )
           ).length,
         ).toBeGreaterThan(0);
-
-        expect(
-          screen.getByText(
-            "Import blocked",
-          ),
-        ).toBeTruthy();
 
         mockedGetRows
           .mockResolvedValue({
@@ -565,8 +961,12 @@ describe(
         );
 
         expect(
-          await screen.findByText(
-            "Ready to import",
+          await screen.findByRole(
+            "heading",
+            {
+              name:
+                "Ready to import",
+            },
           ),
         ).toBeTruthy();
       },

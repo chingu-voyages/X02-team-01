@@ -16,30 +16,37 @@ import {
   FileSpreadsheet,
   ImagePlus,
   Loader2,
+  RefreshCw,
+  RotateCcw,
+  Trash2,
   Upload,
   XCircle,
 } from "lucide-react";
 
 import PageHeader from "@/components/layouts/PageHeader";
 import { useDemoSession } from "@/features/auth/AuthProvider";
+import { ApiError } from "@/lib/api-client";
 import {
+  cancelQuestionImport,
   commitQuestionImport,
   getQuestionImport,
   getQuestionImportHistory,
   getQuestionImportRows,
+  revalidateQuestionImport,
   uploadQuestionImport,
   uploadQuestionImportAsset,
 } from "@/lib/question-import-api";
-import { ApiError } from "@/lib/api-client";
 
 import type {
   QuestionImportBatch,
   QuestionImportBatchStatus,
   QuestionImportCommitResponse,
   QuestionImportHistoryItem,
+  QuestionImportIssue,
   QuestionImportRow,
   QuestionImportRowStatus,
 } from "@/types/question-import-api.types";
+
 
 type Step =
   | "select"
@@ -51,7 +58,27 @@ type RowFilter =
   | "valid"
   | "invalid";
 
+type ConfirmationAction =
+  | "cancel"
+  | "replace"
+  | null;
+
+interface IssueGroup {
+  key: string;
+  code: string;
+  message: string;
+  valuePreview: string | null;
+  count: number;
+  rowNumbers: number[];
+}
+
+interface ImportDiagnostics {
+  missingImageNames: string[];
+  issueGroups: IssueGroup[];
+}
+
 const pageSize = 50;
+
 
 function errorMessage(
   error: unknown,
@@ -90,6 +117,18 @@ function errorMessage(
   return "Something went wrong.";
 }
 
+
+function isXlsxFile(
+  file: File,
+) {
+  return file.name
+    .toLowerCase()
+    .endsWith(
+      ".xlsx",
+    );
+}
+
+
 function typeLabel(
   value: string | null,
 ) {
@@ -109,6 +148,7 @@ function typeLabel(
 
   return "—";
 }
+
 
 function rowStatusLabel(
   status: QuestionImportRowStatus,
@@ -140,6 +180,7 @@ function rowStatusLabel(
   return "Pending";
 }
 
+
 function rowStatusClasses(
   status: QuestionImportRowStatus,
 ) {
@@ -169,65 +210,6 @@ function rowStatusClasses(
   );
 }
 
-async function collectMissingImageNames(
-  token: string,
-  batchId: string,
-) {
-  const names =
-    new Set<string>();
-
-  let page = 1;
-  let total = 0;
-
-  do {
-    const response =
-      await getQuestionImportRows(
-        token,
-        batchId,
-        {
-          row_status:
-            "invalid",
-          page,
-          page_size:
-            100,
-        },
-      );
-
-    total =
-      response.total;
-
-    for (
-      const row
-      of response.items
-    ) {
-      for (
-        const issue
-        of row.issues
-      ) {
-        if (
-          issue.code ===
-            "MISSING_IMAGE_FILE" &&
-          issue.asset_filename
-        ) {
-          names.add(
-            issue.asset_filename,
-          );
-        }
-      }
-    }
-
-    page += 1;
-  } while (
-    (page - 1) * 100 <
-    total
-  );
-
-  return Array.from(
-    names,
-  ).sort((a, b) =>
-    a.localeCompare(b),
-  );
-}
 
 function importStatusLabel(
   status: QuestionImportBatchStatus,
@@ -263,6 +245,7 @@ function importStatusLabel(
   return "Uploaded";
 }
 
+
 function importStatusClasses(
   status: QuestionImportBatchStatus,
 ) {
@@ -290,11 +273,21 @@ function importStatusClasses(
     );
   }
 
+  if (
+    status === "cancelled"
+  ) {
+    return (
+      "border-gray-300 bg-gray-100 " +
+      "text-gray-700"
+    );
+  }
+
   return (
     "border-gray-200 bg-gray-50 " +
     "text-gray-700"
   );
 }
+
 
 function importActionLabel(
   status: QuestionImportBatchStatus,
@@ -309,6 +302,7 @@ function importActionLabel(
 
   return "View";
 }
+
 
 function formatImportDate(
   value: string,
@@ -332,6 +326,165 @@ function formatImportDate(
       year: "numeric",
     },
   ).format(date);
+}
+
+
+function groupIssues(
+  rows: QuestionImportRow[],
+): IssueGroup[] {
+  const groups =
+    new Map<string, IssueGroup>();
+
+  for (const row of rows) {
+    for (const issue of row.issues) {
+      if (
+        issue.severity !==
+        "error"
+      ) {
+        continue;
+      }
+
+      const key = [
+        issue.code,
+        issue.message,
+        issue.value_preview ?? "",
+      ].join("|");
+
+      const existing =
+        groups.get(key);
+
+      if (existing) {
+        existing.count += 1;
+
+        if (
+          !existing.rowNumbers.includes(
+            row.row_number,
+          )
+        ) {
+          existing.rowNumbers.push(
+            row.row_number,
+          );
+        }
+
+        continue;
+      }
+
+      groups.set(
+        key,
+        {
+          key,
+          code:
+            issue.code,
+          message:
+            issue.message,
+          valuePreview:
+            issue.value_preview,
+          count:
+            1,
+          rowNumbers: [
+            row.row_number,
+          ],
+        },
+      );
+    }
+  }
+
+  return Array.from(
+    groups.values(),
+  ).sort(
+    (left, right) =>
+      right.count -
+      left.count,
+  );
+}
+
+
+async function collectDiagnostics(
+  token: string,
+  batchId: string,
+): Promise<ImportDiagnostics> {
+  const invalidRows:
+    QuestionImportRow[] = [];
+
+  let page = 1;
+  let total = 0;
+
+  do {
+    const response =
+      await getQuestionImportRows(
+        token,
+        batchId,
+        {
+          row_status:
+            "invalid",
+          page,
+          page_size:
+            100,
+        },
+      );
+
+    invalidRows.push(
+      ...response.items,
+    );
+
+    total =
+      response.total;
+    page += 1;
+  } while (
+    (page - 1) * 100 <
+    total
+  );
+
+  const imageNames =
+    new Set<string>();
+
+  for (
+    const row
+    of invalidRows
+  ) {
+    for (
+      const issue
+      of row.issues
+    ) {
+      if (
+        issue.code ===
+          "MISSING_IMAGE_FILE" &&
+        issue.asset_filename
+      ) {
+        imageNames.add(
+          issue.asset_filename,
+        );
+      }
+    }
+  }
+
+  return {
+    missingImageNames:
+      Array.from(
+        imageNames,
+      ).sort(
+        (left, right) =>
+          left.localeCompare(
+            right,
+          ),
+      ),
+    issueGroups:
+      groupIssues(
+        invalidRows,
+      ),
+  };
+}
+
+
+function isRecoverableStatus(
+  status: QuestionImportBatchStatus,
+) {
+  return [
+    "uploaded",
+    "invalid",
+    "ready",
+    "failed",
+  ].includes(status);
 }
 
 
@@ -405,6 +558,14 @@ export default function QuestionImportPage() {
     );
 
   const [
+    issueGroups,
+    setIssueGroups,
+  ] =
+    useState<IssueGroup[]>(
+      [],
+    );
+
+  const [
     busy,
     setBusy,
   ] =
@@ -417,13 +578,18 @@ export default function QuestionImportPage() {
     useState("");
 
   const [
+    notice,
+    setNotice,
+  ] =
+    useState("");
+
+  const [
     commitResult,
     setCommitResult,
   ] =
     useState<QuestionImportCommitResponse | null>(
       null,
     );
-
 
   const [
     history,
@@ -451,6 +617,22 @@ export default function QuestionImportPage() {
   ] =
     useState(0);
 
+  const [
+    confirmationAction,
+    setConfirmationAction,
+  ] =
+    useState<ConfirmationAction>(
+      null,
+    );
+
+  const [
+    replacementFile,
+    setReplacementFile,
+  ] =
+    useState<File | null>(
+      null,
+    );
+
   useEffect(() => {
     if (
       !ready ||
@@ -460,6 +642,10 @@ export default function QuestionImportPage() {
     }
 
     let cancelled = false;
+
+    setHistoryLoading(
+      true,
+    );
 
     getQuestionImportHistory(
       token,
@@ -551,6 +737,12 @@ export default function QuestionImportPage() {
       [rows],
     );
 
+  const canRecover =
+    batch !== null &&
+    isRecoverableStatus(
+      batch.status,
+    );
+
   async function loadRows(
     batchId: string,
     nextFilter: RowFilter,
@@ -570,7 +762,8 @@ export default function QuestionImportPage() {
               "all"
               ? undefined
               : nextFilter,
-          page: nextPage,
+          page:
+            nextPage,
           page_size:
             pageSize,
         },
@@ -590,21 +783,85 @@ export default function QuestionImportPage() {
     );
   }
 
-  async function refreshMissingImages(
+  async function refreshDiagnostics(
     batchId: string,
   ) {
     if (!token) {
       return;
     }
 
-    const filenames =
-      await collectMissingImageNames(
+    const diagnostics =
+      await collectDiagnostics(
         token,
         batchId,
       );
 
     setMissingImages(
-      filenames,
+      diagnostics
+        .missingImageNames,
+    );
+    setIssueGroups(
+      diagnostics.issueGroups,
+    );
+  }
+
+  async function loadPreview(
+    nextBatch: QuestionImportBatch,
+    nextFilter: RowFilter = "all",
+    nextPage: number = 1,
+  ) {
+    await Promise.all([
+      loadRows(
+        nextBatch.id,
+        nextFilter,
+        nextPage,
+      ),
+      refreshDiagnostics(
+        nextBatch.id,
+      ),
+    ]);
+  }
+
+  function clearMessages() {
+    setError("");
+    setNotice("");
+  }
+
+  function retryHistory() {
+    setHistoryError("");
+    setHistoryLoading(
+      true,
+    );
+    setHistoryReloadKey(
+      (value) =>
+        value + 1,
+    );
+  }
+
+  function chooseWorkbook(
+    file: File | null,
+  ) {
+    clearMessages();
+
+    if (!file) {
+      setWorkbookFile(
+        null,
+      );
+      return;
+    }
+
+    if (!isXlsxFile(file)) {
+      setWorkbookFile(
+        null,
+      );
+      setError(
+        "Choose the approved .xlsx question-bank template.",
+      );
+      return;
+    }
+
+    setWorkbookFile(
+      file,
     );
   }
 
@@ -616,7 +873,7 @@ export default function QuestionImportPage() {
     }
 
     setBusy(true);
-    setError("");
+    clearMessages();
     setCommitResult(
       null,
     );
@@ -635,17 +892,9 @@ export default function QuestionImportPage() {
         "preview",
       );
 
-      await Promise.all([
-        loadRows(
-          refreshed.id,
-          "all",
-          1,
-        ),
-        refreshMissingImages(
-          refreshed.id,
-        ),
-      ]);
-
+      await loadPreview(
+        refreshed,
+      );
     } catch (
       caught: unknown
     ) {
@@ -665,54 +914,9 @@ export default function QuestionImportPage() {
           caught,
         ),
       );
-
     } finally {
       setBusy(false);
     }
-  }
-
-  function retryHistory() {
-    setHistoryError("");
-    setHistoryLoading(
-      true,
-    );
-    setHistoryReloadKey(
-      (value) =>
-        value + 1,
-    );
-  }
-
-  function chooseWorkbook(
-    file: File | null,
-  ) {
-    setError("");
-
-    if (!file) {
-      setWorkbookFile(
-        null,
-      );
-      return;
-    }
-
-    if (
-      !file.name
-        .toLowerCase()
-        .endsWith(
-          ".xlsx",
-        )
-    ) {
-      setWorkbookFile(
-        null,
-      );
-      setError(
-        "Choose the approved .xlsx question-bank template.",
-      );
-      return;
-    }
-
-    setWorkbookFile(
-      file,
-    );
   }
 
   async function validateWorkbook() {
@@ -724,7 +928,7 @@ export default function QuestionImportPage() {
     }
 
     setBusy(true);
-    setError("");
+    clearMessages();
 
     try {
       const uploaded =
@@ -740,17 +944,9 @@ export default function QuestionImportPage() {
         "preview",
       );
 
-      await Promise.all([
-        loadRows(
-          uploaded.id,
-          "all",
-          1,
-        ),
-        refreshMissingImages(
-          uploaded.id,
-        ),
-      ]);
-
+      await loadPreview(
+        uploaded,
+      );
     } catch (
       caught: unknown
     ) {
@@ -770,7 +966,6 @@ export default function QuestionImportPage() {
           caught,
         ),
       );
-
     } finally {
       setBusy(false);
     }
@@ -788,7 +983,7 @@ export default function QuestionImportPage() {
     }
 
     setBusy(true);
-    setError("");
+    clearMessages();
 
     try {
       let latestBatch =
@@ -819,17 +1014,15 @@ export default function QuestionImportPage() {
         refreshed,
       );
 
-      await Promise.all([
-        loadRows(
-          refreshed.id,
-          rowFilter,
-          1,
-        ),
-        refreshMissingImages(
-          refreshed.id,
-        ),
-      ]);
+      await loadPreview(
+        refreshed,
+        rowFilter,
+        1,
+      );
 
+      setNotice(
+        "Images uploaded and validation refreshed.",
+      );
     } catch (
       caught: unknown
     ) {
@@ -849,7 +1042,69 @@ export default function QuestionImportPage() {
           caught,
         ),
       );
+    } finally {
+      setBusy(false);
+    }
+  }
 
+  async function revalidateCurrentImport() {
+    if (
+      !token ||
+      !batch ||
+      !canRecover
+    ) {
+      return;
+    }
+
+    setBusy(true);
+    clearMessages();
+
+    try {
+      const refreshed =
+        await revalidateQuestionImport(
+          token,
+          batch.id,
+        );
+
+      setBatch(
+        refreshed,
+      );
+
+      await loadPreview(
+        refreshed,
+        rowFilter,
+        1,
+      );
+
+      setNotice(
+        refreshed.can_import
+          ? "Validation refreshed. This import is ready."
+          : "Validation refreshed. Some issues still need attention.",
+      );
+
+      setHistoryReloadKey(
+        (value) =>
+          value + 1,
+      );
+    } catch (
+      caught: unknown
+    ) {
+      if (
+        caught instanceof
+          ApiError &&
+        caught.status === 401
+      ) {
+        handleError(
+          caught,
+        );
+        return;
+      }
+
+      setError(
+        errorMessage(
+          caught,
+        ),
+      );
     } finally {
       setBusy(false);
     }
@@ -865,7 +1120,7 @@ export default function QuestionImportPage() {
     }
 
     setBusy(true);
-    setError("");
+    clearMessages();
 
     try {
       const result =
@@ -887,7 +1142,6 @@ export default function QuestionImportPage() {
         (value) =>
           value + 1,
       );
-
     } catch (
       caught: unknown
     ) {
@@ -907,7 +1161,6 @@ export default function QuestionImportPage() {
           caught,
         ),
       );
-
     } finally {
       setBusy(false);
     }
@@ -921,7 +1174,7 @@ export default function QuestionImportPage() {
     }
 
     setBusy(true);
-    setError("");
+    clearMessages();
 
     try {
       await loadRows(
@@ -950,7 +1203,7 @@ export default function QuestionImportPage() {
     }
 
     setBusy(true);
-    setError("");
+    clearMessages();
 
     try {
       await loadRows(
@@ -980,6 +1233,37 @@ export default function QuestionImportPage() {
     );
   }
 
+  function handleCorrectedWorkbookInput(
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const file =
+      event.target.files?.[0] ??
+      null;
+
+    event.target.value =
+      "";
+
+    if (!file) {
+      return;
+    }
+
+    clearMessages();
+
+    if (!isXlsxFile(file)) {
+      setError(
+        "Choose the approved .xlsx question-bank template.",
+      );
+      return;
+    }
+
+    setReplacementFile(
+      file,
+    );
+    setConfirmationAction(
+      "replace",
+    );
+  }
+
   function handleImageInput(
     event: ChangeEvent<HTMLInputElement>,
   ) {
@@ -1006,6 +1290,151 @@ export default function QuestionImportPage() {
     );
   }
 
+  function closeConfirmation() {
+    setConfirmationAction(
+      null,
+    );
+    setReplacementFile(
+      null,
+    );
+  }
+
+  async function performConfirmedAction() {
+    if (
+      !token ||
+      !batch ||
+      !confirmationAction
+    ) {
+      return;
+    }
+
+    setBusy(true);
+    clearMessages();
+
+    const selectedAction =
+      confirmationAction;
+    const selectedFile =
+      replacementFile;
+
+    try {
+      if (
+        selectedAction ===
+        "cancel"
+      ) {
+        const result =
+          await cancelQuestionImport(
+            token,
+            batch.id,
+          );
+
+        setBatch(
+          result.batch,
+        );
+        setMissingImages(
+          [],
+        );
+        setNotice(
+          result.already_cancelled
+            ? "This import was already cancelled."
+            : "Import cancelled. No questions were created.",
+        );
+        setHistoryReloadKey(
+          (value) =>
+            value + 1,
+        );
+        closeConfirmation();
+        return;
+      }
+
+      if (!selectedFile) {
+        return;
+      }
+
+      let cancelledBatch =
+        batch;
+
+      if (
+        batch.status !==
+        "cancelled"
+      ) {
+        const cancelled =
+          await cancelQuestionImport(
+            token,
+            batch.id,
+          );
+
+        cancelledBatch =
+          cancelled.batch;
+        setBatch(
+          cancelledBatch,
+        );
+      }
+
+      const uploaded =
+        await uploadQuestionImport(
+          token,
+          selectedFile,
+        );
+
+      setWorkbookFile(
+        selectedFile,
+      );
+      setBatch(
+        uploaded,
+      );
+      setCommitResult(
+        null,
+      );
+      setStep(
+        "preview",
+      );
+      setRowFilter(
+        "all",
+      );
+      setPage(1);
+
+      await loadPreview(
+        uploaded,
+      );
+
+      setNotice(
+        "Corrected workbook uploaded and validated.",
+      );
+      setHistoryReloadKey(
+        (value) =>
+          value + 1,
+      );
+      closeConfirmation();
+    } catch (
+      caught: unknown
+    ) {
+      if (
+        caught instanceof
+          ApiError &&
+        caught.status === 401
+      ) {
+        handleError(
+          caught,
+        );
+        return;
+      }
+
+      setError(
+        errorMessage(
+          caught,
+        ),
+      );
+      setConfirmationAction(
+        null,
+      );
+      setReplacementFile(
+        null,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function resetImport() {
     setStep(
       "select",
@@ -1025,14 +1454,23 @@ export default function QuestionImportPage() {
     setMissingImages(
       [],
     );
+    setIssueGroups(
+      [],
+    );
     setCommitResult(
       null,
     );
     setError("");
+    setNotice("");
     setRowFilter(
       "all",
     );
     setPage(1);
+    closeConfirmation();
+    setHistoryReloadKey(
+      (value) =>
+        value + 1,
+    );
   }
 
   if (
@@ -1072,289 +1510,175 @@ export default function QuestionImportPage() {
         </div>
       )}
 
+      {notice && (
+        <div
+          role="status"
+          className="mb-5 rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800"
+        >
+          {notice}
+        </div>
+      )}
+
       {step ===
         "select" && (
         <>
           <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
-          <div className="rounded-md border border-[#d8dbde] bg-white p-6">
-            <h2 className="text-lg font-semibold text-[#303438]">
-              Upload question bank
-            </h2>
+            <div className="rounded-md border border-[#d8dbde] bg-white p-6">
+              <h2 className="text-lg font-semibold text-[#303438]">
+                Upload question bank
+              </h2>
 
-            <p className="mt-2 text-sm text-[#666d72]">
-              Use the approved
-              Excel template. The
-              file is validated
-              before any questions
-              are created.
-            </p>
-
-            <label className="mt-6 flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed border-[#c7cbce] bg-[#fafafa] px-6 text-center hover:bg-[#f5f6f7]">
-              <FileSpreadsheet
-                aria-hidden="true"
-                className="mb-3 size-8 text-[#62686d]"
-              />
-
-              <span className="font-medium">
-                Choose Excel file
-              </span>
-
-              <span className="mt-1 text-xs text-[#737a80]">
-                .xlsx · up to 5 MiB
-                · up to 1,000
-                questions
-              </span>
-
-              <input
-                aria-label="Question bank workbook"
-                type="file"
-                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                className="sr-only"
-                onChange={
-                  handleWorkbookInput
-                }
-              />
-            </label>
-
-            {workbookFile && (
-              <div className="mt-4 flex items-center justify-between gap-4 rounded-md border border-[#d8dbde] bg-[#f7f8f8] p-4">
-                <div>
-                  <p className="font-medium">
-                    {
-                      workbookFile.name
-                    }
-                  </p>
-                  <p className="text-xs text-[#737a80]">
-                    {Math.ceil(
-                      workbookFile.size /
-                        1024,
-                    )}{" "}
-                    KiB
-                  </p>
-                </div>
-
-                <CheckCircle2
-                  aria-label="Workbook selected"
-                  className="size-5 text-green-700"
-                />
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={
-                validateWorkbook
-              }
-              disabled={
-                !workbookFile ||
-                busy
-              }
-              className="mt-5 inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[#3d4145] px-6 text-sm font-semibold text-white hover:bg-[#292d30] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {busy ? (
-                <Loader2
-                  aria-hidden="true"
-                  className="size-4 animate-spin"
-                />
-              ) : (
-                <Upload
-                  aria-hidden="true"
-                  className="size-4"
-                />
-              )}
-
-              Validate File
-            </button>
-          </div>
-
-          <aside className="rounded-md border border-[#d8dbde] bg-[#f7f8f8] p-5">
-            <h2 className="font-semibold">
-              Need the template?
-            </h2>
-
-            <p className="mt-2 text-sm text-[#666d72]">
-              Download the current
-              workbook with
-              examples, dropdowns
-              and field guidance.
-            </p>
-
-            <a
-              href="/templates/question-bank-import-template-v2.xlsx"
-              download
-              className="mt-4 inline-flex min-h-10 items-center justify-center rounded-md border border-[#bfc4c7] bg-white px-4 text-sm font-medium hover:bg-[#f1f2f3]"
-            >
-              Download Excel Template
-            </a>
-
-            <div className="mt-6 border-t border-[#d8dbde] pt-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-[#737a80]">
-                What happens next
+              <p className="mt-2 text-sm text-[#666d72]">
+                Use the approved Excel
+                template. The file is
+                validated before any
+                questions are created.
               </p>
 
-              <ol className="mt-3 space-y-2 text-sm text-[#555c61]">
-                <li>
-                  1. Validate every
-                  row.
-                </li>
-                <li>
-                  2. Add referenced
-                  images if needed.
-                </li>
-                <li>
-                  3. Review errors
-                  and warnings.
-                </li>
-                <li>
-                  4. Confirm the
-                  entire import.
-                </li>
-              </ol>
+              <label className="mt-6 flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed border-[#c7cbce] bg-[#fafafa] px-6 text-center hover:bg-[#f5f6f7]">
+                <FileSpreadsheet
+                  aria-hidden="true"
+                  className="mb-3 size-8 text-[#62686d]"
+                />
+
+                <span className="font-medium">
+                  Choose Excel file
+                </span>
+
+                <span className="mt-1 text-xs text-[#737a80]">
+                  .xlsx · up to 5 MiB ·
+                  up to 1,000 questions
+                </span>
+
+                <input
+                  aria-label="Question bank workbook"
+                  type="file"
+                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  className="sr-only"
+                  onChange={
+                    handleWorkbookInput
+                  }
+                />
+              </label>
+
+              {workbookFile && (
+                <div className="mt-4 flex items-center justify-between gap-4 rounded-md border border-[#d8dbde] bg-[#f7f8f8] p-4">
+                  <div>
+                    <p className="font-medium">
+                      {
+                        workbookFile.name
+                      }
+                    </p>
+
+                    <p className="text-xs text-[#737a80]">
+                      {Math.ceil(
+                        workbookFile.size /
+                          1024,
+                      )}{" "}
+                      KiB
+                    </p>
+                  </div>
+
+                  <CheckCircle2
+                    aria-label="Workbook selected"
+                    className="size-5 text-green-700"
+                  />
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={
+                  validateWorkbook
+                }
+                disabled={
+                  !workbookFile ||
+                  busy
+                }
+                className="mt-5 inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[#3d4145] px-6 text-sm font-semibold text-white hover:bg-[#292d30] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {busy ? (
+                  <Loader2
+                    aria-hidden="true"
+                    className="size-4 animate-spin"
+                  />
+                ) : (
+                  <Upload
+                    aria-hidden="true"
+                    className="size-4"
+                  />
+                )}
+
+                Validate File
+              </button>
             </div>
-          </aside>
+
+            <aside className="rounded-md border border-[#d8dbde] bg-[#f7f8f8] p-5">
+              <h2 className="font-semibold">
+                Need the template?
+              </h2>
+
+              <p className="mt-2 text-sm text-[#666d72]">
+                Download the current
+                workbook with examples,
+                dropdowns and field
+                guidance.
+              </p>
+
+              <a
+                href="/templates/question-bank-import-template-v2.xlsx"
+                download
+                className="mt-4 inline-flex min-h-10 items-center justify-center rounded-md border border-[#bfc4c7] bg-white px-4 text-sm font-medium hover:bg-[#f1f2f3]"
+              >
+                Download Excel Template
+              </a>
+
+              <div className="mt-6 border-t border-[#d8dbde] pt-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#737a80]">
+                  What happens next
+                </p>
+
+                <ol className="mt-3 space-y-2 text-sm text-[#555c61]">
+                  <li>
+                    1. Validate every row.
+                  </li>
+                  <li>
+                    2. Add referenced images.
+                  </li>
+                  <li>
+                    3. Review grouped issues.
+                  </li>
+                  <li>
+                    4. Confirm the import.
+                  </li>
+                </ol>
+              </div>
+            </aside>
           </div>
 
-          <section className="mt-6 overflow-hidden rounded-md border border-[#d8dbde] bg-white">
-            <div className="flex items-center justify-between gap-4 border-b border-[#d8dbde] p-5">
-              <div>
-                <h2 className="font-semibold text-[#303438]">
-                  Recent Imports
-                </h2>
-                <p className="mt-1 text-sm text-[#6a7176]">
-                  Reopen a recent
-                  validation or
-                  review completed
-                  imports.
-                </p>
-              </div>
-
-              {historyError && (
-                <button
-                  type="button"
-                  onClick={
-                    retryHistory
-                  }
-                  className="text-sm font-medium underline underline-offset-4"
-                >
-                  Retry
-                </button>
-              )}
-            </div>
-
-            {historyLoading ? (
-              <div
-                role="status"
-                className="p-6 text-sm text-[#6a7176]"
-              >
-                Loading recent
-                imports...
-              </div>
-            ) : historyError ? (
-              <div
-                role="alert"
-                className="p-6 text-sm text-red-700"
-              >
-                {historyError}
-              </div>
-            ) : history.length ===
-              0 ? (
-              <div className="p-6 text-sm text-[#6a7176]">
-                No imports yet.
-                Your recent bulk
-                uploads will appear
-                here.
-              </div>
-            ) : (
-              <div className="divide-y divide-[#e1e3e5]">
-                {history.map(
-                  (item) => (
-                    <div
-                      key={
-                        item.id
-                      }
-                      className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="truncate font-medium">
-                            {
-                              item.original_filename
-                            }
-                          </p>
-
-                          <span
-                            className={`rounded-full border px-2.5 py-1 text-xs font-medium ${importStatusClasses(
-                              item.status,
-                            )}`}
-                          >
-                            {importStatusLabel(
-                              item.status,
-                            )}
-                          </span>
-                        </div>
-
-                        <p className="mt-1 text-sm text-[#666d72]">
-                          {
-                            item.total_rows
-                          }{" "}
-                          question
-                          {item.total_rows ===
-                          1
-                            ? ""
-                            : "s"}
-                          {" · "}
-                          {
-                            item.error_rows
-                          }{" "}
-                          error
-                          {item.error_rows ===
-                          1
-                            ? ""
-                            : "s"}
-                          {" · "}
-                          {
-                            item.warning_rows
-                          }{" "}
-                          warning
-                          {item.warning_rows ===
-                          1
-                            ? ""
-                            : "s"}
-                        </p>
-
-                        <p className="mt-1 text-xs text-[#7a8186]">
-                          {formatImportDate(
-                            item.created_at,
-                          )}
-                          {role ===
-                          "administrator"
-                            ? ` · ${item.uploaded_by_name || item.uploaded_by_email}`
-                            : ""}
-                        </p>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void openHistoryImport(
-                            item,
-                          )
-                        }
-                        disabled={
-                          busy
-                        }
-                        className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-md border border-[#cfd2d5] bg-white px-4 text-sm font-semibold text-[#3f4549] hover:bg-[#f5f6f7] disabled:opacity-50"
-                      >
-                        {importActionLabel(
-                          item.status,
-                        )}
-                      </button>
-                    </div>
-                  ),
-                )}
-              </div>
-            )}
-          </section>
+          <RecentImports
+            history={
+              history
+            }
+            historyLoading={
+              historyLoading
+            }
+            historyError={
+              historyError
+            }
+            role={
+              role
+            }
+            busy={
+              busy
+            }
+            onRetry={
+              retryHistory
+            }
+            onOpen={
+              openHistoryImport
+            }
+          />
         </>
       )}
 
@@ -1396,8 +1720,45 @@ export default function QuestionImportPage() {
             />
           </div>
 
-          {missingImages.length >
+          {batch.status ===
+            "cancelled" && (
+            <div className="mt-5 rounded-md border border-gray-300 bg-gray-100 p-5">
+              <div className="flex items-start gap-3">
+                <Trash2
+                  aria-hidden="true"
+                  className="mt-0.5 size-5 text-gray-700"
+                />
+
+                <div>
+                  <h2 className="font-semibold">
+                    Import cancelled
+                  </h2>
+
+                  <p className="mt-1 text-sm text-[#646b70]">
+                    No questions were
+                    created. The previous
+                    validation remains
+                    available as a
+                    read-only audit record.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {issueGroups.length >
             0 && (
+            <IssueSummary
+              groups={
+                issueGroups
+              }
+            />
+          )}
+
+          {missingImages.length >
+            0 &&
+            batch.status !==
+              "cancelled" && (
             <div className="mt-5 rounded-md border border-amber-200 bg-amber-50 p-5">
               <div className="flex items-start gap-3">
                 <ImagePlus
@@ -1407,13 +1768,11 @@ export default function QuestionImportPage() {
 
                 <div className="min-w-0 flex-1">
                   <h2 className="font-semibold text-amber-950">
-                    Add referenced
-                    images
+                    Add referenced images
                   </h2>
 
                   <p className="mt-1 text-sm text-amber-900">
-                    The workbook
-                    references{" "}
+                    The workbook references{" "}
                     {
                       missingImages.length
                     }{" "}
@@ -1422,8 +1781,8 @@ export default function QuestionImportPage() {
                     1
                       ? ""
                       : "s"}{" "}
-                    that have not
-                    been supplied.
+                    that have not been
+                    supplied.
                   </p>
 
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -1457,20 +1816,19 @@ export default function QuestionImportPage() {
                     className="mt-4 rounded-md border-2 border-dashed border-amber-300 bg-white p-5 text-center"
                   >
                     <p className="text-sm font-medium">
-                      Drop PNG,
-                      JPEG or WebP
-                      files here
+                      Drop PNG, JPEG or
+                      WebP files here
                     </p>
 
                     <p className="mt-1 text-xs text-[#737a80]">
-                      Filenames are
-                      matched to the
-                      workbook
+                      Filenames are matched
+                      to the workbook
                       automatically.
                     </p>
 
                     <label className="mt-3 inline-flex cursor-pointer rounded-md border border-[#c7cbce] px-4 py-2 text-sm font-medium hover:bg-[#f6f7f7]">
                       Browse Images
+
                       <input
                         aria-label="Import images"
                         type="file"
@@ -1488,298 +1846,67 @@ export default function QuestionImportPage() {
             </div>
           )}
 
-          <div className="mt-5 rounded-md border border-[#d8dbde] bg-white">
-            <div className="flex flex-col gap-3 border-b border-[#d8dbde] p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="font-semibold">
-                  Validation Preview
-                </h2>
-                <p className="mt-1 text-xs text-[#737a80]">
-                  {batch.original_filename}
-                  {" · "}
-                  Contract{" "}
-                  {
-                    batch.template_version
-                  }
-                </p>
-              </div>
+          <ValidationPreview
+            batch={
+              batch
+            }
+            rows={
+              rows
+            }
+            rowsTotal={
+              rowsTotal
+            }
+            rowFilter={
+              rowFilter
+            }
+            page={
+              page
+            }
+            pageCount={
+              pageCount
+            }
+            visibleErrorCount={
+              visibleErrorCount
+            }
+            busy={
+              busy
+            }
+            onFilter={
+              changeFilter
+            }
+            onPage={
+              changePage
+            }
+          />
 
-              <div className="flex flex-wrap gap-2">
-                {(
-                  [
-                    "all",
-                    "valid",
-                    "invalid",
-                  ] as const
-                ).map(
-                  (
-                    filter,
-                  ) => (
-                    <button
-                      key={
-                        filter
-                      }
-                      type="button"
-                      onClick={() =>
-                        void changeFilter(
-                          filter,
-                        )
-                      }
-                      disabled={
-                        busy
-                      }
-                      className={`rounded-md px-3 py-2 text-sm font-medium ${
-                        rowFilter ===
-                        filter
-                          ? "bg-[#3d4145] text-white"
-                          : "border border-[#cfd2d5] bg-white text-[#4e555a]"
-                      }`}
-                    >
-                      {filter ===
-                      "all"
-                        ? "All"
-                        : filter ===
-                            "valid"
-                          ? "Ready"
-                          : "Needs Attention"}
-                    </button>
-                  ),
-                )}
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] border-collapse text-left text-sm">
-                <thead className="bg-[#f3f4f5] text-xs font-semibold uppercase tracking-wide text-[#656c72]">
-                  <tr>
-                    <th className="px-4 py-3">
-                      Row
-                    </th>
-                    <th className="px-4 py-3">
-                      Question
-                    </th>
-                    <th className="px-4 py-3">
-                      Certification
-                    </th>
-                    <th className="px-4 py-3">
-                      Category
-                    </th>
-                    <th className="px-4 py-3">
-                      Type
-                    </th>
-                    <th className="px-4 py-3">
-                      Image
-                    </th>
-                    <th className="px-4 py-3">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {rows.map(
-                    (row) => (
-                      <ImportRow
-                        key={
-                          row.id
-                        }
-                        row={
-                          row
-                        }
-                      />
-                    ),
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {rows.length ===
-              0 && (
-              <div className="border-t border-[#d8dbde] p-8 text-center text-sm text-[#70777c]">
-                No rows match this
-                filter.
-              </div>
-            )}
-
-            <div className="flex flex-col gap-3 border-t border-[#d8dbde] p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
-              <span>
-                {rowsTotal} row
-                {rowsTotal === 1
-                  ? ""
-                  : "s"}{" "}
-                in this view
-                {visibleErrorCount >
-                0
-                  ? ` · ${visibleErrorCount} visible error${visibleErrorCount === 1 ? "" : "s"}`
-                  : ""}
-              </span>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  aria-label="Previous preview page"
-                  disabled={
-                    page === 1 ||
-                    busy
-                  }
-                  onClick={() =>
-                    void changePage(
-                      Math.max(
-                        1,
-                        page - 1,
-                      ),
-                    )
-                  }
-                  className="rounded border border-[#cfd2d5] px-3 py-1.5 disabled:opacity-40"
-                >
-                  ‹
-                </button>
-
-                <span>
-                  {page} /{" "}
-                  {pageCount}
-                </span>
-
-                <button
-                  type="button"
-                  aria-label="Next preview page"
-                  disabled={
-                    page ===
-                      pageCount ||
-                    busy
-                  }
-                  onClick={() =>
-                    void changePage(
-                      Math.min(
-                        pageCount,
-                        page + 1,
-                      ),
-                    )
-                  }
-                  className="rounded border border-[#cfd2d5] px-3 py-1.5 disabled:opacity-40"
-                >
-                  ›
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-5 rounded-md border border-[#d8dbde] bg-white p-5">
-            {batch.status ===
-            "imported" ? (
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex items-start gap-3">
-                  <CheckCircle2
-                    aria-hidden="true"
-                    className="mt-0.5 size-5 text-green-700"
-                  />
-
-                  <div>
-                    <h2 className="font-semibold">
-                      Already imported
-                    </h2>
-                    <p className="mt-1 text-sm text-[#646b70]">
-                      This batch
-                      created{" "}
-                      {
-                        batch.imported_rows
-                      }{" "}
-                      pending Draft
-                      question
-                      {batch.imported_rows ===
-                      1
-                        ? ""
-                        : "s"}.
-                    </p>
-                  </div>
-                </div>
-
-                <Link
-                  href="/admin/questions"
-                  className="inline-flex min-h-11 items-center justify-center rounded-md bg-[#3d4145] px-6 text-sm font-semibold text-white hover:bg-[#292d30]"
-                >
-                  View Question Bank
-                </Link>
-              </div>
-            ) : batch.can_import ? (
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex items-start gap-3">
-                  <CheckCircle2
-                    aria-hidden="true"
-                    className="mt-0.5 size-5 text-green-700"
-                  />
-
-                  <div>
-                    <h2 className="font-semibold">
-                      Ready to import
-                    </h2>
-                    <p className="mt-1 text-sm text-[#646b70]">
-                      All{" "}
-                      {
-                        batch.valid_rows
-                      }{" "}
-                      questions will
-                      be created as
-                      pending,
-                      unpublished
-                      Drafts.
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={
-                    confirmImport
-                  }
-                  disabled={
-                    busy
-                  }
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[#3d4145] px-6 text-sm font-semibold text-white hover:bg-[#292d30] disabled:opacity-50"
-                >
-                  {busy && (
-                    <Loader2
-                      aria-hidden="true"
-                      className="size-4 animate-spin"
-                    />
-                  )}
-                  Import{" "}
-                  {
-                    batch.valid_rows
-                  }{" "}
-                  Questions
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-start gap-3">
-                <XCircle
-                  aria-hidden="true"
-                  className="mt-0.5 size-5 text-red-700"
-                />
-
-                <div>
-                  <h2 className="font-semibold">
-                    Import blocked
-                  </h2>
-                  <p className="mt-1 text-sm text-[#646b70]">
-                    Fix all{" "}
-                    {
-                      batch.error_rows
-                    }{" "}
-                    row
-                    {batch.error_rows ===
-                    1
-                      ? ""
-                      : "s"}{" "}
-                    with errors
-                    before importing.
-                    No questions have
-                    been created.
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
+          <ImportActions
+            batch={
+              batch
+            }
+            busy={
+              busy
+            }
+            canRecover={
+              canRecover
+            }
+            onImport={
+              confirmImport
+            }
+            onRevalidate={
+              revalidateCurrentImport
+            }
+            onCancel={() =>
+              setConfirmationAction(
+                "cancel",
+              )
+            }
+            onCorrectedFile={
+              handleCorrectedWorkbookInput
+            }
+            onReset={
+              resetImport
+            }
+          />
         </>
       )}
 
@@ -1806,8 +1933,8 @@ export default function QuestionImportPage() {
               ? ""
               : "s"}{" "}
             are now visible in the
-            Question Bank as
-            pending Drafts.
+            Question Bank as pending
+            Drafts.
           </p>
 
           <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
@@ -1830,9 +1957,838 @@ export default function QuestionImportPage() {
           </div>
         </div>
       )}
+
+      {confirmationAction && (
+        <ConfirmationDialog
+          action={
+            confirmationAction
+          }
+          file={
+            replacementFile
+          }
+          busy={
+            busy
+          }
+          onClose={
+            closeConfirmation
+          }
+          onConfirm={
+            performConfirmedAction
+          }
+        />
+      )}
     </section>
   );
 }
+
+
+function RecentImports({
+  history,
+  historyLoading,
+  historyError,
+  role,
+  busy,
+  onRetry,
+  onOpen,
+}: {
+  history: QuestionImportHistoryItem[];
+  historyLoading: boolean;
+  historyError: string;
+  role: string | null;
+  busy: boolean;
+  onRetry: () => void;
+  onOpen: (
+    item: QuestionImportHistoryItem,
+  ) => Promise<void>;
+}) {
+  return (
+    <section className="mt-6 overflow-hidden rounded-md border border-[#d8dbde] bg-white">
+      <div className="flex items-center justify-between gap-4 border-b border-[#d8dbde] p-5">
+        <div>
+          <h2 className="font-semibold text-[#303438]">
+            Recent Imports
+          </h2>
+
+          <p className="mt-1 text-sm text-[#6a7176]">
+            Reopen a recent validation
+            or review completed and
+            cancelled imports.
+          </p>
+        </div>
+
+        {historyError && (
+          <button
+            type="button"
+            onClick={
+              onRetry
+            }
+            className="text-sm font-medium underline underline-offset-4"
+          >
+            Retry
+          </button>
+        )}
+      </div>
+
+      {historyLoading ? (
+        <div
+          role="status"
+          className="p-6 text-sm text-[#6a7176]"
+        >
+          Loading recent imports...
+        </div>
+      ) : historyError ? (
+        <div
+          role="alert"
+          className="p-6 text-sm text-red-700"
+        >
+          {historyError}
+        </div>
+      ) : history.length ===
+        0 ? (
+        <div className="p-6 text-sm text-[#6a7176]">
+          No imports yet. Your recent
+          bulk uploads will appear here.
+        </div>
+      ) : (
+        <div className="divide-y divide-[#e1e3e5]">
+          {history.map(
+            (item) => (
+              <div
+                key={
+                  item.id
+                }
+                className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate font-medium">
+                      {
+                        item.original_filename
+                      }
+                    </p>
+
+                    <span
+                      className={`rounded-full border px-2.5 py-1 text-xs font-medium ${importStatusClasses(
+                        item.status,
+                      )}`}
+                    >
+                      {importStatusLabel(
+                        item.status,
+                      )}
+                    </span>
+                  </div>
+
+                  <p className="mt-1 text-sm text-[#666d72]">
+                    {
+                      item.total_rows
+                    }{" "}
+                    question
+                    {item.total_rows ===
+                    1
+                      ? ""
+                      : "s"}
+                    {" · "}
+                    {
+                      item.error_rows
+                    }{" "}
+                    error
+                    {item.error_rows ===
+                    1
+                      ? ""
+                      : "s"}
+                    {" · "}
+                    {
+                      item.warning_rows
+                    }{" "}
+                    warning
+                    {item.warning_rows ===
+                    1
+                      ? ""
+                      : "s"}
+                  </p>
+
+                  <p className="mt-1 text-xs text-[#7a8186]">
+                    {formatImportDate(
+                      item.created_at,
+                    )}
+                    {role ===
+                    "administrator"
+                      ? ` · ${item.uploaded_by_name || item.uploaded_by_email}`
+                      : ""}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    void onOpen(
+                      item,
+                    )
+                  }
+                  disabled={
+                    busy
+                  }
+                  className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-md border border-[#cfd2d5] bg-white px-4 text-sm font-semibold text-[#3f4549] hover:bg-[#f5f6f7] disabled:opacity-50"
+                >
+                  {importActionLabel(
+                    item.status,
+                  )}
+                </button>
+              </div>
+            ),
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+
+function IssueSummary({
+  groups,
+}: {
+  groups: IssueGroup[];
+}) {
+  return (
+    <section className="mt-5 overflow-hidden rounded-md border border-red-200 bg-white">
+      <div className="border-b border-red-100 bg-red-50 p-5">
+        <div className="flex items-start gap-3">
+          <AlertTriangle
+            aria-hidden="true"
+            className="mt-0.5 size-5 text-red-700"
+          />
+
+          <div>
+            <h2 className="font-semibold text-red-950">
+              Issues to resolve
+            </h2>
+
+            <p className="mt-1 text-sm text-red-800">
+              Repeated row errors are
+              grouped so you can correct
+              the workbook efficiently.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="divide-y divide-[#eceeef]">
+        {groups.map(
+          (group) => (
+            <div
+              key={
+                group.key
+              }
+              className="p-5"
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="font-semibold text-[#303438]">
+                    {group.code}
+                  </p>
+
+                  <p className="mt-1 text-sm text-[#62696e]">
+                    {
+                      group.message
+                    }
+                  </p>
+
+                  {group.valuePreview && (
+                    <p className="mt-2 text-xs text-[#737a80]">
+                      Value:{" "}
+                      <code className="rounded bg-[#f2f3f4] px-1.5 py-0.5">
+                        {
+                          group.valuePreview
+                        }
+                      </code>
+                    </p>
+                  )}
+                </div>
+
+                <span className="shrink-0 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-800">
+                  Affects{" "}
+                  {group.count}{" "}
+                  row
+                  {group.count ===
+                  1
+                    ? ""
+                    : "s"}
+                </span>
+              </div>
+
+              <p className="mt-2 text-xs text-[#7a8186]">
+                Rows:{" "}
+                {group.rowNumbers
+                  .slice(
+                    0,
+                    12,
+                  )
+                  .join(", ")}
+                {group.rowNumbers.length >
+                12
+                  ? "…"
+                  : ""}
+              </p>
+            </div>
+          ),
+        )}
+      </div>
+    </section>
+  );
+}
+
+
+function ValidationPreview({
+  batch,
+  rows,
+  rowsTotal,
+  rowFilter,
+  page,
+  pageCount,
+  visibleErrorCount,
+  busy,
+  onFilter,
+  onPage,
+}: {
+  batch: QuestionImportBatch;
+  rows: QuestionImportRow[];
+  rowsTotal: number;
+  rowFilter: RowFilter;
+  page: number;
+  pageCount: number;
+  visibleErrorCount: number;
+  busy: boolean;
+  onFilter: (
+    filter: RowFilter,
+  ) => Promise<void>;
+  onPage: (
+    page: number,
+  ) => Promise<void>;
+}) {
+  return (
+    <div className="mt-5 rounded-md border border-[#d8dbde] bg-white">
+      <div className="flex flex-col gap-3 border-b border-[#d8dbde] p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="font-semibold">
+            Validation Preview
+          </h2>
+
+          <p className="mt-1 text-xs text-[#737a80]">
+            {
+              batch.original_filename
+            }
+            {" · "}
+            Contract{" "}
+            {
+              batch.template_version
+            }
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
+              "all",
+              "valid",
+              "invalid",
+            ] as const
+          ).map(
+            (
+              filter,
+            ) => (
+              <button
+                key={
+                  filter
+                }
+                type="button"
+                onClick={() =>
+                  void onFilter(
+                    filter,
+                  )
+                }
+                disabled={
+                  busy
+                }
+                className={`rounded-md px-3 py-2 text-sm font-medium ${
+                  rowFilter ===
+                  filter
+                    ? "bg-[#3d4145] text-white"
+                    : "border border-[#cfd2d5] bg-white text-[#4e555a]"
+                }`}
+              >
+                {filter ===
+                "all"
+                  ? "All"
+                  : filter ===
+                      "valid"
+                    ? "Ready"
+                    : "Needs Attention"}
+              </button>
+            ),
+          )}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[920px] border-collapse text-left text-sm">
+          <thead className="bg-[#f3f4f5] text-xs font-semibold uppercase tracking-wide text-[#656c72]">
+            <tr>
+              <th className="px-4 py-3">
+                Row
+              </th>
+              <th className="px-4 py-3">
+                Question
+              </th>
+              <th className="px-4 py-3">
+                Certification
+              </th>
+              <th className="px-4 py-3">
+                Category
+              </th>
+              <th className="px-4 py-3">
+                Type
+              </th>
+              <th className="px-4 py-3">
+                Image
+              </th>
+              <th className="px-4 py-3">
+                Status
+              </th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {rows.map(
+              (row) => (
+                <ImportRow
+                  key={
+                    row.id
+                  }
+                  row={
+                    row
+                  }
+                />
+              ),
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {rows.length ===
+        0 && (
+        <div className="border-t border-[#d8dbde] p-8 text-center text-sm text-[#70777c]">
+          No rows match this
+          filter.
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3 border-t border-[#d8dbde] p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <span>
+          {rowsTotal} row
+          {rowsTotal === 1
+            ? ""
+            : "s"}{" "}
+          in this view
+          {visibleErrorCount >
+          0
+            ? ` · ${visibleErrorCount} visible error${visibleErrorCount === 1 ? "" : "s"}`
+            : ""}
+        </span>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-label="Previous preview page"
+            disabled={
+              page === 1 ||
+              busy
+            }
+            onClick={() =>
+              void onPage(
+                Math.max(
+                  1,
+                  page - 1,
+                ),
+              )
+            }
+            className="rounded border border-[#cfd2d5] px-3 py-1.5 disabled:opacity-40"
+          >
+            ‹
+          </button>
+
+          <span>
+            {page} /{" "}
+            {pageCount}
+          </span>
+
+          <button
+            type="button"
+            aria-label="Next preview page"
+            disabled={
+              page ===
+                pageCount ||
+              busy
+            }
+            onClick={() =>
+              void onPage(
+                Math.min(
+                  pageCount,
+                  page + 1,
+                ),
+              )
+            }
+            className="rounded border border-[#cfd2d5] px-3 py-1.5 disabled:opacity-40"
+          >
+            ›
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function ImportActions({
+  batch,
+  busy,
+  canRecover,
+  onImport,
+  onRevalidate,
+  onCancel,
+  onCorrectedFile,
+  onReset,
+}: {
+  batch: QuestionImportBatch;
+  busy: boolean;
+  canRecover: boolean;
+  onImport: () => Promise<void>;
+  onRevalidate: () => Promise<void>;
+  onCancel: () => void;
+  onCorrectedFile: (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => void;
+  onReset: () => void;
+}) {
+  if (
+    batch.status ===
+    "imported"
+  ) {
+    return (
+      <div className="mt-5 rounded-md border border-[#d8dbde] bg-white p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-3">
+            <CheckCircle2
+              aria-hidden="true"
+              className="mt-0.5 size-5 text-green-700"
+            />
+
+            <div>
+              <h2 className="font-semibold">
+                Already imported
+              </h2>
+
+              <p className="mt-1 text-sm text-[#646b70]">
+                This batch created{" "}
+                {
+                  batch.imported_rows
+                }{" "}
+                pending Draft question
+                {batch.imported_rows ===
+                1
+                  ? ""
+                  : "s"}.
+              </p>
+            </div>
+          </div>
+
+          <Link
+            href="/admin/questions"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-[#3d4145] px-6 text-sm font-semibold text-white hover:bg-[#292d30]"
+          >
+            View Question Bank
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (
+    batch.status ===
+    "cancelled"
+  ) {
+    return (
+      <div className="mt-5 rounded-md border border-[#d8dbde] bg-white p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="font-semibold">
+              Cancelled import
+            </h2>
+
+            <p className="mt-1 text-sm text-[#646b70]">
+              This record is read-only.
+              Start a new import or upload
+              the same workbook again.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={
+              onReset
+            }
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-[#3d4145] px-6 text-sm font-semibold text-white"
+          >
+            Start New Import
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-5 rounded-md border border-[#d8dbde] bg-white p-5">
+      <div className="flex flex-col gap-5">
+        <div className="flex items-start gap-3">
+          {batch.can_import ? (
+            <CheckCircle2
+              aria-hidden="true"
+              className="mt-0.5 size-5 text-green-700"
+            />
+          ) : (
+            <XCircle
+              aria-hidden="true"
+              className="mt-0.5 size-5 text-red-700"
+            />
+          )}
+
+          <div>
+            <h2 className="font-semibold">
+              {batch.can_import
+                ? "Ready to import"
+                : "Import blocked"}
+            </h2>
+
+            <p className="mt-1 text-sm text-[#646b70]">
+              {batch.can_import
+                ? `All ${batch.valid_rows} questions will be created as pending, unpublished Drafts.`
+                : `Fix all ${batch.error_rows} row${batch.error_rows === 1 ? "" : "s"} with errors before importing. No questions have been created.`}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-[#e1e3e5] pt-4 sm:flex-row sm:flex-wrap sm:items-center">
+          <label
+            className={`inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-[#cfd2d5] bg-white px-4 text-sm font-semibold text-[#3f4549] hover:bg-[#f5f6f7] ${
+              busy || !canRecover
+                ? "pointer-events-none opacity-50"
+                : ""
+            }`}
+          >
+            <RotateCcw
+              aria-hidden="true"
+              className="size-4"
+            />
+
+            Upload Corrected File
+
+            <input
+              aria-label="Corrected question bank workbook"
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              className="sr-only"
+              disabled={
+                busy ||
+                !canRecover
+              }
+              onChange={
+                onCorrectedFile
+              }
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={() =>
+              void onRevalidate()
+            }
+            disabled={
+              busy ||
+              !canRecover
+            }
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#cfd2d5] bg-white px-4 text-sm font-semibold text-[#3f4549] hover:bg-[#f5f6f7] disabled:opacity-50"
+          >
+            <RefreshCw
+              aria-hidden="true"
+              className={`size-4 ${
+                busy
+                  ? "animate-spin"
+                  : ""
+              }`}
+            />
+
+            Revalidate
+          </button>
+
+          <button
+            type="button"
+            onClick={
+              onCancel
+            }
+            disabled={
+              busy ||
+              !canRecover
+            }
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-red-200 bg-white px-4 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+          >
+            <Trash2
+              aria-hidden="true"
+              className="size-4"
+            />
+
+            Cancel Import
+          </button>
+
+          {batch.can_import && (
+            <button
+              type="button"
+              onClick={() =>
+                void onImport()
+              }
+              disabled={
+                busy
+              }
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[#3d4145] px-6 text-sm font-semibold text-white hover:bg-[#292d30] disabled:opacity-50 sm:ml-auto"
+            >
+              {busy && (
+                <Loader2
+                  aria-hidden="true"
+                  className="size-4 animate-spin"
+                />
+              )}
+
+              Import{" "}
+              {
+                batch.valid_rows
+              }{" "}
+              Questions
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function ConfirmationDialog({
+  action,
+  file,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  action: Exclude<
+    ConfirmationAction,
+    null
+  >;
+  file: File | null;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const replacing =
+    action === "replace";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onMouseDown={(
+        event,
+      ) => {
+        if (
+          event.target ===
+          event.currentTarget &&
+          !busy
+        ) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="import-confirmation-title"
+        className="w-full max-w-lg rounded-md border border-[#d8dbde] bg-white p-6 shadow-xl"
+      >
+        <h2
+          id="import-confirmation-title"
+          className="text-lg font-semibold"
+        >
+          {replacing
+            ? "Replace this import?"
+            : "Cancel this import?"}
+        </h2>
+
+        <p className="mt-3 text-sm leading-6 text-[#60676c]">
+          {replacing
+            ? "The current validation and any temporary images will be discarded before the corrected workbook is validated."
+            : "No questions have been created. The validation results and any temporary images will be discarded."}
+        </p>
+
+        {replacing &&
+          file && (
+          <p className="mt-3 rounded-md bg-[#f4f5f6] p-3 text-sm font-medium">
+            {
+              file.name
+            }
+          </p>
+        )}
+
+        <p className="mt-3 text-sm font-medium text-[#3f4549]">
+          This action cannot be undone.
+        </p>
+
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={
+              onClose
+            }
+            disabled={
+              busy
+            }
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-[#cfd2d5] bg-white px-5 text-sm font-semibold disabled:opacity-50"
+          >
+            Keep Import
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              void onConfirm()
+            }
+            disabled={
+              busy
+            }
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-red-700 px-5 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50"
+          >
+            {busy && (
+              <Loader2
+                aria-hidden="true"
+                className="size-4 animate-spin"
+              />
+            )}
+
+            {replacing
+              ? "Replace and Validate"
+              : "Cancel Import"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function SummaryCard({
   label,
@@ -1865,12 +2821,14 @@ function SummaryCard({
       <p className="text-xs font-semibold uppercase tracking-wide text-[#737a80]">
         {label}
       </p>
+
       <p className="mt-1 text-2xl font-semibold">
         {value}
       </p>
     </div>
   );
 }
+
 
 function ImportRow({
   row,
@@ -1936,38 +2894,12 @@ function ImportRow({
                   issue,
                   index,
                 ) => (
-                  <div
+                  <RowIssue
                     key={`${issue.code}-${index}`}
-                    className="flex items-start gap-2 text-sm"
-                  >
-                    {issue.severity ===
-                    "error" ? (
-                      <XCircle
-                        aria-hidden="true"
-                        className="mt-0.5 size-4 shrink-0 text-red-700"
-                      />
-                    ) : (
-                      <AlertTriangle
-                        aria-hidden="true"
-                        className="mt-0.5 size-4 shrink-0 text-amber-700"
-                      />
-                    )}
-
-                    <div>
-                      <span className="font-medium">
-                        {
-                          issue.code
-                        }
-                      </span>
-                      <span className="text-[#5f666b]">
-                        {" "}
-                        —{" "}
-                        {
-                          issue.message
-                        }
-                      </span>
-                    </div>
-                  </div>
+                    issue={
+                      issue
+                    }
+                  />
                 ),
               )}
             </div>
@@ -1975,5 +2907,37 @@ function ImportRow({
         </tr>
       )}
     </>
+  );
+}
+
+
+function RowIssue({
+  issue,
+}: {
+  issue: QuestionImportIssue;
+}) {
+  return (
+    <div className="flex items-start gap-2 text-sm">
+      {issue.severity ===
+      "error" ? (
+        <XCircle
+          aria-hidden="true"
+          className="mt-0.5 size-4 shrink-0 text-red-700"
+        />
+      ) : (
+        <AlertTriangle
+          aria-hidden="true"
+          className="mt-0.5 size-4 shrink-0 text-amber-700"
+        />
+      )}
+
+      <p>
+        <span className="font-medium">
+          {issue.code}
+        </span>
+        {" — "}
+        {issue.message}
+      </p>
+    </div>
   );
 }
