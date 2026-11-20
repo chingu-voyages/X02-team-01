@@ -84,6 +84,22 @@ export default function Navbar() {
                   >
                     Question Bank
                   </Link>
+
+                  <span
+                    className="select-none text-gray-300"
+                    aria-hidden="true"
+                  >
+                    •
+                  </span>
+
+                  <Link
+                    href="/account/security"
+                    className={
+                      navLink
+                    }
+                  >
+                    Account Security
+                  </Link>
                 </>
               )}
 

@@ -11,6 +11,7 @@ import {
   FileText,
   Library,
   LogOut,
+  ShieldCheck,
   Users,
 } from "lucide-react";
 
@@ -90,6 +91,22 @@ const navItems:
         Users,
 
       roles: [
+        "administrator",
+      ],
+    },
+
+    {
+      label:
+        "Account Security",
+
+      href:
+        "/account/security",
+
+      icon:
+        ShieldCheck,
+
+      roles: [
+        "contributor",
         "administrator",
       ],
     },
