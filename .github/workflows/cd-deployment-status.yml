@@ -1,81 +1,301 @@
-name: CD - Deployment status tracking
+name: CD - Verified Render deployments for Jira
 
-# JHEP-56: make the real Render deployments visible to GitHub/Jira.
-# Render auto-deploys `dev` outside of Actions, so GitHub (and therefore
-# Jira's development panel) never sees a deployment event. This workflow
-# records one: a `dev`-environment GitHub Deployment per push to `dev`, with the
-# standard status chain (in_progress -> success).
-#
-# `production` tracking is deliberately deferred until a real production
-# host exists — honest data beats aspirational records. When it lands,
-# add the same job for `main` with environment: production and
-# production: true.
+# JHEP-176: Report actual Render deploys to GitHub, which the GitHub for
+# Atlassian app can forward into Jira's Deployment Frequency report.
+# Render is the deployer; this workflow only verifies and reports its state.
+# A deployment is successful only when the services changed by this commit
+# are live on that SHA; frontend/backend can be deployed independently.
 
 on:
   push:
-    branches: [dev]
-    # Mirror Render's buildFilter so a docs-only push (no deploy)
-    # does not fabricate a deployment record.
+    branches: [dev, main]
     paths:
       - "frontend/**"
       - "backend/**"
-      - "render.yaml"
-      - "compose.yaml"
-      - ".github/workflows/cd-deployment-status.yml"
-
-concurrency:
-  group: deployment-tracking-${{ github.sha }}
-  cancel-in-progress: false
+  # Use this after a manual Render deployment or to report an already-live SHA.
+  # A manual run does not itself redeploy anything.
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: "Render environment to verify and report"
+        required: true
+        type: choice
+        options:
+          - development
+          - production
+      deployed_sha:
+        description: "Full SHA currently live on selected services (blank = workflow SHA)"
+        required: false
+        type: string
+      service_scope:
+        description: "Service(s) to verify (manual reports only)"
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - frontend
+          - backend
 
 permissions:
-  deployments: write
   contents: read
+  deployments: write
+
+concurrency:
+  group: render-deployment-tracking-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  dev:
-    name: Record dev-environment deployment (Render from dev)
+  report:
+    name: Verify Render deployment and report to Jira
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+
     steps:
-      - id: create
-        name: Create dev deployment
+      - name: Check out source for changed-path detection
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select environment and commit
+        id: config
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BRANCH: ${{ github.ref_name }}
+          GIT_SHA: ${{ github.sha }}
+          REQUESTED_ENV: ${{ inputs.target_environment }}
+          REQUESTED_SHA: ${{ inputs.deployed_sha }}
+          REQUESTED_SCOPE: ${{ inputs.service_scope }}
+          PREVIOUS_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            ENVIRONMENT="$REQUESTED_ENV"
+            SHA="${REQUESTED_SHA:-$GIT_SHA}"
+            case "${REQUESTED_SCOPE:-both}" in
+              both) CHECK_FRONTEND=true; CHECK_BACKEND=true ;;
+              frontend) CHECK_FRONTEND=true; CHECK_BACKEND=false ;;
+              backend) CHECK_FRONTEND=false; CHECK_BACKEND=true ;;
+              *) echo "Invalid service_scope" >&2; exit 1 ;;
+            esac
+          else
+            case "$BRANCH" in
+              dev) ENVIRONMENT="development" ;;
+              main) ENVIRONMENT="production" ;;
+              *) echo "Unexpected branch: $BRANCH" >&2; exit 1 ;;
+            esac
+            SHA="$GIT_SHA"
+
+            # Render root directories deploy independently. A frontend-only
+            # change must not require the backend to run the same SHA.
+            if [[ ! "$PREVIOUS_SHA" =~ ^[0-9a-f]{40}$ ]] || \
+               [[ "$PREVIOUS_SHA" =~ ^0{40}$ ]]; then
+              echo "Invalid previous commit SHA: $PREVIOUS_SHA" >&2
+              exit 1
+            fi
+            CHANGED_PATHS="$(git diff --name-only "$PREVIOUS_SHA" "$SHA")"
+            CHECK_FRONTEND=false
+            CHECK_BACKEND=false
+            if grep -q '^frontend/' <<< "$CHANGED_PATHS"; then
+              CHECK_FRONTEND=true
+            fi
+            if grep -q '^backend/' <<< "$CHANGED_PATHS"; then
+              CHECK_BACKEND=true
+            fi
+            if [[ "$CHECK_FRONTEND" != "true" && "$CHECK_BACKEND" != "true" ]]; then
+              echo "No deployable frontend/ or backend/ changes" >&2
+              exit 1
+            fi
+          fi
+
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "A full 40-character commit SHA is required" >&2
+            exit 1
+          }
+
+          case "$ENVIRONMENT" in
+            development)
+              FRONTEND_ID="srv-dbuci44ipgvc738h1nt0"
+              BACKEND_ID="srv-dbubt18jo6nc739keo40"
+              FRONTEND_URL="https://jhep-frontend-dev.onrender.com"
+              BACKEND_URL="https://jhep-backend-dev.onrender.com"
+              IS_PRODUCTION="false"
+              ;;
+            production)
+              FRONTEND_ID="srv-dbv0j4qjnfac73c7qim0"
+              BACKEND_ID="srv-dbv0875g1s2s73dpggig"
+              FRONTEND_URL="https://jhep-frontend-prod.onrender.com"
+              BACKEND_URL="https://jhep-backend-prod.onrender.com"
+              IS_PRODUCTION="true"
+              ;;
+            *) echo "Unknown environment: $ENVIRONMENT" >&2; exit 1 ;;
+          esac
+
+          {
+            echo "environment=$ENVIRONMENT"
+            echo "sha=$SHA"
+            echo "frontend_id=$FRONTEND_ID"
+            echo "backend_id=$BACKEND_ID"
+            echo "frontend_url=$FRONTEND_URL"
+            echo "backend_url=$BACKEND_URL"
+            echo "is_production=$IS_PRODUCTION"
+            echo "check_frontend=$CHECK_FRONTEND"
+            echo "check_backend=$CHECK_BACKEND"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Checking $ENVIRONMENT against commit $SHA"
+          echo "Verify frontend=$CHECK_FRONTEND backend=$CHECK_BACKEND"
+
+      - name: Require Render API key
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        run: |
+          if [[ -z "$RENDER_API_KEY" ]]; then
+            echo "Add RENDER_API_KEY to GitHub Actions repository secrets first." >&2
+            exit 1
+          fi
+
+      - name: Create or reuse GitHub deployment
+        id: deployment
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          SHA: ${{ github.sha }}
-          ENVIRONMENT_URL: "https://jhep-frontend.onrender.com"
-          BACKEND_URL: "https://jhep-backend.onrender.com"
+          SHA: ${{ steps.config.outputs.sha }}
+          ENVIRONMENT: ${{ steps.config.outputs.environment }}
+          FRONTEND_URL: ${{ steps.config.outputs.frontend_url }}
+          IS_PRODUCTION: ${{ steps.config.outputs.is_production }}
         run: |
-          # gh's -F flag sends "[]" as a literal string (the API rejects
-          # it with 422) — build the JSON body properly instead.
-          echo "{\"ref\":\"$SHA\",\"environment\":\"dev\",\"environment_url\":\"$ENVIRONMENT_URL\",\"description\":\"Render auto-deploy of dev to dev (frontend: $ENVIRONMENT_URL, backend: $BACKEND_URL)\",\"production\":false,\"auto_merge\":false,\"required_contexts\":[]}" > deploy-payload.json
-          DEPLOYMENT_ID="$(gh api "repos/$REPO/deployments" --input deploy-payload.json --jq ".id")"
+          set -euo pipefail
+
+          # Re-running a workflow shouldn't inflate deployment frequency.
+          DEPLOYMENT_ID="$(gh api --method GET "repos/$REPO/deployments" \
+            -f "sha=$SHA" -f "environment=$ENVIRONMENT" -f "per_page=100" \
+            --jq '[.[] | select((.description // "") | startswith("JHEP verified Render")) | .id][0] // empty')"
+
+          if [[ -z "$DEPLOYMENT_ID" ]]; then
+            jq -n \
+              --arg ref "$SHA" \
+              --arg environment "$ENVIRONMENT" \
+              --arg url "$FRONTEND_URL" \
+              --argjson production "$IS_PRODUCTION" \
+              '{
+                ref: $ref,
+                environment: $environment,
+                description: ("JHEP verified Render " + $environment),
+                production_environment: $production,
+                auto_merge: false,
+                required_contexts: [],
+                payload: {frontend_url: $url}
+              }' | gh api --method POST "repos/$REPO/deployments" \
+                --input - --jq '.id' > deployment-id.txt
+            DEPLOYMENT_ID="$(cat deployment-id.txt)"
+          fi
+
           echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
-          echo "Created dev deployment $DEPLOYMENT_ID for $SHA"
+          echo "GitHub deployment: $DEPLOYMENT_ID"
 
-      - name: Mark in progress
+      - name: Mark deployment in progress
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          DEPLOYMENT_ID: ${{ steps.create.outputs.deployment_id }}
+          DEPLOYMENT_ID: ${{ steps.deployment.outputs.deployment_id }}
+          FRONTEND_URL: ${{ steps.config.outputs.frontend_url }}
         run: |
-          gh api \
+          gh api --method POST \
             "repos/$REPO/deployments/$DEPLOYMENT_ID/statuses" \
-            -f "state=in_progress" \
-            -f "description=Render is building the image"
+            -f state=in_progress \
+            -f "environment_url=$FRONTEND_URL" \
+            -f "log_url=https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            -f description="Waiting for real Render deployments"
 
-      - name: Mark success
+      - name: Wait for matching live Render service deployments
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SHA: ${{ steps.config.outputs.sha }}
+          FRONTEND_ID: ${{ steps.config.outputs.frontend_id }}
+          BACKEND_ID: ${{ steps.config.outputs.backend_id }}
+          FRONTEND_URL: ${{ steps.config.outputs.frontend_url }}
+          BACKEND_URL: ${{ steps.config.outputs.backend_url }}
+          CHECK_FRONTEND: ${{ steps.config.outputs.check_frontend }}
+          CHECK_BACKEND: ${{ steps.config.outputs.check_backend }}
+        run: |
+          set -euo pipefail
+
+          SERVICES=()
+          if [[ "$CHECK_FRONTEND" == "true" ]]; then SERVICES+=("$FRONTEND_ID"); fi
+          if [[ "$CHECK_BACKEND" == "true" ]]; then SERVICES+=("$BACKEND_ID"); fi
+          if [[ ${#SERVICES[@]} -eq 0 ]]; then
+            echo "No services were selected for verification" >&2
+            exit 1
+          fi
+
+          for attempt in $(seq 1 48); do
+            LIVE_COUNT=0
+            for SERVICE in "${SERVICES[@]}"; do
+              RESPONSE="$(curl --fail --silent --show-error \
+                --retry 2 --max-time 20 \
+                -H "Authorization: Bearer $RENDER_API_KEY" \
+                -H "Accept: application/json" \
+                "https://api.render.com/v1/services/$SERVICE/deploys?limit=30")"
+
+              # Render returns [{"deploy":{"commit":{"id": ...}, "status": ...}}].
+              STATUS="$(jq -r --arg sha "$SHA" \
+                '[.[] | .deploy | select(.commit.id == $sha) | .status][0] // "not_found"' \
+                <<< "$RESPONSE")"
+
+              echo "Attempt $attempt: $SERVICE => $STATUS"
+              case "$STATUS" in
+                live) LIVE_COUNT=$((LIVE_COUNT + 1)) ;;
+                build_failed|update_failed|pre_deploy_failed|canceled)
+                  echo "Render deployment failed for $SERVICE ($STATUS)" >&2
+                  exit 1
+                  ;;
+              esac
+            done
+
+            if [[ "$LIVE_COUNT" == "${#SERVICES[@]}" ]]; then
+              curl --fail --silent --show-error --location --max-time 20 \
+                "$BACKEND_URL/health" >/dev/null
+              curl --fail --silent --show-error --location --max-time 20 \
+                "$FRONTEND_URL/login" >/dev/null
+              echo "All ${#SERVICES[@]} selected Render services are live on $SHA; application URLs respond."
+              exit 0
+            fi
+
+            sleep 25
+          done
+
+          echo "Timed out waiting for selected Render services to run SHA $SHA" >&2
+          exit 1
+
+      - name: Mark verified deployment successful
+        if: success()
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          DEPLOYMENT_ID: ${{ steps.create.outputs.deployment_id }}
-          ENVIRONMENT_URL: "https://jhep-frontend.onrender.com"
+          DEPLOYMENT_ID: ${{ steps.deployment.outputs.deployment_id }}
+          FRONTEND_URL: ${{ steps.config.outputs.frontend_url }}
         run: |
-          # Render deploys asynchronously and independently of Actions;
-          # this records the deployment as live alongside Render's own
-          # pipeline (the service's /health is its real gate).
-          sleep 30
-          gh api \
+          gh api --method POST \
             "repos/$REPO/deployments/$DEPLOYMENT_ID/statuses" \
-            -f "state=success" \
-            -f "environment_url=$ENVIRONMENT_URL" \
-            -f "description=Deployed to the dev environment (Render auto-deploy from dev)"
+            -f state=success \
+            -f "environment_url=$FRONTEND_URL" \
+            -f "log_url=https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            -f description="Verified Render deployment for the selected services"
+
+      - name: Mark deployment failed
+        if: failure() && steps.deployment.outputs.deployment_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DEPLOYMENT_ID: ${{ steps.deployment.outputs.deployment_id }}
+          FRONTEND_URL: ${{ steps.config.outputs.frontend_url }}
+        run: |
+          gh api --method POST \
+            "repos/$REPO/deployments/$DEPLOYMENT_ID/statuses" \
+            -f state=failure \
+            -f "environment_url=$FRONTEND_URL" \
+            -f "log_url=https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            -f description="Render deployment did not pass verification"
