@@ -538,9 +538,15 @@ def publish_question_draft(
         question.id,
     )
 
-    if version.publication_status != "draft" or version.review_status != "pending":
+    # JHEP-119: publish accepts the review-workflow source (in_review)
+    # and keeps the admin-authored direct path (pending/draft) — one
+    # publishing implementation (the scope boundary).
+    if version.publication_status != "draft" or version.review_status not in (
+        "pending",
+        "in_review",
+    ):
         raise QuestionDraftNotPublishableError(
-            "Only pending draft questions can be published"
+            "Only pending draft or in-review questions can be published"
         )
 
     actor_id = actor.id
@@ -604,9 +610,15 @@ def reject_question_draft(
         question.id,
     )
 
-    if version.publication_status != "draft" or version.review_status != "pending":
+    # JHEP-119 AC3/AC4: Reject applies to submitted AND in-review
+    # questions (the admin-authored pending/draft path keeps the direct
+    # publish instead), and the outcome is TERMINAL: publication_status
+    # becomes 'inactive' — retained, never silently reactivated by
+    # editing (the old "edit resets a rejected draft" behavior violated
+    # AC4 and is removed; see the test updates in this PR).
+    if version.review_status not in ("submitted", "in_review"):
         raise QuestionDraftNotRejectableError(
-            "Only pending draft questions can be rejected"
+            "Only submitted or in-review questions can be rejected"
         )
 
     actor_id = actor.id
@@ -619,6 +631,7 @@ def reject_question_draft(
         version.review_note = review_note
 
         version.review_status = "rejected"
+        version.publication_status = "inactive"
 
         session.add(version)
 

@@ -63,9 +63,11 @@ class QuestionVersion(SQLModel, table=True):
             "length(trim(question_text)) > 0",
             name="ck_question_versions_nonempty_text",
         ),
-        # Reviewed questions need review information
+        # Reviewed questions need review information. JHEP-119: the
+        # workflow states (submitted/in_review) are not decisions —
+        # in_review stamps the reviewer at Start Review.
         CheckConstraint(
-            "review_status = 'pending' OR "
+            "review_status IN ('pending', 'submitted', 'in_review') OR "
             "(reviewed_by_id IS NOT NULL AND "
             "reviewed_at IS NOT NULL)",
             name="ck_question_versions_review_information",

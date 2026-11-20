@@ -35,9 +35,34 @@ def upgrade() -> None:
         "question_versions",
         "publication_status IN ('draft', 'active', 'inactive', 'retired')",
     )
+    # JHEP-119: the workflow states (submitted/in_review) are not
+    # decisions — the reviewer stamp is required only for
+    # approved/rejected (in_review stamps it at Start Review).
+    op.drop_constraint(
+        "ck_question_versions_review_information",
+        "question_versions",
+        type_="check",
+    )
+    op.create_check_constraint(
+        "ck_question_versions_review_information",
+        "question_versions",
+        "review_status IN ('pending', 'submitted', 'in_review') OR "
+        "(reviewed_by_id IS NOT NULL AND reviewed_at IS NOT NULL)",
+    )
 
 
 def downgrade() -> None:
+    op.drop_constraint(
+        "ck_question_versions_review_information",
+        "question_versions",
+        type_="check",
+    )
+    op.create_check_constraint(
+        "ck_question_versions_review_information",
+        "question_versions",
+        "review_status = 'pending' OR "
+        "(reviewed_by_id IS NOT NULL AND reviewed_at IS NOT NULL)",
+    )
     op.drop_constraint(
         "ck_question_versions_publication_status",
         "question_versions",
