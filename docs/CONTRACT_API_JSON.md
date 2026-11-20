@@ -154,6 +154,10 @@ Learner category discovery additionally requires:
 | POST | `/api/v1/auth/logout` | CURRENT | Bearer |
 | POST | `/api/v1/auth/forgot-password` | CURRENT | No |
 | POST | `/api/v1/auth/reset-password` | CURRENT | No |
+| GET | `/api/v1/auth/mfa/status` | CURRENT (JHEP-109) | Bearer |
+| POST | `/api/v1/auth/mfa/enroll/setup` | CURRENT (JHEP-109) | Bearer |
+| POST | `/api/v1/auth/mfa/enroll/verify` | CURRENT (JHEP-109) | Bearer |
+| POST | `/api/v1/auth/mfa/verify` | CURRENT (JHEP-109) | The challenge token |
 
 ## 2.2 Learner discovery and delivery
 
@@ -382,9 +386,12 @@ Behavioral guarantees:
   account; every access token issued before that instant is rejected
   (stateless revocation via the JWT `iat`). Role/ownership are never
   touched.
-- **MFA gate**: no second factor is enforced today; JHEP-109 must gate
-  this flow when MFA lands — reset must never bypass a required second
-  factor.
+- **MFA gate (JHEP-109 — implemented)**: the password reset changes
+  only the credential — the next sign-in on an MFA-enrolled account
+  still requires the second factor, so reset can never bypass MFA
+  (tested). The reset flow itself is NOT MFA-gated by design: a locked
+  account with a lost device uses recovery codes at sign-in, not at
+  reset.
 
 ---
 
@@ -1281,3 +1288,114 @@ backend/app/services/question_retirement_service.py
 ```
 
 When this document and code disagree, route decorators, Pydantic models, authorization dependencies, repository eligibility rules, and service behavior are the implementation source of truth.
+
+
+## 3.9 Multi-factor authentication — enrollment — CURRENT (JHEP-109)
+
+**Role policy (PO-confirmed):** Administrators MUST enroll; Contributors
+MAY; Learners are not offered enrollment. The feature is dormant by
+default — accounts without a confirmed enrollment get a byte-identical
+sign-in response.
+
+### GET `/api/v1/auth/mfa/status`
+
+The account's MFA posture (drives the Security page and the
+forced-enrollment prompt):
+
+```json
+{
+  "configured": true,
+  "available": true,
+  "mandatory": true,
+  "enrolled": false
+}
+```
+
+`configured: false` means the deployment lacks `MFA_ENCRYPTION_KEY` —
+MFA is disabled and the rest of the app runs normally.
+
+### POST `/api/v1/auth/mfa/enroll/setup`
+
+Generates the account's TOTP secret (**Fernet-encrypted at rest** with
+`MFA_ENCRYPTION_KEY` — optional at startup, the R2-style graceful
+pattern) and returns the provisioning data:
+
+```json
+{
+  "otpauth_uri": "otpauth://totp/The%20Job%20Hackers:learner%40example.com?secret=…&issuer=The%20Job%20Hackers",
+  "secret": "<base32 secret for manual entry>",
+  "issuer": "The Job Hackers"
+}
+```
+
+The frontend renders `otpauth_uri` as a QR code for any authenticator
+app. Re-calling setup invalidates the prior unconfirmed secret.
+
+### POST `/api/v1/auth/mfa/enroll/verify`
+
+Confirms the enrollment with a live 6-digit code, then issues the
+recovery codes — **shown once, stored only as SHA-256 digests**:
+
+```json
+{
+  "message": "MFA enabled. Store your recovery codes safely — they are shown once and never again.",
+  "recovery_codes": ["4F7A2B91C0", "9C31E5D8A7", "..."]
+}
+```
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `INVALID_MFA_CODE` | the code doesn't match |
+| 403 | `MFA_NOT_AVAILABLE` | the role is outside the enrollment policy |
+| 409 | `MFA_NOT_ENROLLED` / `MFA_ALREADY_ENROLLED` | the flow was never started / already confirmed |
+| 503 | `MFA_NOT_CONFIGURED` | the deployment lacks `MFA_ENCRYPTION_KEY` |
+
+## 3.10 Multi-factor authentication — sign-in challenge — CURRENT (JHEP-109)
+
+**POST** `/api/v1/auth/login` (the two-stage flow) — for an
+MFA-required account with a confirmed enrollment, a correct password
+does **not** establish a session. It returns:
+
+```json
+{
+  "access_token": "<5-minute challenge token — authorizes nothing but /auth/mfa/verify>",
+  "token_type": "bearer",
+  "learner": { "...": "..." },
+  "mfa_required": true,
+  "challenge_id": "<challenge uuid>",
+  "mfa_expires_in_seconds": 300
+}
+```
+
+**POST** `/api/v1/auth/mfa/verify` — with the challenge token as the
+Bearer credential:
+
+```json
+{ "code": "123456" }
+```
+or a recovery code:
+```json
+{ "code": "4F7A2B91C0", "recovery_code": true }
+```
+
+Success returns the **real session** (`AuthTokenOut`) — the full
+learner experience unlocks only after the second factor (AC5).
+
+| Status | Code | When |
+|---|---|---|
+| 400 | `INVALID_MFA_CODE` | wrong, repeated, or expired code |
+| 403 | `MFA_CHALLENGE_LOCKED` | **5 failed attempts** — re-login required |
+| 401 | `INVALID_MFA_CHALLENGE` | missing/expired challenge token |
+
+Behavioral guarantees:
+
+- **AC2**: challenge tokens carry a `mfa: pending` claim and are
+  rejected by `get_current_user` on **every** protected route — they
+  authorize nothing but the verify endpoint.
+- **AC4**: password reset never bypasses MFA — the post-reset sign-in
+  still challenges (tested). Recovery codes are the lost-device path.
+- **AC5**: failed/abandoned challenges expire in
+  `MFA_CHALLENGE_MINUTES` (default 5) and grant nothing.
+- **The enrollment trigger** (PO-confirmed): the Security page
+  (`/account/security`) + a forced prompt at sign-in for un-enrolled
+  Administrators.

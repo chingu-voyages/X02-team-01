@@ -409,6 +409,16 @@ Registration verification and password-reset delivery use environment configurat
 | `RESEND_INTERVAL_SECONDS` | backend | Verification resend throttle; default 60 seconds |
 | `RESET_TOKEN_TTL_HOURS` | backend | Password-reset challenge lifetime; default 1 hour, allowed 1–24 |
 | `RESET_MIN_INTERVAL_SECONDS` | backend | Forgot-password request throttle per account; default 60 seconds |
+| `MFA_ENCRYPTION_KEY` | backend | a long random string | **Optional at startup** — the TOTP secrets' encryption key (generate once per deployment: `python -c "import secrets; print(secrets.token_urlsafe(32))"`). Without it MFA is disabled (the endpoints return 503 `MFA_NOT_CONFIGURED`) and the rest of the app runs normally. |
+| `MFA_CHALLENGE_MINUTES` | backend | the sign-in challenge's lifetime after the password stage; default 5 minutes |
+| `MFA_MAX_ATTEMPTS` | backend | Failed codes allowed per challenge before it locks; default 5 |
+| `MFA_RECOVERY_CODE_COUNT` | backend | Single-use recovery codes issued at enrollment; default 8 |
+
+**The MFA role policy (PO-confirmed, JHEP-109):** Administrators MUST
+enroll; Contributors MAY; Learners are not offered enrollment. The
+enrollment trigger is the Security page (`/account/security`) plus a
+forced prompt at sign-in for un-enrolled Administrators. Lost-device
+recovery uses the printed single-use codes issued at enrollment.
 
 ### Email delivery behavior
 
