@@ -339,6 +339,10 @@ Forgot-password responses are deliberately generic to avoid account enumeration.
 A successful reset:
 
 - applies the normal password policy;
+- **rejects a new password identical to the account's current one** —
+  verified against the stored Argon2id hash (422 `PASSWORD_UNCHANGED`;
+  no plaintext comparison). A historical password-history check (the
+  last N hashes) is a documented follow-up;
 - invalidates access tokens issued before the reset timestamp;
 - does not change role/ownership.
 

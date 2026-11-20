@@ -66,6 +66,7 @@ from app.services.mfa_service import (
 from app.services.password_reset_service import (
     GENERIC_RESET_MESSAGE,
     InvalidResetTokenError,
+    SamePasswordError,
     request_reset,
     reset_password,
 )
@@ -337,6 +338,12 @@ def reset_account_password(
         raise CodedAuthError(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             "WEAK_PASSWORD",
+            str(exc),
+        ) from exc
+    except SamePasswordError as exc:
+        raise CodedAuthError(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "PASSWORD_UNCHANGED",
             str(exc),
         ) from exc
 

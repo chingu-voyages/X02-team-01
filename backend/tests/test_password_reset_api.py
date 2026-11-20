@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.core.security import create_access_token_for_learner
+from app.core.security import create_access_token_for_learner, hash_password
 from app.db.session import get_session
 from app.main import app
 from app.models import (
@@ -324,5 +324,82 @@ def test_reset_tokens_never_leak_into_logs_or_responses() -> None:
         response = harness.request("leakcheck@example.com")
         assert raw not in response.text  # the response carries nothing
         assert "token" not in response.json()
+    finally:
+        harness.close()
+
+
+def test_reset_rejects_the_same_password() -> None:
+    """The new password must differ from the account's current one —
+    Argon2id verification against the stored hash is the exact check."""
+    harness = ResetHarness()
+    try:
+        user = _create_user(harness.session, email="same@example.com")
+        user.hashed_password = hash_password("Str0ngEn0ugh1")
+        harness.session.add(user)
+        harness.session.commit()
+        harness.request("same@example.com")
+        token = harness.last_token()
+
+        response = harness.reset(token, "Str0ngEn0ugh1")  # the current password
+        assert response.status_code == 422
+        assert response.json()["code"] == "PASSWORD_UNCHANGED"
+
+        # nothing mutated: the old credential still works, no session
+        # invalidation, the challenge is unconsumed
+        old_login = harness.client.post(
+            "/api/v1/auth/login",
+            json={"email": "same@example.com", "password": "Str0ngEn0ugh1"},
+        )
+        assert old_login.status_code == 200
+
+        stored = harness.session.exec(select(User).where(User.id == user.id)).one()
+        assert stored.sessions_invalid_before is None
+
+        row = harness.session.exec(
+            select(PasswordResetToken).where(PasswordResetToken.user_id == user.id)
+        ).first()
+        assert row.used_at is None
+    finally:
+        harness.close()
+
+
+def test_reset_allows_a_different_password() -> None:
+    """The normal flow is unaffected by the same-password guard."""
+    harness = ResetHarness()
+    try:
+        _create_user(harness.session, email="different@example.com")
+        harness.request("different@example.com")
+        token = harness.last_token()
+
+        response = harness.reset(token, "Different123")
+        assert response.status_code == 200
+
+        new_login = harness.client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "different@example.com",
+                "password": "Different123",
+            },
+        )
+        assert new_login.status_code == 200
+    finally:
+        harness.close()
+
+
+def test_same_password_check_skips_hashless_accounts() -> None:
+    """A hash-less account (never had a password) has nothing to compare
+    against — no false positive."""
+    harness = ResetHarness()
+    try:
+        user = _create_user(harness.session, email="hashless@example.com")
+        user.hashed_password = None
+        harness.session.add(user)
+        harness.session.commit()
+
+        harness.request("hashless@example.com")
+        token = harness.last_token()
+
+        response = harness.reset(token, "FirstPass123")
+        assert response.status_code == 200
     finally:
         harness.close()
