@@ -1,17 +1,12 @@
 import { Suspense } from "react";
 
-import AdminShell from "@/components/layouts/AdminShell";
-
 function AdminLoadingFallback() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-white">
-      <p
-        role="status"
-        className="text-sm text-[#687178]"
-      >
+    <div className="flex min-h-[50vh] items-center justify-center">
+      <p role="status" className="text-sm text-brand-text/70">
         Loading admin console...
       </p>
-    </main>
+    </div>
   );
 }
 
@@ -20,9 +15,5 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <Suspense fallback={<AdminLoadingFallback />}>
-      <AdminShell>{children}</AdminShell>
-    </Suspense>
-  );
+  return <Suspense fallback={<AdminLoadingFallback />}>{children}</Suspense>;
 }

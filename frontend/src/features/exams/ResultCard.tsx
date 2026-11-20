@@ -1,5 +1,3 @@
-import Navbar from "@/components/layouts/Navbar";
-
 interface ResultCardProps {
   scorePercent: number | null;
   correctCount: number;
@@ -15,13 +13,10 @@ export default function ResultCard({
   isPassed,
   passingScorePercent,
 }: ResultCardProps) {
-  const hasScore =
-    scorePercent !== null && isPassed !== null;
+  const hasScore = scorePercent !== null && isPassed !== null;
 
   const formattedScore =
-    scorePercent === null
-      ? "—"
-      : `${Math.round(scorePercent)}%`;
+    scorePercent === null ? "—" : `${Math.round(scorePercent)}%`;
 
   const resultLabel = !hasScore
     ? "Not assessed"
@@ -34,9 +29,6 @@ export default function ResultCard({
       aria-labelledby="results-heading"
       className="w-full space-y-6 text-[#303639]"
     >
-      {/* Navigation — same as category page */}
-      <Navbar />
-
       {/* Heading */}
       <header className="space-y-2">
         <h1
@@ -47,21 +39,17 @@ export default function ResultCard({
         </h1>
 
         <p className="text-sm text-[#687178]">
-          Your results are based on automatically graded
-          multiple-choice answers.
+          Your results are based on automatically graded multiple-choice
+          answers.
         </p>
       </header>
 
       {/* Full-width statistics */}
       <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
         <div className="rounded-md border border-[#cbd0d3] bg-white p-6">
-          <p className="text-xs font-medium uppercase text-[#687178]">
-            Score
-          </p>
+          <p className="text-xs font-medium uppercase text-[#687178]">Score</p>
 
-          <p className="mt-3 text-3xl font-bold">
-            {formattedScore}
-          </p>
+          <p className="mt-3 text-3xl font-bold">{formattedScore}</p>
         </div>
 
         <div className="rounded-md border border-[#cbd0d3] bg-white p-6">
@@ -69,9 +57,7 @@ export default function ResultCard({
             Correct
           </p>
 
-          <p className="mt-3 text-3xl font-bold">
-            {correctCount}
-          </p>
+          <p className="mt-3 text-3xl font-bold">{correctCount}</p>
         </div>
 
         <div className="rounded-md border border-[#cbd0d3] bg-white p-6">
@@ -79,9 +65,7 @@ export default function ResultCard({
             Incorrect
           </p>
 
-          <p className="mt-3 text-3xl font-bold">
-            {incorrectCount}
-          </p>
+          <p className="mt-3 text-3xl font-bold">{incorrectCount}</p>
         </div>
       </div>
 
@@ -92,10 +76,7 @@ export default function ResultCard({
             Exam Result
           </p>
 
-          <p
-            role="status"
-            className="mt-3 text-3xl font-bold uppercase"
-          >
+          <p role="status" className="mt-3 text-3xl font-bold uppercase">
             {resultLabel}
           </p>
         </div>
@@ -108,22 +89,17 @@ export default function ResultCard({
 
             {passingScorePercent !== null && (
               <>
-                <span
-                  className="mx-2 text-gray-500"
-                  aria-hidden="true"
-                >
+                <span className="mx-2 text-gray-500" aria-hidden="true">
                   •
                 </span>
-                <span>
-                  {passingScorePercent}% required to pass
-                </span>
+                <span>{passingScorePercent}% required to pass</span>
               </>
             )}
           </p>
 
           <p className="mt-2 text-sm text-[#687178]">
-            The result is calculated using the passing
-            threshold configured for this exam.
+            The result is calculated using the passing threshold configured for
+            this exam.
           </p>
         </div>
       </div>
@@ -135,16 +111,14 @@ export default function ResultCard({
         </p>
 
         <p className="mt-2 text-sm leading-6 text-[#687178]">
-          Scores reflect automatically graded questions.
-          Your passing requirement and final pass/fail
-          result come directly from the backend.
+          Scores reflect automatically graded questions. Your passing
+          requirement and final pass/fail result come directly from the backend.
         </p>
 
         {!hasScore && (
           <p className="mt-3 text-sm text-[#687178]">
-            No automatically graded score is available
-            for this attempt. This does not mean the
-            exam was failed.
+            No automatically graded score is available for this attempt. This
+            does not mean the exam was failed.
           </p>
         )}
       </div>

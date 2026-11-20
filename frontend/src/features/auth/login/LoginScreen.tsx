@@ -1,13 +1,11 @@
 import PageHeader from "@/components/layouts/PageHeader";
 import VerifiedNotice from "./VerifiedNotice";
 import LoginForm from "./LoginForm";
-import Navbar from "@/components/layouts/Navbar";
 import Card from "@/components/ui/Card";
 
 export default function LoginScreen() {
   return (
     <div>
-      <Navbar />
       <PageHeader
         title="Your practice workspace"
         subtitle="Sign in to access exams and retain your attempt history."
