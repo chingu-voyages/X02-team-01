@@ -83,18 +83,23 @@ from app.services.admin_question_image_service import (
 )
 from app.services.admin_question_service import (
     QuestionBankDetails,
+    QuestionBankNotAuthorizedError,
     QuestionBankNotFoundError,
     QuestionDraftNotEditableError,
     QuestionDraftNotPublishableError,
     QuestionDraftNotRejectableError,
     QuestionDraftScopeError,
     QuestionPublishedRevisionForbiddenError,
+    QuestionReviewTransitionError,
     create_question_draft,
     edit_question_draft,
     get_question_bank_details,
     list_question_bank,
     publish_question_draft,
     reject_question_draft,
+    request_question_changes,
+    start_question_review,
+    submit_question_for_review,
 )
 from app.services.admin_user_service import (
     AdministratorRoleChangeError,
@@ -1058,3 +1063,59 @@ def change_account_role(
         role_after=audit.role_after,
         changed_at=audit.created_at,
     )
+
+
+@router.post("/questions/{question_id}/submit", response_model=QuestionBankDetails)
+def submit_question(
+    question_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+) -> QuestionBankDetails:
+    """JHEP-119 AC1: the owning Contributor submits their valid Draft
+    toward review. Submission never publishes."""
+    try:
+        return submit_question_for_review(session, question_id, actor=current_user)
+    except QuestionBankNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except QuestionBankNotAuthorizedError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except QuestionReviewTransitionError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/questions/{question_id}/start-review", response_model=QuestionBankDetails
+)
+def start_question_review_endpoint(
+    question_id: UUID,
+    actor: Annotated[User, Depends(require_administrator)],
+    session: Annotated[Session, Depends(get_session)],
+) -> QuestionBankDetails:
+    """JHEP-119 AC2: Submitted -> In Review, stamped with the reviewer."""
+    try:
+        return start_question_review(session, question_id, actor=actor)
+    except QuestionBankNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except QuestionReviewTransitionError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/questions/{question_id}/request-changes", response_model=QuestionBankDetails
+)
+def request_question_changes_endpoint(
+    question_id: UUID,
+    payload: QuestionRejectionRequest,
+    actor: Annotated[User, Depends(require_administrator)],
+    session: Annotated[Session, Depends(get_session)],
+) -> QuestionBankDetails:
+    """JHEP-119 AC3: In Review -> the author's editable Draft, with the
+    required reason kept as feedback."""
+    try:
+        return request_question_changes(
+            session, question_id, actor=actor, review_note=payload.review_note
+        )
+    except QuestionBankNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except QuestionReviewTransitionError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc

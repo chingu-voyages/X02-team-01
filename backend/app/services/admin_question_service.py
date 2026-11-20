@@ -38,6 +38,14 @@ class QuestionPublishedRevisionForbiddenError(PermissionError):
     """Only an Administrator may revise published content."""
 
 
+class QuestionReviewTransitionError(ValueError):
+    """An invalid or out-of-order review-workflow transition (JHEP-119)."""
+
+
+class QuestionBankNotAuthorizedError(Exception):
+    """The actor cannot perform this action on this question."""
+
+
 class QuestionDraftNotPublishableError(ValueError):
     """Latest version cannot be approved and published."""
 
@@ -405,6 +413,110 @@ def _create_published_revision(
         question.id,
         actor=actor,
     )
+
+
+def submit_question_for_review(
+    session: Session,
+    question_id: UUID,
+    *,
+    actor: User,
+) -> QuestionBankDetails:
+    """JHEP-119 AC1: a Contributor submits THEIR OWN valid Draft toward
+    review. Submission never publishes; the ownership is enforced by the
+    actor scoping (a Contributor can only ever reach their own
+    questions)."""
+    question = session.get(Question, question_id)
+
+    if question is None:
+        raise QuestionBankNotFoundError("Question not found")
+
+    if not _question_visible_to_actor(question, actor):
+        raise QuestionBankNotAuthorizedError("You can only submit your own questions")
+
+    version = _latest_version(session, question.id)
+
+    if version.publication_status != "draft" or version.review_status != "pending":
+        raise QuestionReviewTransitionError(
+            "Only pending draft questions can be submitted for review"
+        )
+
+    version.review_status = "submitted"
+    version.submitted_by_id = actor.id
+    version.submitted_at = datetime.now(UTC)
+
+    session.add(version)
+    session.commit()
+
+    return get_question_bank_details(session, question.id, actor=actor)
+
+
+def start_question_review(
+    session: Session,
+    question_id: UUID,
+    *,
+    actor: User,
+) -> QuestionBankDetails:
+    """JHEP-119 AC2: an Administrator starts the review — Submitted ->
+    In Review, stamped with the reviewer (the DB constraint requires a
+    reviewer on non-pending states)."""
+    if actor.role != UserRole.ADMINISTRATOR:
+        raise QuestionBankNotAuthorizedError("Only Administrators can start a review")
+
+    question = session.get(Question, question_id)
+
+    if question is None:
+        raise QuestionBankNotFoundError("Question not found")
+
+    version = _latest_version(session, question.id)
+
+    if version.review_status != "submitted":
+        raise QuestionReviewTransitionError("Only submitted questions can enter review")
+
+    version.review_status = "in_review"
+    version.reviewed_by_id = actor.id
+    version.reviewed_at = datetime.now(UTC)
+
+    session.add(version)
+    session.commit()
+
+    return get_question_bank_details(session, question.id, actor=actor)
+
+
+def request_question_changes(
+    session: Session,
+    question_id: UUID,
+    *,
+    actor: User,
+    review_note: str,
+) -> QuestionBankDetails:
+    """JHEP-119 AC3: from In Review, return the question to the author's
+    editable Draft with the required reason kept as feedback. The
+    review state resets to pending — resubmittable after rework."""
+    if actor.role != UserRole.ADMINISTRATOR:
+        raise QuestionBankNotAuthorizedError("Only Administrators can request changes")
+
+    question = session.get(Question, question_id)
+
+    if question is None:
+        raise QuestionBankNotFoundError("Question not found")
+
+    version = _latest_version(session, question.id)
+
+    if version.review_status != "in_review":
+        raise QuestionReviewTransitionError(
+            "Only in-review questions can have changes requested"
+        )
+
+    version.review_status = "pending"
+    version.publication_status = "draft"
+    version.review_note = review_note
+    version.reviewed_by_id = actor.id
+    version.reviewed_at = datetime.now(UTC)
+
+    session.add(version)
+    session.commit()
+
+    return get_question_bank_details(session, question.id, actor=actor)
 
 
 def publish_question_draft(
