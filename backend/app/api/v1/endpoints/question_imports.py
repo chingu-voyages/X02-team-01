@@ -621,20 +621,73 @@ def _batch_response(
 def _row_response(
     row: QuestionImportRow,
 ) -> QuestionImportRowOut:
-    payload = row.normalized_payload or row.raw_payload or {}
+    raw_payload = (
+        row.raw_payload
+        or {}
+    )
+
+    normalized_payload = (
+        row.normalized_payload
+        or {}
+    )
 
     return QuestionImportRowOut(
         id=row.id,
-        row_number=(row.row_number),
+        row_number=(
+            row.row_number
+        ),
         status=row.status,
-        certification_code=_optional_text(payload.get("certification_code")),
-        category_name=_optional_text(payload.get("category_name")),
-        question_type=_optional_text(payload.get("question_type")),
-        question_text=_optional_text(payload.get("question_text")),
-        image_filename=_optional_text(payload.get("image_filename")),
+        certification_code=(
+            _optional_text(
+                raw_payload.get(
+                    "certification_code"
+                )
+            )
+        ),
+        category_name=(
+            _optional_text(
+                raw_payload.get(
+                    "category_name"
+                )
+            )
+        ),
+        question_type=(
+            _optional_text(
+                normalized_payload.get(
+                    "question_type"
+                )
+                or raw_payload.get(
+                    "question_type"
+                )
+            )
+        ),
+        question_text=(
+            _optional_text(
+                normalized_payload.get(
+                    "question_text"
+                )
+                or raw_payload.get(
+                    "question_text"
+                )
+            )
+        ),
+        image_filename=(
+            _optional_text(
+                normalized_payload.get(
+                    "image_filename"
+                )
+                or raw_payload.get(
+                    "image_filename"
+                )
+            )
+        ),
         issues=[
-            QuestionImportIssueOut.model_validate(issue)
-            for issue in (row.validation_issues)
+            QuestionImportIssueOut.model_validate(
+                issue
+            )
+            for issue in (
+                row.validation_issues
+            )
         ],
     )
 
