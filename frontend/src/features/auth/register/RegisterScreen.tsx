@@ -1,12 +1,10 @@
 import PageHeader from "@/components/layouts/PageHeader";
 import Card from "@/components/ui/Card";
 import RegisterForm from "./RegisterForm";
-import Navbar from "@/components/layouts/Navbar";
 
 export default function RegisterScreen() {
   return (
     <div className="mx-4">
-      <Navbar />
       <PageHeader
         title="Create an account"
         subtitle="Your exam attempts and learning journal will be saved to your profile."

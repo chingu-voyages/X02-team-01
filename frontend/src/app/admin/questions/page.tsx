@@ -153,8 +153,8 @@ function statusClasses(
     "Published"
   ) {
     return (
-      "bg-[#dfe2e4] " +
-      "text-[#303438]"
+      "bg-brand-accent-tint " +
+      "text-brand-text"
     );
   }
 
@@ -165,14 +165,14 @@ function statusClasses(
       "Rejected"
   ) {
     return (
-      "bg-[#d9dde0] " +
-      "text-[#303438]"
+      "bg-brand-secondary/50 " +
+      "text-brand-text"
     );
   }
 
   return (
-    "bg-[#e5e7e9] " +
-    "text-[#303438]"
+    "bg-brand-surface " +
+    "text-brand-text"
   );
 }
 
@@ -764,14 +764,14 @@ export default function AdminQuestionsPage() {
         <div className="flex flex-col gap-2 sm:flex-row">
           <Link
             href="/admin/questions/import"
-            className="inline-flex min-h-11 items-center justify-center rounded-md border border-[#cfd2d5] bg-white px-5 text-sm font-semibold text-[#3f4549] hover:bg-[#f5f6f7] focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-brand-border bg-white px-5 text-sm font-semibold text-brand-text hover:bg-brand-surface focus-visible:outline-2 focus-visible:outline-offset-2"
           >
             Import Questions
           </Link>
 
           <Link
             href="/admin/questions/new"
-            className="inline-flex min-h-11 items-center justify-center rounded-md bg-[#3d4145] px-6 text-sm font-semibold text-white hover:bg-[#292d30] focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand-accent px-6 text-sm font-semibold text-brand-text hover:bg-brand-accent-tint focus-visible:outline-2 focus-visible:outline-offset-2"
           >
             + Create Question
           </Link>
@@ -782,12 +782,12 @@ export default function AdminQuestionsPage() {
         "forbidden" && (
         <div
           role="alert"
-          className="rounded-md border border-[#cfd2d5] bg-[#f3f4f5] p-6"
+          className="rounded-md border border-brand-border bg-brand-surface p-6"
         >
           <h2 className="font-semibold">
             Access denied
           </h2>
-          <p className="mt-2 text-sm text-[#636a70]">
+          <p className="mt-2 text-sm text-brand-text/70">
             Your account does not
             have permission to
             manage the question
@@ -800,7 +800,7 @@ export default function AdminQuestionsPage() {
         "error" && (
         <div
           role="alert"
-          className="rounded-md border border-[#cfd2d5] bg-white p-6"
+          className="rounded-md border border-brand-border bg-white p-6"
         >
           <p className="text-sm text-red-700">
             {loadError}
@@ -810,7 +810,7 @@ export default function AdminQuestionsPage() {
             onClick={
               retryLoading
             }
-            className="mt-4 rounded-md bg-[#3d4145] px-4 py-2 text-sm font-medium text-white"
+            className="mt-4 rounded-md bg-brand-accent px-4 py-2 text-sm font-medium text-brand-text"
           >
             Retry
           </button>
@@ -821,7 +821,7 @@ export default function AdminQuestionsPage() {
         "loading" && (
         <div
           role="status"
-          className="rounded-md border border-[#d8dbde] bg-white p-8 text-sm text-[#656c72]"
+          className="rounded-md border border-brand-border bg-white p-8 text-sm text-brand-text/70"
         >
           Loading question
           bank...
@@ -831,7 +831,7 @@ export default function AdminQuestionsPage() {
       {loadStatus ===
         "ready" && (
         <>
-          <div className="mb-4 rounded-md border border-[#d8dbde] bg-white p-4">
+          <div className="mb-4 rounded-md border border-brand-border bg-white p-4">
             <div className="grid gap-3 lg:grid-cols-3 xl:grid-cols-4">
               <label className="relative lg:col-span-2">
                 <span className="sr-only">
@@ -839,7 +839,7 @@ export default function AdminQuestionsPage() {
                 </span>
                 <Search
                   aria-hidden="true"
-                  className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#737a80]"
+                  className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-brand-text/60"
                 />
                 <input
                   type="search"
@@ -856,7 +856,7 @@ export default function AdminQuestionsPage() {
                     )
                   }
                   placeholder="Search question text, certification, category or full ID"
-                  className="h-11 w-full rounded-md border border-[#cfd2d5] bg-white pl-9 pr-3 text-sm outline-none focus:border-[#777e83]"
+                  className="h-11 w-full rounded-md border border-brand-border bg-white pl-9 pr-3 text-sm outline-none focus:border-brand-accent"
                 />
               </label>
 
@@ -874,7 +874,7 @@ export default function AdminQuestionsPage() {
                       .value,
                   )
                 }
-                className="h-11 rounded-md border border-[#cfd2d5] bg-white px-3 text-sm"
+                className="h-11 rounded-md border border-brand-border bg-white px-3 text-sm"
               >
                 <option value="all">
                   All Certifications
@@ -913,7 +913,7 @@ export default function AdminQuestionsPage() {
                       .value,
                   )
                 }
-                className="h-11 rounded-md border border-[#cfd2d5] bg-white px-3 text-sm"
+                className="h-11 rounded-md border border-brand-border bg-white px-3 text-sm"
               >
                 <option value="all">
                   All Categories
@@ -952,7 +952,7 @@ export default function AdminQuestionsPage() {
                       .value,
                   )
                 }
-                className="h-11 rounded-md border border-[#cfd2d5] bg-white px-3 text-sm"
+                className="h-11 rounded-md border border-brand-border bg-white px-3 text-sm"
               >
                 <option value="all">
                   All Types
@@ -979,7 +979,7 @@ export default function AdminQuestionsPage() {
                       .value,
                   )
                 }
-                className="h-11 rounded-md border border-[#cfd2d5] bg-white px-3 text-sm"
+                className="h-11 rounded-md border border-brand-border bg-white px-3 text-sm"
               >
                 <option value="all">
                   All Difficulties
@@ -1009,7 +1009,7 @@ export default function AdminQuestionsPage() {
                       .value,
                   )
                 }
-                className="h-11 rounded-md border border-[#cfd2d5] bg-white px-3 text-sm"
+                className="h-11 rounded-md border border-brand-border bg-white px-3 text-sm"
               >
                 <option value="all">
                   All Workflow States
@@ -1045,7 +1045,7 @@ export default function AdminQuestionsPage() {
                       .value,
                   )
                 }
-                className="h-11 rounded-md border border-[#cfd2d5] bg-white px-3 text-sm"
+                className="h-11 rounded-md border border-brand-border bg-white px-3 text-sm"
               >
                 <option value="all">
                   All Media
@@ -1060,7 +1060,7 @@ export default function AdminQuestionsPage() {
             </div>
 
             <div className="mt-3 flex items-center justify-between gap-4">
-              <p className="text-xs text-[#737a80]">
+              <p className="text-xs text-brand-text/60">
                 Filters run on the
                 server so the bank
                 stays fast as it
@@ -1072,17 +1072,17 @@ export default function AdminQuestionsPage() {
                 onClick={
                   clearFilters
                 }
-                className="text-sm font-medium text-[#4b5156] underline-offset-4 hover:underline"
+                className="text-sm font-medium text-brand-text/80 underline-offset-4 hover:underline"
               >
                 Clear filters
               </button>
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-md border border-[#cfd2d5] bg-white">
+          <div className="overflow-hidden rounded-md border border-brand-border bg-white">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1040px] border-collapse text-left text-sm">
-                <thead className="bg-[#f1f1f1] text-xs font-semibold uppercase tracking-wide text-[#62686d]">
+                <thead className="bg-brand-surface text-xs font-semibold uppercase tracking-wide text-brand-text/70">
                   <tr>
                     <th className="px-3 py-4">
                       ID
@@ -1133,7 +1133,7 @@ export default function AdminQuestionsPage() {
                           key={
                             question.question_id
                           }
-                          className="border-t border-[#dfe1e3]"
+                          className="border-t border-brand-border"
                         >
                           <td
                             className="whitespace-nowrap px-3 py-4 font-medium"
@@ -1189,7 +1189,7 @@ export default function AdminQuestionsPage() {
                             </span>
                           </td>
 
-                          <td className="px-3 py-4 text-[#5f666b]">
+                          <td className="px-3 py-4 text-brand-text/70">
                             {question.has_image ? (
                               <span className="inline-flex items-center gap-1.5">
                                 <ImageIcon
@@ -1217,7 +1217,7 @@ export default function AdminQuestionsPage() {
                               aria-label={`View ${shortQuestionId(
                                 question.question_id,
                               )}`}
-                              className="inline-flex size-8 items-center justify-center rounded-md hover:bg-[#eceeef]"
+                              className="inline-flex size-8 items-center justify-center rounded-md hover:bg-brand-surface"
                             >
                               <MoreHorizontal
                                 aria-hidden="true"
@@ -1235,7 +1235,7 @@ export default function AdminQuestionsPage() {
 
             {questions.length ===
               0 && (
-              <div className="border-t border-[#dfe1e3] p-10 text-center text-sm text-[#6b7277]">
+              <div className="border-t border-brand-border p-10 text-center text-sm text-brand-text/70">
                 No questions match
                 the current
                 filters.
@@ -1243,7 +1243,7 @@ export default function AdminQuestionsPage() {
             )}
           </div>
 
-          <div className="mt-5 flex flex-col gap-3 text-sm text-[#4e555a] sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-5 flex flex-col gap-3 text-sm text-brand-text/80 sm:flex-row sm:items-center sm:justify-between">
             <p>
               Showing{" "}
               {startItem}–
