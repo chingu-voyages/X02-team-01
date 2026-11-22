@@ -66,6 +66,7 @@ from app.services.mfa_service import (
 from app.services.password_reset_service import (
     GENERIC_RESET_MESSAGE,
     InvalidResetTokenError,
+    SamePasswordError,
     request_reset,
     reset_password,
 )
@@ -339,6 +340,12 @@ def reset_account_password(
             "WEAK_PASSWORD",
             str(exc),
         ) from exc
+    except SamePasswordError as exc:
+        raise CodedAuthError(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "PASSWORD_UNCHANGED",
+            str(exc),
+        ) from exc
 
     return {"message": "Password updated. Sign in with your new password."}
 
@@ -492,3 +499,19 @@ def mfa_verify(
         token_type="bearer",
         learner=_learner_out(user),
     )
+
+
+@router.get("/mfa/status", status_code=status.HTTP_200_OK)
+def mfa_status(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict:
+    """JHEP-109: the account's MFA posture — drives the Security page
+    and the forced-enrollment prompt for mandatory roles."""
+    from app.services import mfa_service
+
+    return {
+        "configured": mfa_service.mfa_configured(),
+        "available": mfa_service.mfa_available_for(current_user),
+        "mandatory": current_user.role in mfa_service.MFA_MANDATORY_ROLES,
+        "enrolled": current_user.mfa_enrolled_at is not None,
+    }

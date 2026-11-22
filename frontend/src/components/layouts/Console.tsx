@@ -10,6 +10,7 @@ import {
   LayoutGrid,
   LineChart,
   LogOut,
+  ShieldCheck,
   Menu,
   MessageSquarePlus,
   Search,
@@ -112,7 +113,7 @@ const navSections: NavSection[] = [
   },
 ];
 
-const publicPaths = ["/login", "/register"];
+const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password"];
 
 export default function Console({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -230,6 +231,20 @@ export default function Console({ children }: { children: React.ReactNode }) {
           ACCOUNT
         </p>
         <div className="space-y-1">
+          {(role === "administrator" || role === "contributor") && (
+            <Link
+              href="/account/security"
+              onClick={() => setMobileOpen(false)}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                pathname.startsWith("/account/security")
+                  ? "bg-brand-accent text-brand-text"
+                  : "text-white/90 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <ShieldCheck className="size-4 shrink-0" aria-hidden="true" />
+              <span>Account Security</span>
+            </Link>
+          )}
           <div
             aria-disabled="true"
             title="Coming soon"

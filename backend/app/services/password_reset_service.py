@@ -31,7 +31,7 @@ from datetime import UTC, datetime, timedelta
 from sqlmodel import Session, select
 
 from app.core.config import settings
-from app.core.security import hash_password
+from app.core.security import hash_password, verify_password
 from app.models import PasswordResetToken, User
 from app.services.email_delivery import email_sender
 from app.services.registration_service import validate_password
@@ -42,6 +42,10 @@ RESET_LINK_TTL_HOURS = settings.reset_token_ttl_hours
 GENERIC_RESET_MESSAGE = (
     "If an account exists for that email, a password-reset link has been sent."
 )
+
+
+class SamePasswordError(Exception):
+    """The new password is identical to the account's current one."""
 
 
 class InvalidResetTokenError(Exception):
@@ -170,6 +174,12 @@ def reset_password(session: Session, *, raw_token: str, new_password: str) -> Us
     user = session.get(User, token.user_id)
     if user is None:
         raise InvalidResetTokenError("This password-reset link is invalid")
+
+    # JHEP-124: the new password must differ from the current one —
+    # Argon2id verification against the stored hash is an exact
+    # equality check without ever seeing the old plaintext.
+    if user.hashed_password and verify_password(new_password, user.hashed_password):
+        raise SamePasswordError("Choose a password different from your current one")
 
     user.hashed_password = hash_password(new_password)
     user.sessions_invalid_before = _utcnow()

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Lato, Poppins } from "next/font/google";
 import { AuthProvider } from "@/features/auth/AuthProvider";
 import Console from "@/components/layouts/Console";
@@ -33,7 +34,9 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-brand-surface">
         <AuthProvider>
-          <Console>{children}</Console>
+          <Suspense fallback={<div role="status" className="p-6 text-sm text-brand-text/70">Loading workspace...</div>}>
+            <Console>{children}</Console>
+          </Suspense>
         </AuthProvider>
       </body>
     </html>
