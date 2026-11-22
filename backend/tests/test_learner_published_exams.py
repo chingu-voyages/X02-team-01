@@ -64,15 +64,14 @@ def environment() -> Iterator[tuple[TestClient, Session]]:
         ],
     )
     test_app = FastAPI()
-    test_app.include_router(
-        learner_practice_exams.router, prefix=f"{API}/exams"
-    )
+    test_app.include_router(learner_practice_exams.router, prefix=f"{API}/exams")
     test_app.include_router(exams.router, prefix=f"{API}/exams")
     test_app.include_router(
         admin_practice_exams.router, prefix=f"{API}/admin/practice-exams"
     )
     try:
         with Session(engine) as session:
+
             def override_session() -> Iterator[Session]:
                 yield session
 
@@ -191,12 +190,15 @@ def test_only_published_ready_exams_appear_and_start(environment):
     exam = _create_exam(client, admin, cert, category)
 
     assert client.get(f"{API}/exams/catalog").status_code == 401
-    assert client.get(
-        f"{API}/exams/catalog", headers=_headers(learner)
-    ).json() == {"exams": []}
-    assert _start(
-        client, learner, cert, category, count=2, exam_id=exam["id"]
-    ).json()["detail"]["code"] == "PRACTICE_EXAM_UNAVAILABLE"
+    assert client.get(f"{API}/exams/catalog", headers=_headers(learner)).json() == {
+        "exams": []
+    }
+    assert (
+        _start(client, learner, cert, category, count=2, exam_id=exam["id"]).json()[
+            "detail"
+        ]["code"]
+        == "PRACTICE_EXAM_UNAVAILABLE"
+    )
 
     assert _publish(client, admin, exam["id"]).status_code == 200
     listing = client.get(f"{API}/exams/catalog", headers=_headers(learner))
@@ -210,9 +212,7 @@ def test_only_published_ready_exams_appear_and_start(environment):
     assert "is_correct" not in listing.text
     assert "status" not in entry
 
-    started = _start(
-        client, learner, cert, category, count=2, exam_id=exam["id"]
-    )
+    started = _start(client, learner, cert, category, count=2, exam_id=exam["id"])
     assert started.status_code == 201, started.text
     assert started.json()["question_count"] == 2
     assert len(started.json()["questions"]) == 2
@@ -232,12 +232,10 @@ def test_draft_unpublished_and_legacy_direct_starts_are_blocked(environment):
 
     _publish(client, admin, exam["id"])
     _publish(client, admin, exam["id"], state=False)
-    assert client.get(
-        f"{API}/exams/catalog", headers=_headers(learner)
-    ).json() == {"exams": []}
-    response = _start(
-        client, learner, cert, category, count=2, exam_id=exam["id"]
-    )
+    assert client.get(f"{API}/exams/catalog", headers=_headers(learner)).json() == {
+        "exams": []
+    }
+    response = _start(client, learner, cert, category, count=2, exam_id=exam["id"])
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "PRACTICE_EXAM_UNAVAILABLE"
     assert session.exec(select(ExamAttempt)).all() == []
@@ -250,9 +248,7 @@ def test_client_cannot_override_configured_length(environment):
     exam = _create_exam(client, admin, cert, category)
     assert _publish(client, admin, exam["id"]).status_code == 200
 
-    override = _start(
-        client, learner, cert, category, count=1, exam_id=exam["id"]
-    )
+    override = _start(client, learner, cert, category, count=1, exam_id=exam["id"])
     assert override.status_code == 409
     assert override.json()["detail"] == {
         "code": "PRACTICE_EXAM_COUNT_MISMATCH",
@@ -277,9 +273,12 @@ def test_scope_and_uncategorized_bypass_are_rejected(environment):
     )
     session.add(other_category)
     session.commit()
-    assert _start(
-        client, learner, cert, other_category, count=2, exam_id=exam["id"]
-    ).status_code == 409
+    assert (
+        _start(
+            client, learner, cert, other_category, count=2, exam_id=exam["id"]
+        ).status_code
+        == 409
+    )
 
     uncategorized = client.post(
         f"{API}/exams",
@@ -298,9 +297,7 @@ def test_unpublish_preserves_existing_attempt_and_completed_history(environment)
     exam = _create_exam(client, admin, cert, category)
     assert _publish(client, admin, exam["id"]).status_code == 200
 
-    started = _start(
-        client, learner, cert, category, count=2, exam_id=exam["id"]
-    )
+    started = _start(client, learner, cert, category, count=2, exam_id=exam["id"])
     assert started.status_code == 201
     attempt_id = UUID(started.json()["attempt_id"])
     pinned = session.exec(
@@ -316,13 +313,16 @@ def test_unpublish_preserves_existing_attempt_and_completed_history(environment)
     )
     assert blocked.status_code == 409
     assert session.get(ExamAttempt, attempt_id).status == "in_progress"
-    assert len(
-        session.exec(
-            select(ExamAttemptQuestion).where(
-                ExamAttemptQuestion.attempt_id == attempt_id
-            )
-        ).all()
-    ) == 2
+    assert (
+        len(
+            session.exec(
+                select(ExamAttemptQuestion).where(
+                    ExamAttemptQuestion.attempt_id == attempt_id
+                )
+            ).all()
+        )
+        == 2
+    )
 
     # JHEP-35 already has a separate grading lifecycle. Here we verify
     # unpublishing does not delete or change a previously persisted result.
@@ -356,12 +356,10 @@ def test_unpublished_parents_or_insufficient_pool_hide_catalog(environment):
     category.is_published = False
     session.add(category)
     session.commit()
-    assert client.get(
-        f"{API}/exams/catalog", headers=_headers(learner)
-    ).json() == {"exams": []}
-    blocked = _start(
-        client, learner, cert, category, count=2, exam_id=exam["id"]
-    )
+    assert client.get(f"{API}/exams/catalog", headers=_headers(learner)).json() == {
+        "exams": []
+    }
+    blocked = _start(client, learner, cert, category, count=2, exam_id=exam["id"])
     assert blocked.status_code == 409
 
     category.is_published = True
@@ -370,12 +368,10 @@ def test_unpublished_parents_or_insufficient_pool_hide_catalog(environment):
     versions[0].is_flagged = True
     session.add(versions[0])
     session.commit()
-    assert client.get(
-        f"{API}/exams/catalog", headers=_headers(learner)
-    ).json() == {"exams": []}
-    started = _start(
-        client, learner, cert, category, count=2, exam_id=exam["id"]
-    )
+    assert client.get(f"{API}/exams/catalog", headers=_headers(learner)).json() == {
+        "exams": []
+    }
+    started = _start(client, learner, cert, category, count=2, exam_id=exam["id"])
     assert started.status_code == 409
     assert started.json()["detail"]["code"] == "INSUFFICIENT_QUESTIONS"
 
@@ -395,8 +391,6 @@ def test_two_differently_named_exams_can_share_a_category(environment):
     }
 
     # Learners start the exact selected exam, using its configured length.
-    started = _start(
-        client, learner, cert, category, count=1, exam_id=first["id"]
-    )
+    started = _start(client, learner, cert, category, count=1, exam_id=first["id"])
     assert started.status_code == 201
     assert started.json()["question_count"] == 1

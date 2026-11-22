@@ -179,10 +179,7 @@ def list_practice_exams(session: Session) -> list[PracticeExamDetails]:
     exams = session.exec(
         select(PracticeExam).order_by(PracticeExam.name, PracticeExam.id)
     ).all()
-    return [
-        _details(session, exam, *_scope(session, exam))
-        for exam in exams
-    ]
+    return [_details(session, exam, *_scope(session, exam)) for exam in exams]
 
 
 def get_practice_exam(session: Session, exam_id: UUID) -> PracticeExamDetails:
@@ -245,9 +242,7 @@ def set_practice_exam_publication(
     """
     try:
         exam = session.exec(
-            select(PracticeExam)
-            .where(PracticeExam.id == exam_id)
-            .with_for_update()
+            select(PracticeExam).where(PracticeExam.id == exam_id).with_for_update()
         ).first()
         if exam is None:
             raise PracticeExamNotFoundError("Practice exam not found")

@@ -63,9 +63,7 @@ def pg_environment():
     @contextmanager
     def session_factory() -> Iterator[Session]:
         with engine.connect() as connection:
-            scoped = connection.execution_options(
-                schema_translate_map={None: schema}
-            )
+            scoped = connection.execution_options(schema_translate_map={None: schema})
             with Session(bind=scoped) as session:
                 yield session
 
@@ -76,9 +74,7 @@ def pg_environment():
     try:
         with engine.begin() as connection:
             connection.execute(text(f'CREATE SCHEMA "{schema}"'))
-            scoped = connection.execution_options(
-                schema_translate_map={None: schema}
-            )
+            scoped = connection.execution_options(schema_translate_map={None: schema})
             SQLModel.metadata.create_all(scoped)
 
         app.dependency_overrides[get_session] = override_session
@@ -256,11 +252,7 @@ def test_real_http_unpublish_keeps_started_attempt_and_results(pg_environment):
     answer = client.post(
         f"{API}/exams/{attempt_id}/responses/{first_question['id']}/submit",
         headers=_auth(ids["learner_id"]),
-        json={
-            "selected_option_ids": [
-                ids["correct_options"][first_question["id"]]
-            ]
-        },
+        json={"selected_option_ids": [ids["correct_options"][first_question["id"]]]},
     )
     assert answer.status_code == 200, answer.text
 
@@ -274,9 +266,7 @@ def test_real_http_unpublish_keeps_started_attempt_and_results(pg_environment):
     assert blocked_new.status_code == 409
     assert blocked_new.json()["detail"]["code"] == "PRACTICE_EXAM_UNAVAILABLE"
 
-    resumed = client.get(
-        f"{API}/exams/{attempt_id}", headers=_auth(ids["learner_id"])
-    )
+    resumed = client.get(f"{API}/exams/{attempt_id}", headers=_auth(ids["learner_id"]))
     assert resumed.status_code == 200, resumed.text
     assert resumed.json()["status"] == "in_progress"
 
@@ -298,9 +288,12 @@ def test_real_http_unpublish_keeps_started_attempt_and_results(pg_environment):
 
     with sessions() as session:
         assert session.get(ExamAttempt, UUID(attempt_id)).status == "submitted"
-        assert session.exec(
-            select(ExamResult).where(ExamResult.attempt_id == UUID(attempt_id))
-        ).one() is not None
+        assert (
+            session.exec(
+                select(ExamResult).where(ExamResult.attempt_id == UUID(attempt_id))
+            ).one()
+            is not None
+        )
         assert session.get(PracticeExam, UUID(exam_id)).status == "unpublished"
 
     # AC1/AC6: a learner's attempt to mutate publication changes nothing.
@@ -374,9 +367,7 @@ def test_postgres_shared_start_lock_blocks_concurrent_unpublish(pg_environment):
 
     # After the start commits, unpublish succeeds and blocks all NEW starts.
     assert _publish(client, ids, exam_id, False).status_code == 200
-    assert _start(
-        client, ids, exam_id, ids["another_learner_id"]
-    ).status_code == 409
+    assert _start(client, ids, exam_id, ids["another_learner_id"]).status_code == 409
 
 
 def test_concurrent_repeated_publication_is_idempotent(pg_environment):
