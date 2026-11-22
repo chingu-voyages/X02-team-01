@@ -130,6 +130,18 @@ class QuestionImportCommitOut(BaseModel):
     already_imported: bool
 
 
+class QuestionImportPublishOut(BaseModel):
+    """Result of bulk approving and publishing an imported batch."""
+
+    batch: QuestionImportBatchOut
+    requested_count: int
+    published_count: int
+    already_published_count: int
+    published_question_ids: list[UUID]
+    already_published_question_ids: list[UUID]
+    all_published: bool
+
+
 class QuestionImportCancelOut(BaseModel):
     """Result of cancelling or repeating cancellation for one batch."""
 
