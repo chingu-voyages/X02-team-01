@@ -427,20 +427,13 @@ def _validate_row_candidate(
             issues.append(
                 _issue(
                     row=row_number,
-                    field=(
-                        "certification_code"
-                    ),
+                    field=("certification_code"),
                     severity="error",
-                    code=(
-                        "CERTIFICATION_NOT_FOUND"
-                    ),
+                    code=("CERTIFICATION_NOT_FOUND"),
                     message=(
-                        "Certification code does not "
-                        "match an existing certification."
+                        "Certification code does not match an existing certification."
                     ),
-                    value_preview=str(
-                        certification_code
-                    ),
+                    value_preview=str(certification_code),
                 )
             )
 
@@ -477,22 +470,13 @@ def _validate_row_candidate(
                 issues.append(
                     _issue(
                         row=row_number,
-                        field=(
-                            "category_name"
-                        ),
-                        severity=(
-                            "error"
-                        ),
-                        code=(
-                            "CATEGORY_NOT_FOUND"
-                        ),
+                        field=("category_name"),
+                        severity=("error"),
+                        code=("CATEGORY_NOT_FOUND"),
                         message=(
-                            "Category does not exist under "
-                            "the selected certification."
+                            "Category does not exist under the selected certification."
                         ),
-                        value_preview=str(
-                            category_name
-                        ),
+                        value_preview=str(category_name),
                     )
                 )
 
@@ -505,9 +489,7 @@ def _validate_row_candidate(
                         code=("AMBIGUOUS_CATALOG_REFERENCE"),
                         message=("Category name matches more than one category."),
                     ),
-                    value_preview=str(
-                        category_name
-                    ),
+                    value_preview=str(category_name),
                 )
 
             else:
