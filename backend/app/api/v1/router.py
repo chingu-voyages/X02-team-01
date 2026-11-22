@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     auth,
     categories,
     exams,
+    learner_practice_exams,
     question_import_actions,
     question_imports,
     questions,
@@ -29,6 +30,12 @@ api_router.include_router(
     questions.router,
     prefix="/questions",
     tags=["questions"],
+)
+
+api_router.include_router(
+    learner_practice_exams.router,
+    prefix="/exams",
+    tags=["exams"],
 )
 
 api_router.include_router(
