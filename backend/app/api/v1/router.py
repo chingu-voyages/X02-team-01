@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     admin,
+    admin_practice_exams,
     auth,
     categories,
     exams,
@@ -40,6 +41,12 @@ api_router.include_router(
     admin.router,
     prefix="/admin",
     tags=["admin"],
+)
+
+api_router.include_router(
+    admin_practice_exams.router,
+    prefix="/admin/practice-exams",
+    tags=["admin", "practice-exams"],
 )
 
 api_router.include_router(
