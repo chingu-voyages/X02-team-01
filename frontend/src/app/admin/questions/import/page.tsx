@@ -32,6 +32,7 @@ import {
   getQuestionImport,
   getQuestionImportHistory,
   getQuestionImportRows,
+  publishQuestionImport,
   revalidateQuestionImport,
   uploadQuestionImport,
   uploadQuestionImportAsset,
@@ -43,6 +44,7 @@ import type {
   QuestionImportCommitResponse,
   QuestionImportHistoryItem,
   QuestionImportIssue,
+  QuestionImportPublishResponse,
   QuestionImportRow,
   QuestionImportRowStatus,
 } from "@/types/question-import-api.types";
@@ -592,6 +594,14 @@ export default function QuestionImportPage() {
     );
 
   const [
+    publishResult,
+    setPublishResult,
+  ] =
+    useState<QuestionImportPublishResponse | null>(
+      null,
+    );
+
+  const [
     history,
     setHistory,
   ] =
@@ -632,6 +642,12 @@ export default function QuestionImportPage() {
     useState<File | null>(
       null,
     );
+
+  const [
+    publishConfirmationOpen,
+    setPublishConfirmationOpen,
+  ] =
+    useState(false);
 
   useEffect(() => {
     if (
@@ -871,6 +887,9 @@ export default function QuestionImportPage() {
     setBusy(true);
     clearMessages();
     setCommitResult(
+      null,
+    );
+    setPublishResult(
       null,
     );
 
@@ -1128,6 +1147,9 @@ export default function QuestionImportPage() {
       setCommitResult(
         result,
       );
+      setPublishResult(
+        null,
+      );
       setBatch(
         result.batch,
       );
@@ -1161,6 +1183,77 @@ export default function QuestionImportPage() {
       setBusy(false);
     }
   }
+
+  async function publishCurrentImport() {
+    if (
+      !token ||
+      !batch ||
+      batch.status !==
+        "imported" ||
+      role !==
+        "administrator"
+    ) {
+      return;
+    }
+
+    setBusy(true);
+    clearMessages();
+
+    try {
+      const result =
+        await publishQuestionImport(
+          token,
+          batch.id,
+        );
+
+      setPublishResult(
+        result,
+      );
+      setBatch(
+        result.batch,
+      );
+      setPublishConfirmationOpen(
+        false,
+      );
+
+      setNotice(
+        result.published_count >
+        0
+          ? `${result.published_count} question${result.published_count === 1 ? "" : "s"} approved and published.`
+          : `All ${result.already_published_count} question${result.already_published_count === 1 ? "" : "s"} were already approved and published.`,
+      );
+
+      setHistoryReloadKey(
+        (value) =>
+          value + 1,
+      );
+    } catch (
+      caught: unknown
+    ) {
+      if (
+        caught instanceof
+          ApiError &&
+        caught.status === 401
+      ) {
+        handleError(
+          caught,
+        );
+        return;
+      }
+
+      setError(
+        errorMessage(
+          caught,
+        ),
+      );
+      setPublishConfirmationOpen(
+        false,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
 
   async function changeFilter(
     nextFilter: RowFilter,
@@ -1455,6 +1548,12 @@ export default function QuestionImportPage() {
     );
     setCommitResult(
       null,
+    );
+    setPublishResult(
+      null,
+    );
+    setPublishConfirmationOpen(
+      false,
     );
     setError("");
     setNotice("");
@@ -1879,6 +1978,12 @@ export default function QuestionImportPage() {
             batch={
               batch
             }
+            role={
+              role
+            }
+            publishResult={
+              publishResult
+            }
             busy={
               busy
             }
@@ -1887,6 +1992,11 @@ export default function QuestionImportPage() {
             }
             onImport={
               confirmImport
+            }
+            onPublish={() =>
+              setPublishConfirmationOpen(
+                true,
+              )
             }
             onRevalidate={
               revalidateCurrentImport
@@ -1933,6 +2043,103 @@ export default function QuestionImportPage() {
             Drafts.
           </p>
 
+          {role ===
+          "administrator" ? (
+            publishResult?.all_published ? (
+              <div
+                role="status"
+                className="mt-5 rounded-md border border-green-300 bg-white p-4 text-left"
+              >
+                <h3 className="font-semibold text-green-900">
+                  Publication complete
+                </h3>
+
+                <p className="mt-1 text-sm text-green-800">
+                  {
+                    publishResult.published_count
+                  }{" "}
+                  question
+                  {publishResult.published_count ===
+                  1
+                    ? ""
+                    : "s"}{" "}
+                  {publishResult.published_count ===
+                  1
+                    ? "was"
+                    : "were"}{" "}
+                  newly approved and published.
+                </p>
+
+                {publishResult.already_published_count >
+                  0 && (
+                  <p className="mt-1 text-sm text-green-800">
+                    {
+                      publishResult.already_published_count
+                    }{" "}
+                    question
+                    {publishResult.already_published_count ===
+                    1
+                      ? ""
+                      : "s"}{" "}
+                    {publishResult.already_published_count ===
+                    1
+                      ? "was"
+                      : "were"}{" "}
+                    already published.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="mt-5 rounded-md border border-blue-200 bg-blue-50 p-4 text-left">
+                <h3 className="font-semibold text-blue-950">
+                  Administrator review
+                </h3>
+
+                <p className="mt-1 text-sm text-blue-900">
+                  Approve and publish every
+                  eligible question created
+                  by this import in one
+                  atomic action.
+                </p>
+
+                <p className="mt-2 text-xs text-blue-800">
+                  Certification and category
+                  publication remain separate.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPublishConfirmationOpen(
+                      true,
+                    )
+                  }
+                  disabled={
+                    busy
+                  }
+                  className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-blue-800 px-5 text-sm font-semibold text-white hover:bg-blue-900 disabled:opacity-50"
+                >
+                  {busy && (
+                    <Loader2
+                      aria-hidden="true"
+                      className="size-4 animate-spin"
+                    />
+                  )}
+
+                  Approve & Publish All{" "}
+                  {
+                    commitResult.created_count
+                  }
+                </button>
+              </div>
+            )
+          ) : (
+            <div className="mt-5 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+              The questions were submitted
+              for Administrator review.
+            </div>
+          )}
+
           <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
             <Link
               href="/admin/questions"
@@ -1952,6 +2159,26 @@ export default function QuestionImportPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {publishConfirmationOpen &&
+        batch && (
+        <PublishConfirmationDialog
+          count={
+            batch.imported_rows
+          }
+          busy={
+            busy
+          }
+          onClose={() =>
+            setPublishConfirmationOpen(
+              false,
+            )
+          }
+          onConfirm={
+            publishCurrentImport
+          }
+        />
       )}
 
       {confirmationAction && (
@@ -2446,18 +2673,25 @@ function ValidationPreview({
 
 function ImportActions({
   batch,
+  role,
+  publishResult,
   busy,
   canRecover,
   onImport,
+  onPublish,
   onRevalidate,
   onCancel,
   onCorrectedFile,
   onReset,
 }: {
   batch: QuestionImportBatch;
+  role: string | null;
+  publishResult:
+    QuestionImportPublishResponse | null;
   busy: boolean;
   canRecover: boolean;
   onImport: () => Promise<void>;
+  onPublish: () => void;
   onRevalidate: () => Promise<void>;
   onCancel: () => void;
   onCorrectedFile: (
@@ -2471,7 +2705,7 @@ function ImportActions({
   ) {
     return (
       <div className="mt-5 rounded-md border border-[#d8dbde] bg-white p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-4">
           <div className="flex items-start gap-3">
             <CheckCircle2
               aria-hidden="true"
@@ -2497,12 +2731,78 @@ function ImportActions({
             </div>
           </div>
 
-          <Link
-            href="/admin/questions"
-            className="inline-flex min-h-11 items-center justify-center rounded-md bg-[#3d4145] px-6 text-sm font-semibold text-white hover:bg-[#292d30]"
-          >
-            View Question Bank
-          </Link>
+          {publishResult?.all_published && (
+            <div
+              role="status"
+              className="rounded-md border border-green-200 bg-green-50 p-4"
+            >
+              <p className="font-semibold text-green-900">
+                All imported questions are
+                published.
+              </p>
+
+              <p className="mt-1 text-sm text-green-800">
+                {
+                  publishResult.published_count
+                }{" "}
+                newly published
+                {publishResult.already_published_count >
+                  0
+                  ? ` · ${publishResult.already_published_count} already published`
+                  : ""}
+              </p>
+            </div>
+          )}
+
+          {role ===
+            "contributor" && (
+            <p className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+              The questions were submitted
+              for Administrator review.
+            </p>
+          )}
+
+          <p className="text-xs text-[#737a80]">
+            Publishing questions does not
+            publish the certification or
+            categories.
+          </p>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <Link
+              href="/admin/questions"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-[#cfd2d5] bg-white px-6 text-sm font-semibold text-[#3f4549] hover:bg-[#f5f6f7]"
+            >
+              View Question Bank
+            </Link>
+
+            {role ===
+              "administrator" &&
+              !publishResult?.all_published && (
+              <button
+                type="button"
+                onClick={
+                  onPublish
+                }
+                disabled={
+                  busy
+                }
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-blue-800 px-6 text-sm font-semibold text-white hover:bg-blue-900 disabled:opacity-50"
+              >
+                {busy && (
+                  <Loader2
+                    aria-hidden="true"
+                    className="size-4 animate-spin"
+                  />
+                )}
+
+                Approve & Publish All{" "}
+                {
+                  batch.imported_rows
+                }
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -2669,6 +2969,110 @@ function ImportActions({
               Questions
             </button>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function PublishConfirmationDialog({
+  count,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  count: number;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onMouseDown={(
+        event,
+      ) => {
+        if (
+          event.target ===
+          event.currentTarget &&
+          !busy
+        ) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="publish-import-title"
+        className="w-full max-w-lg rounded-md border border-[#d8dbde] bg-white p-6 shadow-xl"
+      >
+        <h2
+          id="publish-import-title"
+          className="text-lg font-semibold"
+        >
+          Approve and publish{" "}
+          {count}{" "}
+          question
+          {count ===
+          1
+            ? ""
+            : "s"}?
+        </h2>
+
+        <p className="mt-3 text-sm leading-6 text-[#60676c]">
+          Every eligible question created
+          by this import will become
+          Approved and Active. The whole
+          batch is checked before any
+          question is changed.
+        </p>
+
+        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900">
+          This does not publish the
+          certification or categories.
+        </p>
+
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={
+              onClose
+            }
+            disabled={
+              busy
+            }
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-[#cfd2d5] bg-white px-5 text-sm font-semibold disabled:opacity-50"
+          >
+            Keep as Drafts
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              void onConfirm()
+            }
+            disabled={
+              busy
+            }
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-blue-800 px-5 text-sm font-semibold text-white hover:bg-blue-900 disabled:opacity-50"
+          >
+            {busy && (
+              <Loader2
+                aria-hidden="true"
+                className="size-4 animate-spin"
+              />
+            )}
+
+            Publish{" "}
+            {count}{" "}
+            Question
+            {count ===
+            1
+              ? ""
+              : "s"}
+          </button>
         </div>
       </div>
     </div>
