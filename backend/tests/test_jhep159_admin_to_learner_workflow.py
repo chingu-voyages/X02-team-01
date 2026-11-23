@@ -19,6 +19,7 @@ from app.models import (
     Certification,
     ExamAttempt,
     ExamAttemptQuestion,
+    PracticeExam,
     Question,
     QuestionImage,
     QuestionVersion,
@@ -85,6 +86,7 @@ def test_full_admin_to_learner_publication_workflow():
             User.__table__,
             Certification.__table__,
             Category.__table__,
+            PracticeExam.__table__,
             Question.__table__,
             QuestionVersion.__table__,
             AnswerOption.__table__,
@@ -374,6 +376,40 @@ def test_full_admin_to_learner_publication_workflow():
                 assert categories[0]["name"] == "Full Workflow"
 
                 assert categories[0]["available_question_count"] == 1
+
+                # ---------------------------------------------
+                # An approved question and published category are NOT
+                # sufficient to start an exam without JHEP-126 publication.
+                # ---------------------------------------------
+                unpublished_catalog = client.get(
+                    "/api/v1/exams/catalog", headers=learner_headers
+                )
+                assert unpublished_catalog.json() == {"exams": []}
+
+                configured_exam = client.post(
+                    "/api/v1/admin/practice-exams",
+                    headers=admin_headers,
+                    json={
+                        "certification_id": certification_id,
+                        "category_id": category_id,
+                        "name": "Full Workflow Practice",
+                        "question_count": 1,
+                    },
+                )
+                assert configured_exam.status_code == 201
+                practice_exam_id = configured_exam.json()["id"]
+                published_exam = client.patch(
+                    f"/api/v1/admin/practice-exams/{practice_exam_id}/publication",
+                    headers=admin_headers,
+                    json={"is_published": True},
+                )
+                assert published_exam.status_code == 200
+                assert published_exam.json()["status"] == "published"
+                available_exams = client.get(
+                    "/api/v1/exams/catalog", headers=learner_headers
+                ).json()["exams"]
+                assert len(available_exams) == 1
+                assert available_exams[0]["id"] == practice_exam_id
 
                 # ---------------------------------------------
                 # Learner starts the real exam.
