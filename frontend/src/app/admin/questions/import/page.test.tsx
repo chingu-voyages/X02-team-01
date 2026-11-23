@@ -71,6 +71,8 @@ vi.mock(
       vi.fn(),
     getQuestionImportRows:
       vi.fn(),
+    publishQuestionImport:
+      vi.fn(),
     revalidateQuestionImport:
       vi.fn(),
     uploadQuestionImport:

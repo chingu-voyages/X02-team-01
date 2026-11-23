@@ -1,4 +1,4 @@
-"""Cancel and revalidate actions for staged question imports."""
+"""Recovery and publication actions for staged question imports."""
 
 from typing import Annotated
 from uuid import UUID
@@ -13,6 +13,7 @@ from sqlmodel import Session
 
 from app.api.deps import (
     get_current_user,
+    require_administrator,
     require_contributor_or_administrator,
 )
 from app.db.session import get_session
@@ -21,6 +22,15 @@ from app.models.user import User
 from app.schemas.question_import import (
     QuestionImportBatchOut,
     QuestionImportCancelOut,
+    QuestionImportPublishOut,
+)
+from app.services.question_import_publish_service import (
+    QuestionImportPublishConflictError,
+    QuestionImportPublishDataError,
+    QuestionImportPublishNotFoundError,
+    QuestionImportPublishPermissionError,
+    QuestionImportPublishStateError,
+    publish_imported_questions,
 )
 from app.services.question_import_workflow_service import (
     QuestionImportWorkflowNotFoundError,
@@ -151,6 +161,81 @@ def revalidate_question_import(
         ) from exc
 
     return _batch_response(batch)
+
+
+@router.post(
+    "/{batch_id}/publish",
+    response_model=QuestionImportPublishOut,
+)
+def publish_question_import(
+    batch_id: UUID,
+    current_user: Annotated[
+        User,
+        Depends(require_administrator),
+    ],
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
+) -> QuestionImportPublishOut:
+    """Approve and activate every eligible question from one import."""
+
+    try:
+        result = publish_imported_questions(
+            session,
+            batch_id=batch_id,
+            actor=current_user,
+        )
+    except QuestionImportPublishNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Question import not found",
+        ) from exc
+    except QuestionImportPublishPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        ) from exc
+    except QuestionImportPublishStateError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "IMPORT_BATCH_NOT_IMPORTED",
+                "message": str(exc),
+            },
+        ) from exc
+    except QuestionImportPublishDataError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "IMPORT_PUBLICATION_DATA_INVALID",
+                "message": str(exc),
+            },
+        ) from exc
+    except QuestionImportPublishConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "IMPORT_QUESTIONS_NOT_PUBLISHABLE",
+                "message": str(exc),
+            },
+        ) from exc
+
+    batch = session.get(
+        QuestionImportBatch,
+        result.batch_id,
+    )
+    assert batch is not None
+
+    return QuestionImportPublishOut(
+        batch=_batch_response(batch),
+        requested_count=result.requested_count,
+        published_count=result.published_count,
+        already_published_count=(result.already_published_count),
+        published_question_ids=list(result.published_question_ids),
+        already_published_question_ids=list(result.already_published_question_ids),
+        all_published=result.all_published,
+    )
 
 
 def _batch_response(
