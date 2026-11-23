@@ -93,16 +93,16 @@ from app.services.admin_question_service import (
     QuestionDraftNotPublishableError,
     QuestionDraftNotRejectableError,
     QuestionDraftScopeError,
-    QuestionReviewTransitionError,
     QuestionPublishedRevisionForbiddenError,
+    QuestionReviewTransitionError,
     create_question_draft,
     edit_question_draft,
     get_question_bank_details,
     publish_question_draft,
+    reject_question_draft,
     request_question_changes,
     start_question_review,
     submit_question_for_review,
-    reject_question_draft,
 )
 from app.services.admin_user_service import (
     AdministratorRoleChangeError,
