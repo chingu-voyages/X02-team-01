@@ -433,6 +433,7 @@ def _validate_row_candidate(
                     message=(
                         "Certification code does not match an existing certification."
                     ),
+                    value_preview=str(certification_code),
                 )
             )
 
@@ -475,6 +476,7 @@ def _validate_row_candidate(
                         message=(
                             "Category does not exist under the selected certification."
                         ),
+                        value_preview=str(category_name),
                     )
                 )
 
@@ -486,7 +488,8 @@ def _validate_row_candidate(
                         severity=("error"),
                         code=("AMBIGUOUS_CATALOG_REFERENCE"),
                         message=("Category name matches more than one category."),
-                    )
+                    ),
+                    value_preview=str(category_name),
                 )
 
             else:
