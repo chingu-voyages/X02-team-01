@@ -1,208 +1,85 @@
 "use client";
 
-import {
-  useEffect,
-  useState,
-} from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import AdminQuestionForm from "@/features/questions/AdminQuestionForm";
-import {
-  useDemoSession,
-} from "@/features/auth/AuthProvider";
+import { useDemoSession } from "@/features/auth/AuthProvider";
+import { getAdminQuestionCategories } from "@/lib/admin-catalog-api";
+import { ApiError } from "@/lib/api-client";
+import { createManagedQuestion } from "@/lib/admin-question-api";
 
-import {
-  getAdminQuestionCategories,
-} from "@/lib/admin-catalog-api";
+import type { PracticeCategory } from "@/types/category-api.types";
+import type { AdminQuestionDraftCreateRequest } from "@/types/admin-question-api.types";
 
-import {
-  ApiError,
-} from "@/lib/api-client";
-
-import {
-  createManagedQuestion,
-} from "@/lib/admin-question-api";
-
-import type {
-  PracticeCategory,
-} from "@/types/category-api.types";
-
-import type {
-  AdminQuestionDraftCreateRequest,
-} from "@/types/admin-question-api.types";
-
-
-type LoadStatus =
-  | "loading"
-  | "ready"
-  | "error";
-
+type LoadStatus = "loading" | "ready" | "error";
 
 export default function CreateAdminQuestionPage() {
-  const {
-    token,
-    ready,
-    handleError,
-  } =
-    useDemoSession();
-
-  const [
-    categories,
-    setCategories,
-  ] =
-    useState<
-      PracticeCategory[]
-    >([]);
-
-  const [
-    loadStatus,
-    setLoadStatus,
-  ] =
-    useState<LoadStatus>(
-      "loading",
-    );
-
-  const [
-    loadError,
-    setLoadError,
-  ] =
-    useState("");
-
-  const [
-    reloadKey,
-    setReloadKey,
-  ] =
-    useState(0);
-
+  const { token, ready, handleError } = useDemoSession();
+  const [categories, setCategories] = useState<PracticeCategory[]>([]);
+  const [loadStatus, setLoadStatus] = useState<LoadStatus>("loading");
+  const [loadError, setLoadError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    if (
-      !ready ||
-      !token
-    ) {
-      return;
-    }
+    if (!ready || !token) return;
 
-    let cancelled =
-      false;
+    let cancelled = false;
 
-    getAdminQuestionCategories(
-      token,
-    )
-      .then(
-        (data) => {
-          if (
-            cancelled
-          ) {
-            return;
-          }
+    getAdminQuestionCategories(token)
+      .then((data) => {
+        if (cancelled) return;
+        setCategories(data);
+        setLoadStatus("ready");
+        setLoadError("");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
 
-          setCategories(
-            data,
-          );
+        if (error instanceof ApiError && error.status === 401) {
+          handleError(error);
+          return;
+        }
 
-          setLoadStatus(
-            "ready",
-          );
-
-          setLoadError(
-            "",
-          );
-        },
-      )
-      .catch(
-        (
-          error: unknown,
-        ) => {
-          if (
-            cancelled
-          ) {
-            return;
-          }
-
-          if (
-            error instanceof
-              ApiError &&
-            error.status ===
-              401
-          ) {
-            handleError(
-              error,
-            );
-
-            return;
-          }
-
-          setLoadStatus(
-            "error",
-          );
-
-          setLoadError(
-            "Unable to load certification/category options.",
-          );
-        },
-      );
+        setLoadStatus("error");
+        setLoadError("Unable to load certification/category options.");
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [
-    handleError,
-    ready,
-    reloadKey,
-    token,
-  ]);
+  }, [handleError, ready, reloadKey, token]);
 
-
-  if (
-    !ready ||
-    !token
-  ) {
+  if (!ready || !token) {
     return (
-      <p role="status">
+      <p role="status" className="text-sm text-brand-text/70">
         Checking session...
       </p>
     );
   }
 
-
-  if (
-    loadStatus ===
-    "loading"
-  ) {
+  if (loadStatus === "loading") {
     return (
-      <p role="status">
+      <p role="status" className="text-sm text-brand-text/70">
         Loading question form...
       </p>
     );
   }
 
-
-  if (
-    loadStatus ===
-    "error"
-  ) {
+  if (loadStatus === "error") {
     return (
-      <div className="rounded-md border border-[#cfd2d5] bg-white p-6">
-        <p
-          role="alert"
-          className="text-sm text-red-700"
-        >
+      <div className="rounded-md border border-brand-border bg-white p-6 shadow-xs">
+        <p role="alert" className="text-sm text-red-700">
           {loadError}
         </p>
 
         <button
           type="button"
           onClick={() => {
-            setLoadStatus(
-              "loading",
-            );
-
-            setReloadKey(
-              (value) =>
-                value + 1,
-            );
+            setLoadStatus("loading");
+            setReloadKey((value) => value + 1);
           }}
-          className="mt-4 rounded-md bg-[#3d4145] px-4 py-2 text-sm text-white"
+          className="mt-4 cursor-pointer rounded-md bg-brand-accent px-4 py-2 text-sm font-semibold text-brand-text transition-colors hover:bg-brand-accent-tint"
         >
           Retry
         </button>
@@ -210,52 +87,33 @@ export default function CreateAdminQuestionPage() {
     );
   }
 
-
-  if (
-    categories.length ===
-    0
-  ) {
+  if (categories.length === 0) {
     return (
-      <div className="rounded-md border border-[#cfd2d5] bg-white p-6 text-sm text-[#687178]">
-        No categories are
-        currently available for
-        question creation. Create
-        a category in the admin
-        catalog first.
+      <div className="rounded-md border border-brand-border bg-white p-6 text-sm text-brand-text/75 shadow-xs">
+        No categories are currently available for question creation.{" "}
+        <Link
+          href="/admin/catalog"
+          className="font-semibold text-brand-text underline underline-offset-4 hover:text-brand-text/80"
+        >
+          Create a category in the admin catalog
+        </Link>{" "}
+        first.
       </div>
     );
   }
 
-
-  async function saveQuestion(
-    payload:
-      AdminQuestionDraftCreateRequest,
-  ) {
-    const created =
-      await createManagedQuestion(
-        token!,
-        payload,
-      );
-
-    return (
-      created.question_id
-    );
+  async function saveQuestion(payload: AdminQuestionDraftCreateRequest) {
+    const created = await createManagedQuestion(token!, payload);
+    return created.question_id;
   }
-
 
   return (
     <AdminQuestionForm
       mode="create"
       token={token}
-      categories={
-        categories
-      }
-      onUnauthorized={
-        handleError
-      }
-      onSubmit={
-        saveQuestion
-      }
+      categories={categories}
+      onUnauthorized={handleError}
+      onSubmit={saveQuestion}
     />
   );
 }

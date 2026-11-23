@@ -234,7 +234,10 @@ class QuestionBankItem(BaseModel):
         "retired",
     ]
 
+    review_note: str | None = None
+
     is_flagged: bool
+    has_image: bool = False
 
     created_by_id: UUID
     last_updated: datetime
@@ -316,6 +319,8 @@ class QuestionBankDetail(BaseModel):
         "inactive",
         "retired",
     ]
+
+    review_note: str | None = None
 
     is_flagged: bool
 

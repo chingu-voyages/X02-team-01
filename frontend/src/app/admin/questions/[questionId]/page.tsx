@@ -1058,15 +1058,33 @@ function userIdFromToken(
 
 
       {rejectedDraft && (
-        <div className="mb-5 flex items-center gap-2 rounded-md bg-[#f1f1f1] px-4 py-4 text-sm font-semibold">
+        <div className="mb-5 flex items-start gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-4 text-sm">
           <X
             aria-hidden="true"
-            className="size-4"
+            className="mt-0.5 size-4 shrink-0 text-red-700"
           />
 
-          REJECTED — edit this
-          question to return it
-          to pending review.
+          <div className="min-w-0">
+            <p className="font-semibold text-red-900">
+              REJECTED — edit this
+              question to return it
+              to pending review.
+            </p>
+
+            {question.review_note && (
+              <div className="mt-3 rounded-md border border-red-200 bg-white p-3 text-[#4f565b]">
+                <p className="text-xs font-semibold uppercase tracking-wide text-red-800">
+                  Administrator feedback
+                </p>
+
+                <p className="mt-1 whitespace-pre-wrap leading-6">
+                  {
+                    question.review_note
+                  }
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

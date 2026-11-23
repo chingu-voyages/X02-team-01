@@ -78,6 +78,7 @@ class QuestionBankRecord:
     question_type: str
     review_status: str
     publication_status: str
+    review_note: str | None
     is_flagged: bool
     created_by_id: UUID
     last_updated: datetime
@@ -118,6 +119,7 @@ class QuestionBankDetails:
     explanation: str | None
     review_status: str
     publication_status: str
+    review_note: str | None
     is_flagged: bool
     created_by_id: UUID
     submitted_by_id: UUID
@@ -127,12 +129,14 @@ class QuestionBankDetails:
     images: list[QuestionBankImage]
 
 
-def create_question_draft(
+def add_question_draft(
     session: Session,
     payload: QuestionDraftCreate,
     *,
     actor_id: UUID,
 ) -> CreatedQuestionDraft:
+    """Add one pending Draft question without committing the transaction."""
+
     _validate_question_scope(
         session,
         payload,
@@ -158,42 +162,38 @@ def create_question_draft(
         submitted_by_id=actor_id,
     )
 
-    try:
-        session.add(question)
-        session.flush()
+    session.add(question)
+    session.flush()
 
-        session.add(version)
-        session.flush()
+    session.add(version)
+    session.flush()
 
-        if payload.question_type == "multiple_choice":
-            for position, option in enumerate(
-                payload.options,
-                start=1,
-            ):
-                session.add(
-                    AnswerOption(
-                        question_version_id=(version.id),
-                        option_text=(option.option_text),
-                        is_correct=(option.is_correct),
-                        position=position,
-                    )
-                )
-
-        else:
-            assert payload.expected_answer is not None
-
+    if payload.question_type == "multiple_choice":
+        for position, option in enumerate(
+            payload.options,
+            start=1,
+        ):
             session.add(
-                TextAnswerKey(
+                AnswerOption(
                     question_version_id=(version.id),
-                    expected_answer=(payload.expected_answer),
+                    option_text=(option.option_text),
+                    is_correct=(option.is_correct),
+                    position=position,
                 )
             )
 
-        session.commit()
+    else:
+        assert payload.expected_answer is not None
 
-    except Exception:
-        session.rollback()
-        raise
+        session.add(
+            TextAnswerKey(
+                question_version_id=(version.id),
+                expected_answer=(payload.expected_answer),
+            )
+        )
+
+    # Surface child-record constraints while remaining transaction-neutral.
+    session.flush()
 
     return CreatedQuestionDraft(
         question_id=question.id,
@@ -202,6 +202,29 @@ def create_question_draft(
         review_status=(version.review_status),
         publication_status=(version.publication_status),
     )
+
+
+def create_question_draft(
+    session: Session,
+    payload: QuestionDraftCreate,
+    *,
+    actor_id: UUID,
+) -> CreatedQuestionDraft:
+    """Create one Draft using the normal single-question transaction."""
+
+    try:
+        created = add_question_draft(
+            session,
+            payload,
+            actor_id=actor_id,
+        )
+        session.commit()
+
+    except Exception:
+        session.rollback()
+        raise
+
+    return created
 
 
 def edit_question_draft(
@@ -799,6 +822,7 @@ def get_question_bank_details(
         explanation=(version.explanation),
         review_status=(version.review_status),
         publication_status=(version.publication_status),
+        review_note=(version.review_note),
         is_flagged=(version.is_flagged),
         created_by_id=(question.created_by_id),
         submitted_by_id=(version.submitted_by_id),

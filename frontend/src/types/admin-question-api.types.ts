@@ -34,6 +34,7 @@ export interface AdminQuestionBankItem {
   review_status: AdminReviewStatus;
   publication_status: AdminPublicationStatus;
   is_flagged: boolean;
+  has_image: boolean;
   created_by_id: string;
   last_updated: string;
 }
@@ -41,6 +42,20 @@ export interface AdminQuestionBankItem {
 export interface AdminQuestionBankListResponse {
   items: AdminQuestionBankItem[];
   count: number;
+}
+
+export interface AdminQuestionBankQuery {
+  search?: string;
+  certification_id?: string;
+  category_id?: string;
+  difficulty?: AdminDifficulty;
+  question_type?: AdminQuestionType;
+  review_status?: AdminReviewStatus;
+  author_email?: string;
+  publication_status?: AdminPublicationStatus;
+  has_image?: boolean;
+  page?: number;
+  page_size?: number;
 }
 
 export interface AdminAnswerOption {
@@ -83,6 +98,8 @@ export interface AdminQuestionDetail {
 
   review_status: AdminReviewStatus;
   publication_status: AdminPublicationStatus;
+
+  review_note: string | null;
 
   is_flagged: boolean;
 

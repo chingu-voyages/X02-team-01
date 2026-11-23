@@ -1,6 +1,6 @@
 """Role-protected administrative API routes."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import (
@@ -9,6 +9,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     Response,
     UploadFile,
     status,
@@ -71,6 +72,9 @@ from app.services.admin_certification_service import (
     list_certifications,
     set_certification_publication,
 )
+from app.services.admin_question_bank_query_service import (
+    query_question_bank,
+)
 from app.services.admin_question_image_service import (
     ManagedQuestionImage,
     QuestionImageLimitError,
@@ -89,17 +93,16 @@ from app.services.admin_question_service import (
     QuestionDraftNotPublishableError,
     QuestionDraftNotRejectableError,
     QuestionDraftScopeError,
-    QuestionPublishedRevisionForbiddenError,
     QuestionReviewTransitionError,
+    QuestionPublishedRevisionForbiddenError,
     create_question_draft,
     edit_question_draft,
     get_question_bank_details,
-    list_question_bank,
     publish_question_draft,
-    reject_question_draft,
     request_question_changes,
     start_question_review,
     submit_question_for_review,
+    reject_question_draft,
 )
 from app.services.admin_user_service import (
     AdministratorRoleChangeError,
@@ -302,6 +305,7 @@ def _question_detail_response(
         explanation=detail.explanation,
         review_status=detail.review_status,
         publication_status=detail.publication_status,
+        review_note=detail.review_note,
         is_flagged=detail.is_flagged,
         created_by_id=detail.created_by_id,
         submitted_by_id=detail.submitted_by_id,
@@ -520,14 +524,63 @@ def list_managed_questions(
         Session,
         Depends(get_session),
     ],
-    review_status: str | None = None,
+    search: str | None = None,
+    certification_id: UUID | None = None,
+    category_id: UUID | None = None,
+    difficulty: Literal[
+        "easy",
+        "medium",
+        "hard",
+    ]
+    | None = None,
+    question_type: Literal[
+        "multiple_choice",
+        "short_answer",
+    ]
+    | None = None,
+    review_status: Literal[
+        "pending",
+        "submitted",
+        "in_review",
+        "approved",
+        "rejected",
+    ]
+    | None = None,
+    publication_status: Literal[
+        "draft",
+        "active",
+        "inactive",
+        "retired",
+    ]
+    | None = None,
     author_email: str | None = None,
+    has_image: bool | None = None,
+    page: Annotated[
+        int,
+        Query(ge=1),
+    ] = 1,
+    page_size: Annotated[
+        int | None,
+        Query(
+            ge=1,
+            le=100,
+        ),
+    ] = None,
 ) -> QuestionBankList:
-    records = list_question_bank(
+    result = query_question_bank(
         session,
         actor=current_user,
+        search=search,
+        certification_id=certification_id,
+        category_id=category_id,
+        difficulty=difficulty,
+        question_type=question_type,
         review_status=review_status,
         author_email=author_email,
+        publication_status=publication_status,
+        has_image=has_image,
+        page=page,
+        page_size=page_size,
     )
 
     return QuestionBankList(
@@ -546,12 +599,13 @@ def list_managed_questions(
                 review_status=item.review_status,
                 publication_status=(item.publication_status),
                 is_flagged=item.is_flagged,
+                has_image=item.has_image,
                 created_by_id=item.created_by_id,
                 last_updated=item.last_updated,
             )
-            for item in records
+            for item in result.items
         ],
-        count=len(records),
+        count=result.total,
     )
 
 
@@ -1069,16 +1123,17 @@ def change_account_role(
     )
 
 
-@router.post("/questions/{question_id}/submit", response_model=QuestionBankDetails)
+@router.post("/questions/{question_id}/submit", response_model=QuestionBankDetail)
 def submit_question(
     question_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-) -> QuestionBankDetails:
+) -> QuestionBankDetail:
     """JHEP-119 AC1: the owning Contributor submits their valid Draft
     toward review. Submission never publishes."""
     try:
-        return submit_question_for_review(session, question_id, actor=current_user)
+        detail = submit_question_for_review(session, question_id, actor=current_user)
+        return _question_detail_response(detail)
     except QuestionBankNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except QuestionBankNotAuthorizedError as exc:
@@ -1088,16 +1143,17 @@ def submit_question(
 
 
 @router.post(
-    "/questions/{question_id}/start-review", response_model=QuestionBankDetails
+    "/questions/{question_id}/start-review", response_model=QuestionBankDetail
 )
 def start_question_review_endpoint(
     question_id: UUID,
     actor: Annotated[User, Depends(require_administrator)],
     session: Annotated[Session, Depends(get_session)],
-) -> QuestionBankDetails:
+) -> QuestionBankDetail:
     """JHEP-119 AC2: Submitted -> In Review, stamped with the reviewer."""
     try:
-        return start_question_review(session, question_id, actor=actor)
+        detail = start_question_review(session, question_id, actor=actor)
+        return _question_detail_response(detail)
     except QuestionBankNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except QuestionReviewTransitionError as exc:
@@ -1105,20 +1161,21 @@ def start_question_review_endpoint(
 
 
 @router.post(
-    "/questions/{question_id}/request-changes", response_model=QuestionBankDetails
+    "/questions/{question_id}/request-changes", response_model=QuestionBankDetail
 )
 def request_question_changes_endpoint(
     question_id: UUID,
     payload: QuestionRejectionRequest,
     actor: Annotated[User, Depends(require_administrator)],
     session: Annotated[Session, Depends(get_session)],
-) -> QuestionBankDetails:
+) -> QuestionBankDetail:
     """JHEP-119 AC3: In Review -> the author's editable Draft, with the
     required reason kept as feedback."""
     try:
-        return request_question_changes(
+        detail = request_question_changes(
             session, question_id, actor=actor, review_note=payload.review_note
         )
+        return _question_detail_response(detail)
     except QuestionBankNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except QuestionReviewTransitionError as exc:

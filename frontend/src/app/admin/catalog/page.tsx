@@ -26,6 +26,7 @@ import type {
   AdminCertification,
   AdminFeedbackMode,
 } from "@/types/admin-catalog-api.types";
+import CertificationCard from "@/features/categories/CertificationCard";
 
 type LoadStatus = "loading" | "ready" | "error";
 
@@ -473,44 +474,34 @@ export default function AdminCatalogPage() {
 
   if (!ready || !token) {
     return (
-      <p role="status">
+      <p role="status" className="text-sm text-brand-text/70">
         Checking session...
       </p>
     );
   }
 
-  if (
-    loadStatus === "loading"
-  ) {
+  if (loadStatus === "loading") {
     return (
-      <p role="status">
+      <p role="status" className="text-sm text-brand-text/70">
         Loading catalog...
       </p>
     );
   }
 
-  if (
-    loadStatus === "error"
-  ) {
+  if (loadStatus === "error") {
     return (
-      <div className="rounded-md border border-[#cfd2d5] bg-white p-6">
-        <p
-          role="alert"
-          className="text-sm text-red-700"
-        >
+      <div className="rounded-md border border-brand-border bg-white p-6 shadow-xs">
+        <p role="alert" className="text-sm text-red-700">
           {loadError}
         </p>
 
         <button
           type="button"
           onClick={() => {
-            setLoadStatus(
-              "loading",
-            );
-
+            setLoadStatus("loading");
             void loadCatalog();
           }}
-          className="mt-4 rounded-md bg-[#3d4145] px-4 py-2 text-sm font-medium text-white"
+          className="mt-4 cursor-pointer rounded-md bg-brand-accent px-4 py-2 text-sm font-semibold text-brand-text transition-colors hover:bg-brand-accent-tint"
         >
           Retry
         </button>
@@ -532,40 +523,24 @@ export default function AdminCatalogPage() {
             type="button"
             onClick={() => {
               setActionError("");
-
-              setShowCertificationForm(
-                (current) =>
-                  !current,
-              );
+              setShowCertificationForm((current) => !current);
             }}
-            className="inline-flex min-h-11 items-center gap-2 rounded-md bg-[#3d4145] px-5 text-sm font-semibold text-white hover:bg-[#292d30]"
+            className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-md bg-brand-accent px-5 text-sm font-semibold text-brand-text transition-colors hover:bg-brand-accent-tint"
           >
-            <Plus
-              aria-hidden="true"
-              className="size-4"
-            />
+            <Plus aria-hidden="true" className="size-4" />
             Certification
           </button>
 
           <button
             type="button"
-            disabled={
-              certifications.length === 0
-            }
+            disabled={certifications.length === 0}
             onClick={() => {
               setActionError("");
-
-              setShowCategoryForm(
-                (current) =>
-                  !current,
-              );
+              setShowCategoryForm((current) => !current);
             }}
-            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#cfd2d5] bg-white px-5 text-sm font-semibold hover:bg-[#f4f4f4] disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-brand-border bg-white px-5 text-sm font-semibold text-brand-text transition-colors hover:bg-brand-secondary/30 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Plus
-              aria-hidden="true"
-              className="size-4"
-            />
+            <Plus aria-hidden="true" className="size-4" />
             Category
           </button>
         </div>
@@ -574,139 +549,89 @@ export default function AdminCatalogPage() {
       {actionError && (
         <div
           role="alert"
-          className="mb-5 flex gap-2 rounded-md bg-red-50 p-4 text-sm text-red-700"
+          className="mb-5 flex gap-2 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700"
         >
-          <CircleAlert
-            aria-hidden="true"
-            className="mt-0.5 size-4 shrink-0"
-          />
-
+          <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
           {actionError}
         </div>
       )}
 
       {showCertificationForm && (
         <form
-          onSubmit={
-            submitCertification
-          }
-          className="mb-5 rounded-md border border-[#cfd2d5] bg-white p-5"
+          onSubmit={submitCertification}
+          className="mb-5 rounded-md border border-brand-border bg-white p-5 shadow-xs"
         >
-          <h2 className="text-lg font-bold">
+          <h2 className="text-lg font-bold text-brand-text">
             New Certification
           </h2>
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <label className="text-sm font-semibold">
+            <label className="text-sm font-semibold text-brand-text">
               Name *
               <input
-                value={
-                  certificationName
-                }
-                onChange={(
-                  event,
-                ) =>
-                  setCertificationName(
-                    event.target.value,
-                  )
-                }
-                className="mt-2 w-full rounded-md border border-[#cfd2d5] px-3 py-2.5 font-normal"
+                value={certificationName}
+                onChange={(event) => setCertificationName(event.target.value)}
+                className="mt-2 w-full rounded-md border border-brand-border bg-brand-surface/50 px-3 py-2.5 font-normal text-brand-text"
                 placeholder="Professional Scrum Master I"
               />
             </label>
 
-            <label className="text-sm font-semibold">
+            <label className="text-sm font-semibold text-brand-text">
               Code *
               <input
-                value={
-                  certificationCode
-                }
-                onChange={(
-                  event,
-                ) =>
-                  setCertificationCode(
-                    event.target.value,
-                  )
-                }
-                className="mt-2 w-full rounded-md border border-[#cfd2d5] px-3 py-2.5 font-normal"
+                value={certificationCode}
+                onChange={(event) => setCertificationCode(event.target.value)}
+                className="mt-2 w-full rounded-md border border-brand-border bg-brand-surface/50 px-3 py-2.5 font-normal text-brand-text"
                 placeholder="PSM-I"
               />
             </label>
 
-            <label className="text-sm font-semibold">
+            <label className="text-sm font-semibold text-brand-text">
               Passing Threshold *
               <input
                 type="number"
                 min="0"
                 max="100"
                 value={threshold}
-                onChange={(
-                  event,
-                ) =>
-                  setThreshold(
-                    event.target.value,
-                  )
-                }
-                className="mt-2 w-full rounded-md border border-[#cfd2d5] px-3 py-2.5 font-normal"
+                onChange={(event) => setThreshold(event.target.value)}
+                className="mt-2 w-full rounded-md border border-brand-border bg-brand-surface/50 px-3 py-2.5 font-normal text-brand-text"
               />
             </label>
 
-            <label className="text-sm font-semibold">
+            <label className="text-sm font-semibold text-brand-text">
               Feedback Mode
               <select
-                value={
-                  feedbackMode
+                value={feedbackMode}
+                onChange={(event) =>
+                  setFeedbackMode(event.target.value as AdminFeedbackMode)
                 }
-                onChange={(
-                  event,
-                ) =>
-                  setFeedbackMode(
-                    event.target
-                      .value as AdminFeedbackMode,
-                  )
-                }
-                className="mt-2 w-full rounded-md border border-[#cfd2d5] bg-white px-3 py-2.5 font-normal"
+                className="mt-2 w-full rounded-md border border-brand-border bg-brand-surface/50 px-3 py-2.5 font-normal text-brand-text"
               >
-                <option value="immediate">
-                  Immediate
-                </option>
-
-                <option value="deferred">
-                  Deferred
-                </option>
+                <option value="immediate">Immediate</option>
+                <option value="deferred">Deferred</option>
               </select>
             </label>
           </div>
 
-          <p className="mt-4 text-xs text-[#687178]">
-            New certifications
-            are created
-            unpublished.
+          <p className="mt-4 text-xs text-brand-text/70">
+            New certifications are created unpublished.
           </p>
 
           <div className="mt-4 flex justify-end gap-2">
             <button
               type="button"
-              onClick={() =>
-                setShowCertificationForm(
-                  false,
-                )
-              }
-              className="rounded-md border border-[#cfd2d5] px-4 py-2 text-sm"
+              onClick={() => setShowCertificationForm(false)}
+              className="cursor-pointer rounded-md border border-brand-border bg-white px-4 py-2 text-sm font-medium text-brand-text transition-colors hover:bg-brand-secondary/30"
             >
               Cancel
             </button>
 
             <button
               type="submit"
-              disabled={
-                savingCertification
-              }
-              className="rounded-md bg-[#3d4145] px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              disabled={savingCertification}
+              className="cursor-pointer rounded-md bg-brand-accent px-5 py-2 text-sm font-semibold text-brand-text transition-colors hover:bg-brand-accent-tint disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {savingCertification
-                ? "Creating..."
-                : "Create Certification"}
+              {savingCertification ? "Creating..." : "Create Certification"}
             </button>
           </div>
         </form>
@@ -714,276 +639,89 @@ export default function AdminCatalogPage() {
 
       {showCategoryForm && (
         <form
-          onSubmit={
-            submitCategory
-          }
-          className="mb-5 rounded-md border border-[#cfd2d5] bg-white p-5"
+          onSubmit={submitCategory}
+          className="mb-5 rounded-md border border-brand-border bg-white p-5 shadow-xs"
         >
-          <h2 className="text-lg font-bold">
-            New Category
-          </h2>
+          <h2 className="text-lg font-bold text-brand-text">New Category</h2>
 
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <label className="text-sm font-semibold">
+            <label className="text-sm font-semibold text-brand-text">
               Certification *
               <select
-                value={
-                  categoryCertificationId
+                value={categoryCertificationId}
+                onChange={(event) =>
+                  setCategoryCertificationId(event.target.value)
                 }
-                onChange={(
-                  event,
-                ) =>
-                  setCategoryCertificationId(
-                    event.target.value,
-                  )
-                }
-                className="mt-2 w-full rounded-md border border-[#cfd2d5] bg-white px-3 py-2.5 font-normal"
+                className="mt-2 w-full rounded-md border border-brand-border bg-brand-surface/50 px-3 py-2.5 font-normal text-brand-text"
               >
-                {certifications.map(
-                  (
-                    certification,
-                  ) => (
-                    <option
-                      key={
-                        certification.id
-                      }
-                      value={
-                        certification.id
-                      }
-                    >
-                      {
-                        certification.name
-                      }
-                    </option>
-                  ),
-                )}
+                {certifications.map((certification) => (
+                  <option key={certification.id} value={certification.id}>
+                    {certification.name}
+                  </option>
+                ))}
               </select>
             </label>
 
-            <label className="text-sm font-semibold">
+            <label className="text-sm font-semibold text-brand-text">
               Category Name *
               <input
-                value={
-                  categoryName
-                }
-                onChange={(
-                  event,
-                ) =>
-                  setCategoryName(
-                    event.target.value,
-                  )
-                }
-                className="mt-2 w-full rounded-md border border-[#cfd2d5] px-3 py-2.5 font-normal"
+                value={categoryName}
+                onChange={(event) => setCategoryName(event.target.value)}
+                className="mt-2 w-full rounded-md border border-brand-border bg-brand-surface/50 px-3 py-2.5 font-normal text-brand-text"
                 placeholder="Scrum Fundamentals"
               />
             </label>
           </div>
 
-          <p className="mt-4 text-xs text-[#687178]">
-            New categories are
-            created unpublished.
+          <p className="mt-4 text-xs text-brand-text/70">
+            New categories are created unpublished.
           </p>
 
           <div className="mt-4 flex justify-end gap-2">
             <button
               type="button"
-              onClick={() =>
-                setShowCategoryForm(
-                  false,
-                )
-              }
-              className="rounded-md border border-[#cfd2d5] px-4 py-2 text-sm"
+              onClick={() => setShowCategoryForm(false)}
+              className="cursor-pointer rounded-md border border-brand-border bg-white px-4 py-2 text-sm font-medium text-brand-text transition-colors hover:bg-brand-secondary/30"
             >
               Cancel
             </button>
 
             <button
               type="submit"
-              disabled={
-                savingCategory
-              }
-              className="rounded-md bg-[#3d4145] px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              disabled={savingCategory}
+              className="cursor-pointer rounded-md bg-brand-accent px-5 py-2 text-sm font-semibold text-brand-text transition-colors hover:bg-brand-accent-tint disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {savingCategory
-                ? "Creating..."
-                : "Create Category"}
+              {savingCategory ? "Creating..." : "Create Category"}
             </button>
           </div>
         </form>
       )}
 
-      {certifications.length ===
-      0 ? (
-        <div className="rounded-md border border-[#cfd2d5] bg-white p-10 text-center text-sm text-[#687178]">
-          No certifications
-          exist yet. Create the
-          first certification to
-          begin building the
-          catalog.
+      {certifications.length === 0 ? (
+        <div className="rounded-md border border-brand-border bg-white p-10 text-center text-sm text-brand-text/70 shadow-xs">
+          No certifications exist yet. Create the first certification to begin
+          building the catalog.
         </div>
       ) : (
         <div className="space-y-4">
-          {certifications.map(
-            (
-              certification,
-            ) => {
-              const certificationCategories =
-                categoriesByCertification.get(
-                  certification.id,
-                ) ?? [];
-
-              return (
-                <article
-                  key={
-                    certification.id
-                  }
-                  className="overflow-hidden rounded-md border border-[#cfd2d5] bg-white"
-                >
-                  <div className="flex flex-col gap-4 border-b border-[#dfe1e3] bg-[#f5f5f5] p-5 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-3">
-                        <h2 className="text-lg font-bold">
-                          {
-                            certification.name
-                          }
-                        </h2>
-
-                        <span className="rounded-full bg-[#dfe2e4] px-3 py-1 text-xs font-semibold">
-                          {
-                            certification.code
-                          }
-                        </span>
-
-                        <span className="rounded-full bg-white px-3 py-1 text-xs font-medium">
-                          {certification.is_published
-                            ? "Published"
-                            : "Draft"}
-                        </span>
-                      </div>
-
-                      <p className="mt-2 text-sm text-[#687178]">
-                        Passing score:{" "}
-                        {certification.passing_threshold_pct ??
-                          "Not configured"}
-                        %
-                        {" · "}
-                        Feedback:{" "}
-                        {
-                          certification.feedback_mode
-                        }
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={
-                        changingPublicationId ===
-                        certification.id
-                      }
-                      onClick={() =>
-                        void toggleCertification(
-                          certification,
-                        )
-                      }
-                      className="rounded-md border border-[#cfd2d5] bg-white px-4 py-2 text-sm font-semibold hover:bg-[#eeeeee] disabled:opacity-50"
-                    >
-                      {changingPublicationId ===
-                      certification.id
-                        ? "Updating..."
-                        : certification.is_published
-                          ? "Unpublish Certification"
-                          : "Publish Certification"}
-                    </button>
-                  </div>
-
-                  <div className="p-5">
-                    <div className="mb-3 flex items-center justify-between">
-                      <h3 className="text-sm font-bold uppercase tracking-wide">
-                        Categories
-                      </h3>
-
-                      <span className="text-xs text-[#687178]">
-                        {
-                          certificationCategories.length
-                        }{" "}
-                        total
-                      </span>
-                    </div>
-
-                    {certificationCategories.length ===
-                    0 ? (
-                      <div className="rounded-md border border-dashed border-[#cfd2d5] p-6 text-sm text-[#687178]">
-                        No categories
-                        have been created
-                        for this
-                        certification.
-                      </div>
-                    ) : (
-                      <div className="divide-y divide-[#e2e4e6] rounded-md border border-[#d8dade]">
-                        {certificationCategories.map(
-                          (
-                            category,
-                          ) => (
-                            <div
-                              key={
-                                category.id
-                              }
-                              className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
-                            >
-                              <div>
-                                <p className="font-semibold">
-                                  {
-                                    category.name
-                                  }
-                                </p>
-
-                                <p className="mt-1 text-xs text-[#687178]">
-                                  {category.is_published
-                                    ? "Published category"
-                                    : "Draft category"}
-                                </p>
-                              </div>
-
-                              <button
-                                type="button"
-                                disabled={
-                                  changingPublicationId ===
-                                  category.id
-                                }
-                                onClick={() =>
-                                  void toggleCategory(
-                                    category,
-                                  )
-                                }
-                                className="rounded-md border border-[#cfd2d5] px-4 py-2 text-sm font-medium hover:bg-[#f4f4f4] disabled:opacity-50"
-                              >
-                                {changingPublicationId ===
-                                category.id
-                                  ? "Updating..."
-                                  : category.is_published
-                                    ? "Unpublish"
-                                    : "Publish"}
-                              </button>
-                            </div>
-                          ),
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </article>
-              );
-            },
-          )}
+          {certifications.map((certification) => (
+            <CertificationCard
+              key={certification.id}
+              certification={certification}
+              categories={
+                categoriesByCertification.get(certification.id) ?? []
+              }
+              changingPublicationId={changingPublicationId}
+              onToggleCertification={(item) => void toggleCertification(item)}
+              onToggleCategory={(item) => void toggleCategory(item)}
+            />
+          ))}
         </div>
       )}
 
-      <p className="mt-6 text-xs leading-5 text-[#687178]">
-        Learners only see
-        categories when the
-        certification and category
-        are published and the
-        category contains eligible
-        approved questions.
+      <p className="mt-6 text-xs leading-5 text-brand-text/70">
+        Learners only see categories when the certification and category are
+        published and the category contains eligible approved questions.
       </p>
     </section>
   );
