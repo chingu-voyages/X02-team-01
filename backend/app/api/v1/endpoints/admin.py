@@ -1142,9 +1142,7 @@ def submit_question(
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
-@router.post(
-    "/questions/{question_id}/start-review", response_model=QuestionBankDetail
-)
+@router.post("/questions/{question_id}/start-review", response_model=QuestionBankDetail)
 def start_question_review_endpoint(
     question_id: UUID,
     actor: Annotated[User, Depends(require_administrator)],
