@@ -95,6 +95,16 @@ export interface QuestionImportCommitResponse {
   already_imported: boolean;
 }
 
+export interface QuestionImportPublishResponse {
+  batch: QuestionImportBatch;
+  requested_count: number;
+  published_count: number;
+  already_published_count: number;
+  published_question_ids: string[];
+  already_published_question_ids: string[];
+  all_published: boolean;
+}
+
 export interface QuestionImportCancelResponse {
   batch: QuestionImportBatch;
   discarded_asset_count: number;

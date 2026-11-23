@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Lato, Poppins } from "next/font/google";
 import { AuthProvider } from "@/features/auth/AuthProvider";
+import Console from "@/components/layouts/Console";
 import "./globals.css";
 
 const lato = Lato({
@@ -30,8 +32,12 @@ export default function RootLayout({
       lang="en"
       className={`${lato.variable} ${poppins.variable} font-sans antialiased`}
     >
-      <body className="min-h-full flex flex-col">
-        <AuthProvider>{children}</AuthProvider>
+      <body className="min-h-full flex flex-col bg-brand-surface">
+        <AuthProvider>
+          <Suspense fallback={<div role="status" className="p-6 text-sm text-brand-text/70">Loading workspace...</div>}>
+            <Console>{children}</Console>
+          </Suspense>
+        </AuthProvider>
       </body>
     </html>
   );

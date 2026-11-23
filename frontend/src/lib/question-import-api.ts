@@ -9,6 +9,7 @@ import type {
   QuestionImportCommitResponse,
   QuestionImportHistoryPage,
   QuestionImportHistoryQuery,
+  QuestionImportPublishResponse,
   QuestionImportRowsPage,
   QuestionImportRowsQuery,
 } from "@/types/question-import-api.types";
@@ -226,6 +227,22 @@ export async function commitQuestionImport(
     `/admin/question-imports/${encodeURIComponent(
       batchId,
     )}/commit`,
+    token,
+    {
+      method: "POST",
+    },
+  );
+}
+
+
+export async function publishQuestionImport(
+  token: string,
+  batchId: string,
+): Promise<QuestionImportPublishResponse> {
+  return apiRequest<QuestionImportPublishResponse>(
+    `/admin/question-imports/${encodeURIComponent(
+      batchId,
+    )}/publish`,
     token,
     {
       method: "POST",
