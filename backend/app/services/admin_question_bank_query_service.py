@@ -67,6 +67,7 @@ def query_question_bank(
     difficulty: str | None = None,
     question_type: str | None = None,
     review_status: str | None = None,
+    author_email: str | None = None,
     publication_status: str | None = None,
     has_image: bool | None = None,
     page: int = 1,
@@ -129,6 +130,11 @@ def query_question_bank(
 
     if actor.role == UserRole.CONTRIBUTOR:
         statement = statement.where(Question.created_by_id == actor.id)
+
+    if author_email and author_email.strip():
+        statement = statement.join(User, User.id == Question.created_by_id).where(
+            func.lower(User.email) == author_email.strip().lower()
+        )
 
     normalized_search = search.strip() if search else ""
 

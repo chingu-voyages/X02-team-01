@@ -55,6 +55,10 @@ function questionBankQueryString(
     );
   }
 
+  if (query.author_email?.trim()) {
+    params.set("author_email", query.author_email.trim());
+  }
+
   if (query.review_status) {
     params.set(
       "review_status",
@@ -307,6 +311,33 @@ export async function retireManagedQuestion(
       body: JSON.stringify({
         confirm: true,
       }),
+    },
+  );
+}
+
+
+export async function submitManagedQuestion(
+  token: string,
+  questionId: string,
+): Promise<AdminQuestionDetail> {
+  return apiRequest<AdminQuestionDetail>(
+    `/admin/questions/${encodeURIComponent(questionId)}/submit`,
+    token,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function startQuestionReview(
+  token: string,
+  questionId: string,
+): Promise<AdminQuestionDetail> {
+  return apiRequest<AdminQuestionDetail>(
+    `/admin/questions/${encodeURIComponent(questionId)}/start-review`,
+    token,
+    {
+      method: "POST",
     },
   );
 }

@@ -87,17 +87,22 @@ from app.services.admin_question_image_service import (
 )
 from app.services.admin_question_service import (
     QuestionBankDetails,
+    QuestionBankNotAuthorizedError,
     QuestionBankNotFoundError,
     QuestionDraftNotEditableError,
     QuestionDraftNotPublishableError,
     QuestionDraftNotRejectableError,
     QuestionDraftScopeError,
     QuestionPublishedRevisionForbiddenError,
+    QuestionReviewTransitionError,
     create_question_draft,
     edit_question_draft,
     get_question_bank_details,
     publish_question_draft,
     reject_question_draft,
+    request_question_changes,
+    start_question_review,
+    submit_question_for_review,
 )
 from app.services.admin_user_service import (
     AdministratorRoleChangeError,
@@ -535,6 +540,8 @@ def list_managed_questions(
     | None = None,
     review_status: Literal[
         "pending",
+        "submitted",
+        "in_review",
         "approved",
         "rejected",
     ]
@@ -542,9 +549,11 @@ def list_managed_questions(
     publication_status: Literal[
         "draft",
         "active",
+        "inactive",
         "retired",
     ]
     | None = None,
+    author_email: str | None = None,
     has_image: bool | None = None,
     page: Annotated[
         int,
@@ -567,6 +576,7 @@ def list_managed_questions(
         difficulty=difficulty,
         question_type=question_type,
         review_status=review_status,
+        author_email=author_email,
         publication_status=publication_status,
         has_image=has_image,
         page=page,
@@ -1111,3 +1121,60 @@ def change_account_role(
         role_after=audit.role_after,
         changed_at=audit.created_at,
     )
+
+
+@router.post("/questions/{question_id}/submit", response_model=QuestionBankDetail)
+def submit_question(
+    question_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+) -> QuestionBankDetail:
+    """JHEP-119 AC1: the owning Contributor submits their valid Draft
+    toward review. Submission never publishes."""
+    try:
+        detail = submit_question_for_review(session, question_id, actor=current_user)
+        return _question_detail_response(detail)
+    except QuestionBankNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except QuestionBankNotAuthorizedError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except QuestionReviewTransitionError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post("/questions/{question_id}/start-review", response_model=QuestionBankDetail)
+def start_question_review_endpoint(
+    question_id: UUID,
+    actor: Annotated[User, Depends(require_administrator)],
+    session: Annotated[Session, Depends(get_session)],
+) -> QuestionBankDetail:
+    """JHEP-119 AC2: Submitted -> In Review, stamped with the reviewer."""
+    try:
+        detail = start_question_review(session, question_id, actor=actor)
+        return _question_detail_response(detail)
+    except QuestionBankNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except QuestionReviewTransitionError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/questions/{question_id}/request-changes", response_model=QuestionBankDetail
+)
+def request_question_changes_endpoint(
+    question_id: UUID,
+    payload: QuestionRejectionRequest,
+    actor: Annotated[User, Depends(require_administrator)],
+    session: Annotated[Session, Depends(get_session)],
+) -> QuestionBankDetail:
+    """JHEP-119 AC3: In Review -> the author's editable Draft, with the
+    required reason kept as feedback."""
+    try:
+        detail = request_question_changes(
+            session, question_id, actor=actor, review_note=payload.review_note
+        )
+        return _question_detail_response(detail)
+    except QuestionBankNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except QuestionReviewTransitionError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc

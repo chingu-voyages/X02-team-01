@@ -178,7 +178,7 @@ def edit_payload(
     return {
         "category_id": str(category_id),
         "difficulty": "medium",
-        "question_text": ("Updated question after feedback"),
+        "question_text": "Updated question after feedback",
         "question_type": "multiple_choice",
         "allows_multiple_answers": False,
         "explanation": "Updated explanation.",
@@ -205,10 +205,7 @@ def create_question(
     response = client.post(
         "/admin/questions",
         headers=auth_header(contributor),
-        json=create_payload(
-            certification.id,
-            category.id,
-        ),
+        json=create_payload(certification.id, category.id),
     )
 
     assert response.status_code == 201
@@ -216,74 +213,123 @@ def create_question(
     return UUID(response.json()["question_id"])
 
 
-def test_rejection_feedback_is_visible_to_owner_and_clears_after_edit(
+def submit_and_start_review(
+    client: TestClient,
+    *,
+    question_id: UUID,
+    contributor: User,
+    administrator: User,
+) -> None:
+    """JHEP-119 requires submit -> start-review before an admin decision."""
+    submitted = client.post(
+        f"/admin/questions/{question_id}/submit",
+        headers=auth_header(contributor),
+    )
+    assert submitted.status_code == 200, submitted.text
+    assert submitted.json()["review_status"] == "submitted"
+
+    in_review = client.post(
+        f"/admin/questions/{question_id}/start-review",
+        headers=auth_header(administrator),
+    )
+    assert in_review.status_code == 200, in_review.text
+    assert in_review.json()["review_status"] == "in_review"
+
+
+def test_requested_changes_feedback_is_visible_to_owner_and_clears_after_edit(
     client: TestClient,
     session: Session,
 ):
-    contributor = create_user(
-        session,
-        UserRole.CONTRIBUTOR,
-    )
-
-    administrator = create_user(
-        session,
-        UserRole.ADMINISTRATOR,
-    )
-
+    """Request Changes is the editable feedback path, unlike terminal Reject."""
+    contributor = create_user(session, UserRole.CONTRIBUTOR)
+    administrator = create_user(session, UserRole.ADMINISTRATOR)
     certification, category = seed_catalog(session)
-
-    question_id = create_question(
+    question_id = create_question(client, contributor, certification, category)
+    submit_and_start_review(
         client,
-        contributor,
-        certification,
-        category,
+        question_id=question_id,
+        contributor=contributor,
+        administrator=administrator,
     )
 
-    rejected = client.post(
-        (f"/admin/questions/{question_id}/reject"),
+    review_note = "Please clarify why option B is incorrect."
+    requested_changes = client.post(
+        f"/admin/questions/{question_id}/request-changes",
         headers=auth_header(administrator),
-        json={
-            "review_note": ("Please clarify why option B is incorrect."),
-        },
+        json={"review_note": review_note},
     )
 
-    assert rejected.status_code == 200
-
-    rejected_body = rejected.json()
-
-    assert rejected_body["review_status"] == "rejected"
-
-    assert rejected_body["publication_status"] == "draft"
-
-    assert rejected_body["review_note"] == ("Please clarify why option B is incorrect.")
+    assert requested_changes.status_code == 200, requested_changes.text
+    assert requested_changes.json()["review_status"] == "pending"
+    assert requested_changes.json()["publication_status"] == "draft"
+    assert requested_changes.json()["review_note"] == review_note
 
     contributor_view = client.get(
-        (f"/admin/questions/{question_id}"),
+        f"/admin/questions/{question_id}",
         headers=auth_header(contributor),
     )
-
     assert contributor_view.status_code == 200
-
-    contributor_body = contributor_view.json()
-
-    assert contributor_body["review_status"] == "rejected"
-
-    assert contributor_body["review_note"] == (
-        "Please clarify why option B is incorrect."
-    )
+    assert contributor_view.json()["review_note"] == review_note
 
     edited = client.patch(
-        (f"/admin/questions/{question_id}"),
+        f"/admin/questions/{question_id}",
         headers=auth_header(contributor),
         json=edit_payload(category.id),
     )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["review_status"] == "pending"
+    assert edited.json()["publication_status"] == "draft"
+    assert edited.json()["review_note"] is None
 
-    assert edited.status_code == 200
 
-    edited_body = edited.json()
+def test_rejection_feedback_is_visible_but_rejected_question_cannot_be_edited(
+    client: TestClient,
+    session: Session,
+):
+    """Rejected questions retain reviewer feedback and cannot be reactivated by edit."""
+    contributor = create_user(session, UserRole.CONTRIBUTOR)
+    administrator = create_user(session, UserRole.ADMINISTRATOR)
+    certification, category = seed_catalog(session)
+    question_id = create_question(client, contributor, certification, category)
+    submit_and_start_review(
+        client,
+        question_id=question_id,
+        contributor=contributor,
+        administrator=administrator,
+    )
 
-    assert edited_body["review_status"] == "pending"
+    review_note = "The answer is incorrect and cannot be approved."
+    rejected = client.post(
+        f"/admin/questions/{question_id}/reject",
+        headers=auth_header(administrator),
+        json={"review_note": review_note},
+    )
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["review_status"] == "rejected"
+    assert rejected.json()["publication_status"] == "inactive"
+    assert rejected.json()["review_note"] == review_note
 
-    assert edited_body["publication_status"] == "draft"
+    contributor_view = client.get(
+        f"/admin/questions/{question_id}",
+        headers=auth_header(contributor),
+    )
+    assert contributor_view.status_code == 200
+    assert contributor_view.json()["review_status"] == "rejected"
+    assert contributor_view.json()["publication_status"] == "inactive"
+    assert contributor_view.json()["review_note"] == review_note
 
-    assert edited_body["review_note"] is None
+    edited = client.patch(
+        f"/admin/questions/{question_id}",
+        headers=auth_header(contributor),
+        json=edit_payload(category.id),
+    )
+    assert edited.status_code == 409
+
+    still_rejected = client.get(
+        f"/admin/questions/{question_id}",
+        headers=auth_header(contributor),
+    )
+    assert still_rejected.status_code == 200
+    assert still_rejected.json()["review_status"] == "rejected"
+    assert still_rejected.json()["publication_status"] == "inactive"
+    assert still_rejected.json()["review_note"] == review_note

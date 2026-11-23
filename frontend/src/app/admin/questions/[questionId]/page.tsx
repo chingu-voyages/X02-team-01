@@ -30,6 +30,8 @@ import {
 import {
   getManagedQuestion,
   publishManagedQuestion,
+  startQuestionReview,
+  submitManagedQuestion,
   rejectManagedQuestion,
   retireManagedQuestion,
 } from "@/lib/admin-question-api";
@@ -179,6 +181,40 @@ export default function AdminQuestionDetailPage() {
   } =
     useDemoSession();
 
+function userIdFromToken(
+  token: string | null,
+): string | null {
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const parts = token.split(".");
+
+    if (parts.length < 2 || !parts[1]) {
+      return null;
+    }
+
+    const normalized = parts[1]
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+
+    const padded = normalized.padEnd(
+      Math.ceil(normalized.length / 4) * 4,
+      "=",
+    );
+
+    const payload = JSON.parse(
+      atob(padded),
+    ) as { sub?: unknown };
+
+    return typeof payload.sub === "string" ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+
   const questionId =
     params.questionId;
 
@@ -190,6 +226,9 @@ export default function AdminQuestionDetailPage() {
   const isAdministrator =
     role ===
     "administrator";
+
+  const currentUserId =
+    userIdFromToken(token);
 
   const [
     question,
@@ -230,6 +269,13 @@ export default function AdminQuestionDetailPage() {
     setReviewError,
   ] =
     useState("");
+
+  // JHEP-119: the submit-for-review / start-review transition state
+  const [
+    submitting,
+    setSubmitting,
+  ] =
+    useState(false);
 
   const [
     showRejectModal,
@@ -397,6 +443,54 @@ export default function AdminQuestionDetailPage() {
     );
   }
 
+
+  async function submitQuestion() {
+    if (
+      !token ||
+      !question ||
+      submitting
+    ) {
+      return;
+    }
+
+    setSubmitting(true);
+    setReviewError("");
+
+    try {
+      await submitManagedQuestion(token, question.question_id);
+      await refreshQuestion();
+    } catch (error: unknown) {
+      if (error instanceof ApiError) {
+        setReviewError(error.message);
+      } else {
+        setReviewError("Unable to submit the question for review.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function startReview() {
+    if (!isAdministrator || !token || !question || submitting) {
+      return;
+    }
+
+    setSubmitting(true);
+    setReviewError("");
+
+    try {
+      await startQuestionReview(token, question.question_id);
+      await refreshQuestion();
+    } catch (error: unknown) {
+      if (error instanceof ApiError) {
+        setReviewError(error.message);
+      } else {
+        setReviewError("Unable to start the review.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function publishQuestion() {
     if (
@@ -757,6 +851,17 @@ export default function AdminQuestionDetailPage() {
       .review_status ===
       "pending";
 
+  // JHEP-119: the review-workflow states
+  const isSubmitted =
+    question.review_status === "submitted";
+  const isInReview =
+    question.review_status === "in_review";
+  const isInactive =
+    question.publication_status === "inactive";
+  const isOwnContributorDraft =
+    pendingDraft &&
+    question.created_by_id === (currentUserId ?? "");
+
   const rejectedDraft =
     question
       .publication_status ===
@@ -817,6 +922,35 @@ export default function AdminQuestionDetailPage() {
                 Edit
               </Link>
             )}
+
+            {isOwnContributorDraft && (
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => {
+                  setReviewError("");
+                  void submitQuestion();
+                }}
+                className="rounded-md bg-[#3d4145] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#292d30] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {submitting ? "Submitting..." : "Submit for Review"}
+              </button>
+            )}
+
+            {isAdministrator &&
+              isSubmitted && (
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => {
+                    setReviewError("");
+                    void startReview();
+                  }}
+                  className="rounded-md bg-[#3d4145] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#292d30] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {submitting ? "Starting..." : "Start Review"}
+                </button>
+              )}
 
             {isAdministrator &&
               pendingDraft && (

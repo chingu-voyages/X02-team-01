@@ -46,6 +46,8 @@ type LoadStatus =
 type WorkflowFilter =
   | "all"
   | "pending"
+  | "submitted"
+  | "in_review"
   | "approved_draft"
   | "rejected"
   | "published"
@@ -69,6 +71,10 @@ function formatStatus(
     return "Retired";
   }
 
+  if (publicationStatus === "inactive") {
+    return "Rejected";
+  }
+
   if (
     publicationStatus ===
     "active"
@@ -81,6 +87,14 @@ function formatStatus(
     "rejected"
   ) {
     return "Rejected";
+  }
+
+  if (reviewStatus === "submitted") {
+    return "Submitted";
+  }
+
+  if (reviewStatus === "in_review") {
+    return "In Review";
   }
 
   if (
@@ -183,6 +197,10 @@ function workflowQuery(
   | "review_status"
   | "publication_status"
 > {
+  if (workflow === "submitted" || workflow === "in_review") {
+    return { review_status: workflow };
+  }
+
   if (
     workflow ===
     "pending"
@@ -1016,6 +1034,12 @@ export default function AdminQuestionsPage() {
                 </option>
                 <option value="pending">
                   Pending Review
+                </option>
+                <option value="submitted">
+                  Submitted
+                </option>
+                <option value="in_review">
+                  In Review
                 </option>
                 <option value="approved_draft">
                   Approved Draft

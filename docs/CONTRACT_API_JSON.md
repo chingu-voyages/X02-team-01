@@ -1,6 +1,6 @@
 # JHEP — Current API Contract and Mock JSON Responses
 
-**Current contract baseline:** `feat/JHEP-118-bulk-question-import`  
+**Current contract baseline:** `feat/JHEP-118-bulk-question-import`
 **Verified:** November 19, 2026  
 **API prefix:** `/api/v1`
 
@@ -201,7 +201,10 @@ Bulk-imported questions begin as `pending / draft`, so they are not learner-visi
 | POST | `/api/v1/admin/questions/{question_id}/images` | CURRENT | Contributor/Admin* |
 | PATCH | `/api/v1/admin/questions/{question_id}/images/{image_id}` | CURRENT | Contributor/Admin* |
 | DELETE | `/api/v1/admin/questions/{question_id}/images/{image_id}` | CURRENT | Contributor/Admin* |
-| POST | `/api/v1/admin/questions/{question_id}/publish` | CURRENT | Admin |
+| POST | `/api/v1/admin/questions/{question_id}/publish` | CURRENT |
+| POST | `/api/v1/admin/questions/{question_id}/submit` | CURRENT (JHEP-119) | Bearer (the owning contributor) |
+| POST | `/api/v1/admin/questions/{question_id}/start-review` | CURRENT (JHEP-119) | Bearer + administrator |
+| POST | `/api/v1/admin/questions/{question_id}/request-changes` | CURRENT (JHEP-119) | Bearer + administrator | Admin |
 | POST | `/api/v1/admin/questions/{question_id}/reject` | CURRENT | Admin |
 | POST | `/api/v1/admin/questions/{question_id}/retire` | CURRENT | Admin |
 
@@ -1330,3 +1333,35 @@ backend/app/services/r2_storage.py
 ```
 
 When this document and code disagree, route decorators, Pydantic models, authorization dependencies, repository eligibility rules, and service behavior are the implementation source of truth.
+
+
+# 4.x Review workflow — Submitted / In Review — CURRENT (JHEP-119)
+
+The question review state machine (the ACs' flow):
+
+```
+Contributor: Draft --submit(own only)--> Submitted
+Admin:       Submitted --start-review--> In Review
+Admin:       In Review --publish--> approved + active   (the existing atomic action)
+Admin:       In Review --request-changes(reason)--> pending/draft (the author reworks)
+Admin:       In Review --reject(reason)--> rejected + inactive (terminal, retained)
+Admin author: pending/draft --publish directly--> unchanged (JHEP-159's path)
+```
+
+- **Submit**: the owning contributor only (actor scoping); the
+  publication status stays `draft` — submission never publishes (AC1).
+- **Opening a submission changes nothing** (AC2): only Start Review
+  moves Submitted → In Review, stamped with the reviewer.
+- **Request Changes** requires a reason; the reason is kept as the
+  version's review feedback and the author can edit/resubmit (AC3/AC4).
+- **Reject** requires a reason and the outcome is terminal:
+  `publication_status: inactive` — retained, never silently reactivated
+  by editing (AC4; the pre-JHEP-119 edit-reset behavior was removed).
+- **Concurrency (AC5)**: transition preconditions return 409 for
+  out-of-order/duplicate requests (submit a submitted question, reject
+  an inactive one, publish a non-draft source).
+- **The review queue (AC2)**: `GET /admin/questions?review_status=submitted|in_review&author_email=…`
+  — server-side filtering on top of the role scoping.
+- **AC7**: the review outcome, actor, timestamp and reason live on the
+  question version (`review_status`, `reviewed_by_id`, `reviewed_at`,
+  `review_note`) and are visible on the question detail.

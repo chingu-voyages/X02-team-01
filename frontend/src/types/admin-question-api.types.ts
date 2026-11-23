@@ -4,12 +4,15 @@ export type AdminQuestionType =
 
 export type AdminReviewStatus =
   | "pending"
+  | "submitted"
+  | "in_review"
   | "approved"
   | "rejected";
 
 export type AdminPublicationStatus =
   | "draft"
   | "active"
+  | "inactive"
   | "retired";
 
 export type AdminDifficulty =
@@ -48,6 +51,7 @@ export interface AdminQuestionBankQuery {
   difficulty?: AdminDifficulty;
   question_type?: AdminQuestionType;
   review_status?: AdminReviewStatus;
+  author_email?: string;
   publication_status?: AdminPublicationStatus;
   has_image?: boolean;
   page?: number;
