@@ -88,7 +88,7 @@ describe(
         ).toBeInTheDocument();
 
         expect(
-          screen.getByLabelText(/password/i),
+          screen.getByLabelText(/^password$/i),
         ).toBeInTheDocument();
 
         expect(

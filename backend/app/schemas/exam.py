@@ -25,6 +25,9 @@ class ExamCreateRequest(BaseModel):
     certification_id: UUID
     question_count: Annotated[int, Field(strict=True, ge=1, le=MAX_EXAM_QUESTIONS)]
     category_id: UUID | None = None
+    # Identifies the exact published exam; legacy callers must still match
+    # an existing published certification/category/count triple.
+    practice_exam_id: UUID | None = None
 
 
 class ExamOptionOut(BaseModel):

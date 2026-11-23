@@ -76,6 +76,18 @@ class User(SQLModel, table=True):
         sa_type=DateTime(timezone=True),
         nullable=True,
     )
+    # JHEP-109: TOTP MFA. The secret is Fernet-encrypted at rest with
+    # MFA_ENCRYPTION_KEY; mfa_enrolled_at is null until the enrollment
+    # challenge is confirmed — dormant by default.
+    totp_secret_encrypted: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
+    mfa_enrolled_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),
+        nullable=True,
+    )
 
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),

@@ -431,6 +431,7 @@ export default function RegisterForm() {
           id="password"
           name="password"
           type="password"
+          passwordToggle
           placeholder="At least 8 characters"
           value={formData.password}
           onChange={handleChange}
@@ -445,7 +446,7 @@ export default function RegisterForm() {
         />
 
         {formData.password && (
-          <div className="absolute right-3 top-8.5 flex items-center gap-1.5 pointer-events-none text-xs font-medium text-gray-500 bg-white px-1">
+          <div className="absolute right-10 top-9.5 flex items-center gap-1.5 pointer-events-none text-xs font-medium text-gray-500 bg-white px-1">
             <span
               className={`w-10 h-2 rounded-full ${strengthInfo.color}`}
             />
@@ -465,6 +466,7 @@ export default function RegisterForm() {
         id="confirmPassword"
         name="confirmPassword"
         type="password"
+        passwordToggle
         placeholder="Please confirm your password."
         value={
           formData.confirmPassword

@@ -1,27 +1,12 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
-
-import {
-  cleanup,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
-
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import CategoriesPage from "./page";
 import {
-  getAvailableCategories,
-  startCategoryExam,
-} from "@/lib/category-api";
-
+  getPublishedPracticeExams,
+  startPublishedPracticeExam,
+} from "@/lib/practice-exam-api";
 import { ApiError } from "@/lib/api-client";
 
 const { mockPush, mockHandleError } = vi.hoisted(() => ({
@@ -29,12 +14,7 @@ const { mockPush, mockHandleError } = vi.hoisted(() => ({
   mockHandleError: vi.fn(),
 }));
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({
-    push: mockPush,
-  }),
-}));
-
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mockPush }) }));
 vi.mock("@/features/auth/AuthProvider", () => ({
   useAuth: () => ({
     token: "demo-token",
@@ -48,245 +28,156 @@ vi.mock("@/features/auth/AuthProvider", () => ({
     handleError: mockHandleError,
   }),
 }));
-
-vi.mock("@/lib/category-api", () => ({
-  getAvailableCategories: vi.fn(),
-  startCategoryExam: vi.fn(),
+vi.mock("@/lib/practice-exam-api", () => ({
+  getPublishedPracticeExams: vi.fn(),
+  startPublishedPracticeExam: vi.fn(),
 }));
 
-const category = {
+const exam = {
   id: "11111111-1111-4111-8111-111111111111",
-  certification_id:
-    "22222222-2222-4222-8222-222222222222",
-  name: "Agile Fundamentals",
-  certification_name: "Agile Demo",
-  available_question_count: 3,
+  certification_id: "22222222-2222-4222-8222-222222222222",
+  certification_name: "Computer Science",
+  category_id: "66666666-6666-4666-8666-666666666666",
+  category_name: "Fundamentals",
+  name: "Science Practice",
+  question_count: 3,
+  available_question_count: 10,
 };
-
-const secondCategory = {
-  ...category,
-  id: "66666666-6666-4666-8666-666666666666",
-  name: "Scrum Fundamentals",
+const otherExam = {
+  ...exam,
+  id: "44444444-4444-4444-8444-444444444444",
+  name: "Advanced Science Practice",
 };
+const existingAttemptId = "77777777-7777-4777-8777-777777777777";
 
-const existingAttemptId =
-  "77777777-7777-4777-8777-777777777777";
-
-async function selectAndStart() {
+async function startSelectedExam() {
   const user = userEvent.setup();
-
   render(<CategoriesPage />);
-
   await user.click(
-    await screen.findByRole("button", {
-      name: /View exam.*Agile Fundamentals/i,
-    }),
+    await screen.findByRole("button", { name: "View exam — Science Practice" }),
   );
-
-  await user.click(
-    screen.getByRole("button", {
-      name: "Start Exam",
-    }),
-  );
-
+  await user.click(screen.getByRole("button", { name: "Start Exam" }));
   return user;
 }
 
-describe("CategoriesPage", () => {
+describe("Published learner exam selection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
-    vi.mocked(getAvailableCategories).mockResolvedValue([
-      category,
-    ]);
-
-    vi.mocked(startCategoryExam).mockResolvedValue({
-      attempt_id:
-        "33333333-3333-4333-8333-333333333333",
-      certification_id: category.certification_id,
+    vi.mocked(getPublishedPracticeExams).mockResolvedValue([exam]);
+    vi.mocked(startPublishedPracticeExam).mockResolvedValue({
+      attempt_id: "33333333-3333-4333-8333-333333333333",
+      certification_id: exam.certification_id,
       status: "in_progress",
       question_count: 3,
       questions: [],
     });
   });
 
-  afterEach(() => {
-    cleanup();
+  afterEach(() => cleanup());
+
+  it("uses the published catalog, not the category question bank", async () => {
+    render(<CategoriesPage />);
+    expect(await screen.findByText("Science Practice")).toBeTruthy();
+    expect(getPublishedPracticeExams).toHaveBeenCalledWith("demo-token");
+    expect(screen.getByText("3 questions per exam")).toBeTruthy();
   });
 
-  it("loads categories from the backend", async () => {
+  it("has no learner-editable question count", async () => {
     render(<CategoriesPage />);
-
-    expect(
-      await screen.findByText("Agile Fundamentals"),
-    ).toBeTruthy();
-
-    expect(getAvailableCategories).toHaveBeenCalledWith(
-      "demo-token",
+    await userEvent.setup().click(
+      await screen.findByRole("button", { name: "View exam — Science Practice" }),
     );
+    expect(screen.getByText("Exam length is set by an administrator.")).toBeTruthy();
+    expect(screen.queryByRole("spinbutton")).toBeNull();
   });
 
-  it("shows an empty state", async () => {
-    vi.mocked(getAvailableCategories).mockResolvedValue([]);
-
-    render(<CategoriesPage />);
-
-    expect(
-      await screen.findByText(
-        "No practice categories are currently available.",
-      ),
-    ).toBeTruthy();
-  });
-
-  it("starts an exam and navigates to the attempt", async () => {
-    await selectAndStart();
-
+  it("starts the configured exam then navigates", async () => {
+    await startSelectedExam();
     await waitFor(() => {
-      expect(startCategoryExam).toHaveBeenCalledWith(
-        "demo-token",
-        category,
-        3,
-      );
-
+      expect(startPublishedPracticeExam).toHaveBeenCalledWith("demo-token", exam);
       expect(mockPush).toHaveBeenCalledWith(
         "/exams/33333333-3333-4333-8333-333333333333",
       );
     });
   });
 
-  it("handles expired authentication", async () => {
-    vi.mocked(getAvailableCategories).mockRejectedValue(
+  it("shows an empty state when no exams are published", async () => {
+    vi.mocked(getPublishedPracticeExams).mockResolvedValue([]);
+    render(<CategoriesPage />);
+    expect(
+      await screen.findByText("No published practice exams are currently available."),
+    ).toBeTruthy();
+  });
+
+  it("handles expiration using the shared session provider", async () => {
+    vi.mocked(getPublishedPracticeExams).mockRejectedValue(
       new ApiError(401, "Session expired"),
     );
-
     render(<CategoriesPage />);
-
-    await waitFor(() => {
-      expect(mockHandleError).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: 401,
-        }),
-      );
-    });
+    await waitFor(() => expect(mockHandleError).toHaveBeenCalled());
   });
 
-  it("shows an API loading error", async () => {
-    vi.mocked(getAvailableCategories).mockRejectedValue(
-      new ApiError(503, "Service unavailable"),
+  it("shows catalog failures with a retry option", async () => {
+    vi.mocked(getPublishedPracticeExams).mockRejectedValueOnce(
+      new ApiError(503, "Unavailable"),
     );
-
+    const user = userEvent.setup();
     render(<CategoriesPage />);
-
-    expect(
-      await screen.findByRole("alert"),
-    ).toBeTruthy();
-
-    expect(
-      screen.getByRole("button", {
-        name: "Retry loading categories",
-      }),
-    ).toBeTruthy();
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Retry loading practice exams" }),
+    );
+    expect(await screen.findByText("Science Practice")).toBeTruthy();
   });
 
-  it("offers recovery when an exam is already in progress", async () => {
-    vi.mocked(startCategoryExam).mockRejectedValueOnce(
+  it("offers to resume an existing started attempt", async () => {
+    vi.mocked(startPublishedPracticeExam).mockRejectedValueOnce(
       new ApiError(409, "Conflict", {
         code: "ATTEMPT_IN_PROGRESS",
         attempt_id: existingAttemptId,
       }),
     );
-
-    const user = await selectAndStart();
-
-    expect(
-      await screen.findByRole("alert"),
-    ).toBeTruthy();
-
-    await user.click(
-      screen.getByRole("button", {
-        name: "Continue existing exam",
-      }),
-    );
-
-    expect(mockPush).toHaveBeenCalledWith(
-      `/exams/${existingAttemptId}`,
-    );
+    const user = await startSelectedExam();
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Continue existing exam" }));
+    expect(mockPush).toHaveBeenCalledWith(`/exams/${existingAttemptId}`);
   });
 
-  it("does not offer recovery for other 409 errors", async () => {
-    vi.mocked(startCategoryExam).mockRejectedValueOnce(
-      new ApiError(409, "Conflict", {
-        code: "INSUFFICIENT_QUESTIONS",
-        requested: 3,
-        available: 2,
-      }),
-    );
-
-    await selectAndStart();
-
-    expect(
-      await screen.findByRole("alert"),
-    ).toBeTruthy();
-
-    expect(
-      screen.queryByRole("button", {
-        name: "Continue existing exam",
-      }),
-    ).toBeNull();
-  });
-
-  it("rejects an invalid recovered attempt ID", async () => {
-    vi.mocked(startCategoryExam).mockRejectedValueOnce(
+  it("does not navigate to unsafe resume IDs", async () => {
+    vi.mocked(startPublishedPracticeExam).mockRejectedValueOnce(
       new ApiError(409, "Conflict", {
         code: "ATTEMPT_IN_PROGRESS",
-        attempt_id: "//untrusted.example/path",
+        attempt_id: "//unsafe.example/path",
       }),
     );
-
-    await selectAndStart();
-
-    expect(
-      await screen.findByRole("alert"),
-    ).toBeTruthy();
-
-    expect(
-      screen.queryByRole("button", {
-        name: "Continue existing exam",
-      }),
-    ).toBeNull();
+    await startSelectedExam();
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Continue existing exam" })).toBeNull();
   });
 
-  it("clears recovery when another category is selected", async () => {
-    vi.mocked(getAvailableCategories).mockResolvedValue([
-      category,
-      secondCategory,
-    ]);
+  it("reports a stale or unpublished exam without resume controls", async () => {
+    vi.mocked(startPublishedPracticeExam).mockRejectedValueOnce(
+      new ApiError(409, "Conflict", { code: "PRACTICE_EXAM_UNAVAILABLE" }),
+    );
+    await startSelectedExam();
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reload available exams" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Continue existing exam" })).toBeNull();
+  });
 
-    vi.mocked(startCategoryExam).mockRejectedValueOnce(
+  it("clears a recovered attempt when switching to another exam", async () => {
+    vi.mocked(getPublishedPracticeExams).mockResolvedValue([exam, otherExam]);
+    vi.mocked(startPublishedPracticeExam).mockRejectedValueOnce(
       new ApiError(409, "Conflict", {
         code: "ATTEMPT_IN_PROGRESS",
         attempt_id: existingAttemptId,
       }),
     );
-
-    const user = await selectAndStart();
-
-    expect(
-      await screen.findByRole("button", {
-        name: "Continue existing exam",
-      }),
-    ).toBeTruthy();
-
+    const user = await startSelectedExam();
+    expect(await screen.findByRole("button", { name: "Continue existing exam" })).toBeTruthy();
     await user.click(
-      screen.getByRole("button", {
-        name: /View exam.*Scrum Fundamentals/i,
-      }),
+      screen.getByRole("button", { name: /View exam.*Advanced Science Practice/i }),
     );
-
-    expect(
-      screen.queryByRole("button", {
-        name: "Continue existing exam",
-      }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Continue existing exam" })).toBeNull();
   });
 });

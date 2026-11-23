@@ -3,7 +3,6 @@
 import QuestionRenderer from "./QuestionRenderer";
 import PageHeader from "@/components/layouts/PageHeader";
 import { Button } from "@/components/ui/button";
-import Navbar from "@/components/layouts/Navbar";
 import ExamSidebar from "./ExamSidebar";
 import { useExamAttempt } from "@/hooks/useExamAttempt";
 
@@ -91,7 +90,6 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
 
   return (
     <div className="w-full space-y-6">
-      <Navbar />
       <PageHeader
         title="Practice exam"
         status="In progress"

@@ -308,9 +308,11 @@ def test_postgres_endpoint_creates_and_delivers_exam(postgres_api_session):
     from app.db.session import get_session
     from app.models import (
         AnswerOption,
+        Category,
         Certification,
         ExamAttempt,
         ExamAttemptQuestion,
+        PracticeExam,
         Question,
         QuestionVersion,
         User,
@@ -323,9 +325,19 @@ def test_postgres_endpoint_creates_and_delivers_exam(postgres_api_session):
     )
     session.add_all([learner, cert])
     session.flush()
+    category = Category(
+        certification_id=cert.id,
+        name="Practice Basics",
+        is_published=True,
+    )
+    session.add(category)
+    session.flush()
 
     question = Question(
-        certification_id=cert.id, difficulty="easy", created_by_id=learner.id
+        certification_id=cert.id,
+        category_id=category.id,
+        difficulty="easy",
+        created_by_id=learner.id,
     )
     session.add(question)
     session.flush()
@@ -361,6 +373,17 @@ def test_postgres_endpoint_creates_and_delivers_exam(postgres_api_session):
     )
     session.flush()
 
+    # JHEP-126: only an explicitly published, configured exam is startable.
+    practice_exam = PracticeExam(
+        certification_id=cert.id,
+        category_id=category.id,
+        name="Practice Exam - Published",
+        question_count=1,
+        status="published",
+    )
+    session.add(practice_exam)
+    session.flush()
+
     def session_override():
         yield session
 
@@ -371,7 +394,12 @@ def test_postgres_endpoint_creates_and_delivers_exam(postgres_api_session):
         with TestClient(app) as client:
             response = client.post(
                 EXAMS_URL,
-                json=payload(cert.id),
+                json={
+                    "practice_exam_id": str(practice_exam.id),
+                    "certification_id": str(cert.id),
+                    "category_id": str(category.id),
+                    "question_count": 1,
+                },
                 headers=headers(learner.id),
             )
         assert response.status_code == 201, response.text

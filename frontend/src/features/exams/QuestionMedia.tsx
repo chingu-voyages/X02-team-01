@@ -67,7 +67,7 @@ function HostedQuestionImage({
           setLoading(false);
           setFailed(true);
         }}
-        className="mx-auto h-auto max-h-[26rem] max-w-full rounded object-contain"
+        className="mx-auto h-auto max-h-104 max-w-full rounded object-contain"
       />
     </figure>
   );

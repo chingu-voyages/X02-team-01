@@ -59,6 +59,11 @@ from app.services.exam_service import (
     MissingThresholdError,
 )
 from app.services.grading_service import AttemptNotSubmittedError
+from app.services.published_exam_service import (
+    PracticeExamQuestionCountMismatchError,
+    PracticeExamUnavailableError,
+    PublishedExamService,
+)
 
 router = APIRouter()
 
@@ -67,7 +72,8 @@ def get_exam_service(
     session: Annotated[Session, Depends(get_session)],
 ) -> ExamService:
     """Use the same request-scoped database session for the whole request."""
-    return ExamService(session)
+    # Every HTTP start must honor administrator-controlled publication.
+    return PublishedExamService(session)
 
 
 def get_exam_attempt_service(
@@ -145,7 +151,30 @@ def create_exam(
             certification_id=payload.certification_id,
             question_count=payload.question_count,
             category_id=payload.category_id,
+            **(
+                {"practice_exam_id": payload.practice_exam_id}
+                if payload.practice_exam_id is not None
+                else {}
+            ),
         )
+    except PracticeExamUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "PRACTICE_EXAM_UNAVAILABLE",
+                "message": str(exc),
+            },
+        ) from exc
+    except PracticeExamQuestionCountMismatchError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "PRACTICE_EXAM_COUNT_MISMATCH",
+                "message": str(exc),
+                "expected": exc.expected,
+                "received": exc.received,
+            },
+        ) from exc
     except LearnerNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
