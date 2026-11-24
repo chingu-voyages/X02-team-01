@@ -8,6 +8,7 @@ import type {
 type AdminUserRowProps = {
   user: AdminUserItem;
   onRequestRoleChange: (user: AdminUserItem, targetRole: ManageableUserRole) => void;
+  onRequestGradingPermissions: (user: AdminUserItem) => void;
 };
 
 function roleBadgeClasses(role: AdminUserItem["role"]): string {
@@ -24,6 +25,7 @@ function roleBadgeClasses(role: AdminUserItem["role"]): string {
 export default function AdminUserRow({
   user,
   onRequestRoleChange,
+  onRequestGradingPermissions,
 }: AdminUserRowProps) {
   const isManageable = user.role !== "administrator";
   const targetRole: ManageableUserRole =
@@ -37,6 +39,23 @@ export default function AdminUserRow({
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
+        {user.role === "contributor" && (
+          <span
+            className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${
+              user.grade_short_answers || user.grade_essays
+                ? "bg-emerald-100 text-emerald-800"
+                : "bg-brand-secondary/40 text-brand-text/70"
+            }`}
+          >
+            {user.grade_short_answers && user.grade_essays
+              ? "Grades: short + essays"
+              : user.grade_short_answers
+                ? "Grades: short answers"
+                : user.grade_essays
+                  ? "Grades: essays"
+                  : "No grading permissions"}
+          </span>
+        )}
         <span
           className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${roleBadgeClasses(user.role)}`}
         >
@@ -47,6 +66,15 @@ export default function AdminUserRow({
           {user.is_verified ? "verified" : "unverified"}
         </span>
 
+        {user.role === "contributor" && (
+          <button
+            type="button"
+            onClick={() => onRequestGradingPermissions(user)}
+            className="cursor-pointer rounded-md border border-brand-border bg-white px-3.5 py-1.5 text-sm font-semibold text-brand-text transition-colors hover:bg-brand-secondary/30"
+          >
+            Grading Permissions
+          </button>
+        )}
         {isManageable ? (
           <button
             type="button"

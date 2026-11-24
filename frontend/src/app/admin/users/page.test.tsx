@@ -71,6 +71,8 @@ const learner: AdminUsersPageData["items"][number] = {
   fullName: "Learner One",
   role: "learner",
   is_verified: true,
+  grade_short_answers: false,
+  grade_essays: false,
   created_at: "2026-11-13T00:00:00Z",
 };
 
@@ -80,6 +82,8 @@ const contributor: AdminUsersPageData["items"][number] = {
   fullName: "Contributor One",
   role: "contributor",
   is_verified: true,
+  grade_short_answers: false,
+  grade_essays: false,
   created_at: "2026-11-13T00:00:00Z",
 };
 
@@ -89,6 +93,8 @@ const administrator: AdminUsersPageData["items"][number] = {
   fullName: "Admin One",
   role: "administrator",
   is_verified: true,
+  grade_short_answers: false,
+  grade_essays: false,
   created_at: "2026-11-13T00:00:00Z",
 };
 

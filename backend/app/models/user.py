@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Text, func
+from sqlalchemy import CheckConstraint, Column, DateTime, Text, func, text
 from sqlmodel import Field, SQLModel
 
 
@@ -87,6 +87,22 @@ class User(SQLModel, table=True):
         default=None,
         sa_type=DateTime(timezone=True),
         nullable=True,
+    )
+    # JHEP-192: per-contributor grading permissions for written
+    # responses. Two independent flags, default false — contributors
+    # inherit no grading access from their role alone (AC2). Stored on
+    # the row so the DB-row-per-request pattern gives immediate effect
+    # on grant/revoke (AC4). Administrators never use these flags —
+    # their grading access is inherent (AC3).
+    grade_short_answers: bool = Field(
+        default=False,
+        nullable=False,
+        sa_column_kwargs={"server_default": text("false")},
+    )
+    grade_essays: bool = Field(
+        default=False,
+        nullable=False,
+        sa_column_kwargs={"server_default": text("false")},
     )
 
     created_at: datetime = Field(
