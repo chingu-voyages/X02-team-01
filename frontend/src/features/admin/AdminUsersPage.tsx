@@ -6,11 +6,13 @@ import { ApiError } from "@/lib/api-client";
 import {
   changeAdminUserRole,
   getAdminUsers,
+  updateGradingPermissions,
   type AdminUserItem,
   type AdminUsersPage,
   type ManageableUserRole,
 } from "@/lib/admin-users-api";
 import AdminUserRow from "./AdminUserRow";
+import GradingPermissionsDialog from "./GradingPermissionsDialog";
 import RoleChangeDialog from "./RoleChangeDialog";
 
 type LoadStatus = "loading" | "ready" | "error";
@@ -28,6 +30,14 @@ export default function AdminUsersPage() {
     user: AdminUserItem;
     role: ManageableUserRole;
   } | null>(null);
+
+  // JHEP-192: the written-response grading-permissions flow — a
+  // second independent dialog for Contributor accounts.
+  const [pendingPermissions, setPendingPermissions] = useState<{
+    user: AdminUserItem;
+  } | null>(null);
+  const [permissionInFlight, setPermissionInFlight] = useState(false);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
   const [changeError, setChangeError] = useState<string | null>(null);
   const [changeInFlight, setChangeInFlight] = useState(false);
   const [successNote, setSuccessNote] = useState<string | null>(null);
@@ -146,6 +156,36 @@ export default function AdminUsersPage() {
     }
   };
 
+  const confirmPermissions = async () => {
+    if (!pendingPermissions || !token) return;
+
+    setPermissionInFlight(true);
+    setPermissionError(null);
+    try {
+      const result = await updateGradingPermissions(
+        token,
+        pendingPermissions.user.id,
+        {
+          grade_short_answers: pendingPermissions.user.grade_short_answers,
+          grade_essays: pendingPermissions.user.grade_essays,
+        },
+      );
+      setPendingPermissions(null);
+      setSuccessNote(
+        `${result.user.fullName}'s grading permissions were saved.`,
+      );
+      await load(query, token);
+    } catch (error) {
+      setPermissionError(
+        error instanceof ApiError
+          ? error.message
+          : "Unable to save the grading permissions",
+      );
+    } finally {
+      setPermissionInFlight(false);
+    }
+  };
+
   return (
     <section className="mx-auto max-w-5xl space-y-6">
       <header className="space-y-1.5">
@@ -208,6 +248,11 @@ export default function AdminUsersPage() {
                 setSuccessNote(null);
                 setPendingChange({ user: targetUser, role });
               }}
+              onRequestGradingPermissions={(targetUser) => {
+                setPermissionError(null);
+                setSuccessNote(null);
+                setPendingPermissions({ user: targetUser });
+              }}
             />
           ))}
         </ul>
@@ -224,6 +269,29 @@ export default function AdminUsersPage() {
             setChangeError(null);
           }}
           onConfirm={() => void confirmChange()}
+        />
+      )}
+
+      {pendingPermissions && (
+        <GradingPermissionsDialog
+          user={pendingPermissions.user}
+          isSubmitting={permissionInFlight}
+          error={permissionError}
+          onCancel={() => {
+            setPendingPermissions(null);
+            setPermissionError(null);
+          }}
+          onSave={(permissions) => {
+            if (!pendingPermissions) return;
+            setPendingPermissions({
+              user: {
+                ...pendingPermissions.user,
+                grade_short_answers: permissions.grade_short_answers,
+                grade_essays: permissions.grade_essays,
+              },
+            });
+            void confirmPermissions();
+          }}
         />
       )}
     </section>
