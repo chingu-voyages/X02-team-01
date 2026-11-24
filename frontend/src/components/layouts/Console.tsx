@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -115,18 +115,31 @@ const navSections: NavSection[] = [
 
 const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password"];
 
+// Use a consistent snapshot during server rendering and initial hydration.
+// The authenticated shell is rendered only after the browser session is ready.
+const subscribeToHydration = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
 export default function Console({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { token, role, logout } = useAuth();
+  const { token, role, ready, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const hydrated = useSyncExternalStore(
+    subscribeToHydration,
+    getClientSnapshot,
+    getServerSnapshot,
+  );
 
   const isPublicRoute = publicPaths.some(
     (path) => pathname === path || pathname.startsWith(`${path}/`),
   );
 
-  if (!token || isPublicRoute) {
-    return <>{children}</>;
-  }
+  // Keep the route segment mounted during prerendering and hydration.
+  // Gate only the console chrome, not the page itself. Protected pages
+  // and the backend retain their existing authentication checks.
+  const showConsole = hydrated && ready && Boolean(token) && !isPublicRoute;
 
   const consoleLabel =
     role === "administrator"
@@ -271,36 +284,38 @@ export default function Console({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen bg-brand-surface text-brand-text">
+    <div className={showConsole ? "min-h-screen bg-brand-surface text-brand-text" : "contents"}>
       {/* Mobile Top Header */}
-      <header className="sticky top-0 z-30 flex items-center justify-between bg-brand-primary-dark px-4 py-3 text-white lg:hidden">
-        <Link href="/categories" className="flex items-center gap-2">
-          <div className="flex size-7 items-center justify-center rounded-full bg-white text-brand-primary-dark">
-            <Search className="size-3.5 stroke-[2.5]" aria-hidden="true" />
-          </div>
-          <div>
-            <p className="text-sm font-bold leading-none">The Job Hackers</p>
-            <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-white/75">
-              {consoleLabel}
-            </p>
-          </div>
-        </Link>
+      {showConsole && (
+        <header className="sticky top-0 z-30 flex items-center justify-between bg-brand-primary-dark px-4 py-3 text-white lg:hidden">
+          <Link href="/categories" className="flex items-center gap-2">
+            <div className="flex size-7 items-center justify-center rounded-full bg-white text-brand-primary-dark">
+              <Search className="size-3.5 stroke-[2.5]" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="text-sm font-bold leading-none">The Job Hackers</p>
+              <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-white/75">
+                {consoleLabel}
+              </p>
+            </div>
+          </Link>
 
-        <button
-          type="button"
-          onClick={() => setMobileOpen((prev) => !prev)}
-          aria-expanded={mobileOpen}
-          aria-label={
-            mobileOpen ? "Close navigation menu" : "Open navigation menu"
-          }
-          className="rounded-md p-2 text-white hover:bg-white/10"
-        >
-          {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
-        </button>
-      </header>
+          <button
+            type="button"
+            onClick={() => setMobileOpen((prev) => !prev)}
+            aria-expanded={mobileOpen}
+            aria-label={
+              mobileOpen ? "Close navigation menu" : "Open navigation menu"
+            }
+            className="rounded-md p-2 text-white hover:bg-white/10"
+          >
+            {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+          </button>
+        </header>
+      )}
 
       {/* Mobile Slide-Over Drawer */}
-      {mobileOpen && (
+      {showConsole && mobileOpen && (
         <div className="fixed inset-0 z-40 flex lg:hidden">
           <div
             className="fixed inset-0 bg-black/50"
@@ -313,15 +328,29 @@ export default function Console({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* Desktop Layout */}
-      <div className="lg:grid lg:min-h-screen lg:grid-cols-[240px_minmax(0,1fr)]">
-        <aside className="hidden lg:sticky lg:top-0 lg:block lg:h-screen">
-          {sidebarContent}
-        </aside>
+      {/* Stable page wrappers prevent the active page from remounting when
+          the session is restored. Public routes keep their original layout. */}
+      <div
+        className={
+          showConsole
+            ? "lg:grid lg:min-h-screen lg:grid-cols-[240px_minmax(0,1fr)]"
+            : "contents"
+        }
+      >
+        {showConsole && (
+          <aside className="hidden lg:sticky lg:top-0 lg:block lg:h-screen">
+            {sidebarContent}
+          </aside>
+        )}
 
-        <main className="min-w-0 px-4 py-6 sm:px-6 lg:px-8 lg:py-7">
-          <div className="mx-auto w-full max-w-280">{children}</div>
-        </main>
+        <div
+          role={showConsole ? "main" : undefined}
+          className={showConsole ? "min-w-0 px-4 py-6 sm:px-6 lg:px-8 lg:py-7" : "contents"}
+        >
+          <div className={showConsole ? "mx-auto w-full max-w-280" : "contents"}>
+            {children}
+          </div>
+        </div>
       </div>
     </div>
   );
