@@ -218,7 +218,10 @@ test.describe("JHEP-105 numbered exam navigation", () => {
     await page.keyboard.press("Tab");
     await expect(questionButton(page, 1)).toBeFocused();
 
-    const scroller = dialog.getByRole("navigation").locator("div").first();
+    const scroller = dialog
+      .getByRole("navigation")
+      .locator("ol")
+      .locator("..");
     const scrollTop = await scroller.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
       return element.scrollTop;
