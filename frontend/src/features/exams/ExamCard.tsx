@@ -16,7 +16,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     token,
     questions,
     currentQuestionIndex,
-    setCurrentQuestionIndex,
+    goToQuestion,
     loadStatus,
     loadError,
     retryLoading,
@@ -114,19 +114,9 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           onSelectOption={handleSelect}
           onTextChange={handleTextChange}
           onSubmit={handleSubmit}
-          onPrevious={() =>
-            setCurrentQuestionIndex((previous) => Math.max(previous - 1, 0))
-          }
-          onNext={() =>
-            setCurrentQuestionIndex((previous) =>
-              Math.min(previous + 1, questions.length - 1),
-            )
-          }
-          onReviewUnsubmitted={() => {
-            if (firstUnsubmittedIndex >= 0) {
-              setCurrentQuestionIndex(firstUnsubmittedIndex);
-            }
-          }}
+          onPrevious={() => goToQuestion(currentQuestionIndex - 1)}
+          onNext={() => goToQuestion(currentQuestionIndex + 1)}
+          onReviewUnsubmitted={() => goToQuestion(firstUnsubmittedIndex)}
         />
 
         <ExamSidebar

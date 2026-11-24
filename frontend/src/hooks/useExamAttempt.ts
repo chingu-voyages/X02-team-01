@@ -136,6 +136,31 @@ export function useExamAttempt(attemptId: string) {
     (question) => !submittedMap[question.id],
   );
 
+  // Navigation changes only the active question. Answers and feedback remain
+  // keyed by question ID for the lifetime of this attempt.
+  function goToQuestion(index: number): boolean {
+    if (
+      !ready ||
+      !token ||
+      loadStatus !== "ready" ||
+      isSubmitting ||
+      isFinishing ||
+      finishingRef.current ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= questions.length
+    ) {
+      return false;
+    }
+
+    if (index !== currentQuestionIndex) {
+      setCurrentQuestionIndex(index);
+      setSubmitError("");
+    }
+
+    return true;
+  }
+
   function handleSelect(optionId: string) {
     if (isSubmitted || isSubmitting || isFinishing) return;
 
@@ -292,7 +317,7 @@ export function useExamAttempt(attemptId: string) {
     token,
     questions,
     currentQuestionIndex,
-    setCurrentQuestionIndex,
+    goToQuestion,
     loadStatus,
     loadError,
     retryLoading,
