@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import type { ExamQuestionWithResponse, FeedbackEntry } from "@/types/exam-api.types";
+import QuestionNavigator from "./QuestionNavigator";
 
 function letterForPosition(position: number) {
   return position >= 1 && position <= 26
@@ -19,6 +20,7 @@ interface ExamSidebarProps {
   allQuestionsSubmitted: boolean;
   finishError: string;
   feedback?: FeedbackEntry;
+  onNavigate: (index: number) => void;
   onFinish: () => void;
 }
 
@@ -34,6 +36,7 @@ export default function ExamSidebar({
   allQuestionsSubmitted,
   finishError,
   feedback,
+  onNavigate,
   onFinish,
 }: ExamSidebarProps) {
   const isShortAnswer = currentQuestion.question_type === "short_answer";
@@ -68,6 +71,16 @@ export default function ExamSidebar({
             : "Current question not yet submitted"}
         </p>
       </div>
+
+      <div className="hidden lg:block">
+        <div className="my-5 border-t border-[#e2e5e7]" />
+        <QuestionNavigator
+          totalQuestions={totalQuestions}
+          currentQuestionIndex={currentQuestionIndex}
+          disabled={isSubmitting || isFinishing}
+          onNavigate={onNavigate}
+        />
+      </div>
       <div className="my-5 border-t border-[#e2e5e7]" />
 
       {isLastQuestion && allQuestionsSubmitted ? (
@@ -81,7 +94,9 @@ export default function ExamSidebar({
         </Button>
       ) : (
         <p className="text-sm text-[#687178]">
-          Submit all questions to enable Finish Exam.
+          {allQuestionsSubmitted
+            ? `All answers submitted. Go to question ${totalQuestions} to finish the exam.`
+            : "Submit all questions to enable Finish Exam."}
         </p>
       )}
 
@@ -103,4 +118,3 @@ export default function ExamSidebar({
     </aside>
   );
 }
-

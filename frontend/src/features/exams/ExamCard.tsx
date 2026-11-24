@@ -131,6 +131,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           allQuestionsSubmitted={allQuestionsSubmitted}
           finishError={finishError}
           feedback={currentFeedback}
+          onNavigate={goToQuestion}
           onFinish={handleFinish}
         />
       </div>
