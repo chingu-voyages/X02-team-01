@@ -12,11 +12,13 @@ interface ExamSidebarProps {
   currentQuestion: ExamQuestionWithResponse;
   currentQuestionIndex: number;
   totalQuestions: number;
+  flaggedQuestionIndices?: readonly number[];
   submittedCount: number;
   selectedOptionIds: string[];
   isSubmitted: boolean;
   isSubmitting: boolean;
   isFinishing: boolean;
+  isSavingFlag?: boolean;
   allQuestionsSubmitted: boolean;
   finishError: string;
   feedback?: FeedbackEntry;
@@ -28,11 +30,13 @@ export default function ExamSidebar({
   currentQuestion,
   currentQuestionIndex,
   totalQuestions,
+  flaggedQuestionIndices = [],
   submittedCount,
   selectedOptionIds,
   isSubmitted,
   isSubmitting,
   isFinishing,
+  isSavingFlag = false,
   allQuestionsSubmitted,
   finishError,
   feedback,
@@ -77,6 +81,7 @@ export default function ExamSidebar({
         <QuestionNavigator
           totalQuestions={totalQuestions}
           currentQuestionIndex={currentQuestionIndex}
+          flaggedQuestionIndices={flaggedQuestionIndices}
           disabled={isSubmitting || isFinishing}
           onNavigate={onNavigate}
         />
@@ -87,7 +92,7 @@ export default function ExamSidebar({
         <Button
           type="button"
           onClick={onFinish}
-          disabled={isFinishing || isSubmitting}
+          disabled={isFinishing || isSubmitting || isSavingFlag}
           className="h-10 rounded-md bg-[#343a3e] px-5 text-sm text-white hover:bg-[#1e2427] disabled:opacity-50"
         >
           {isFinishing ? "Finishing exam..." : "Finish Exam"}

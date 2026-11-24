@@ -6,6 +6,7 @@ import QuestionNavigator from "./QuestionNavigator";
 interface MobileQuestionNavigationProps {
   totalQuestions: number;
   currentQuestionIndex: number;
+  flaggedQuestionIndices?: readonly number[];
   disabled?: boolean;
   onNavigate: (index: number) => boolean;
 }
@@ -13,6 +14,7 @@ interface MobileQuestionNavigationProps {
 export default function MobileQuestionNavigation({
   totalQuestions,
   currentQuestionIndex,
+  flaggedQuestionIndices = [],
   disabled = false,
   onNavigate,
 }: MobileQuestionNavigationProps) {
@@ -114,6 +116,7 @@ export default function MobileQuestionNavigation({
           <QuestionNavigator
             totalQuestions={totalQuestions}
             currentQuestionIndex={currentQuestionIndex}
+            flaggedQuestionIndices={flaggedQuestionIndices}
             disabled={disabled}
             showHeading={false}
             scrollRef={scrollRef}

@@ -35,6 +35,12 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     submitError,
     isFinishing,
     finishError,
+    isFlagged,
+    flaggedQuestionIds,
+    isSavingFlag,
+    flagError,
+    canToggleFlag,
+    handleToggleFlag,
     handleSelect,
     handleTextChange,
     handleSubmit,
@@ -89,6 +95,13 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         ? "Type your answer, then submit."
         : "Choose an answer, then submit.";
 
+  // Translate stable question IDs into the current attempt's display order.
+  // Flags are independent of the navigator's current-question highlight.
+  const flaggedIds = new Set(flaggedQuestionIds);
+  const flaggedQuestionIndices = questions.flatMap((question, index) =>
+    flaggedIds.has(question.id) ? [index] : [],
+  );
+
   return (
     <div className="w-full space-y-6">
       <PageHeader
@@ -101,6 +114,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
       <MobileQuestionNavigation
         totalQuestions={questions.length}
         currentQuestionIndex={currentQuestionIndex}
+        flaggedQuestionIndices={flaggedQuestionIndices}
         disabled={isSubmitting || isFinishing}
         onNavigate={goToQuestion}
       />
@@ -115,6 +129,11 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           isSubmitted={isSubmitted}
           isSubmitting={isSubmitting}
           isFinishing={isFinishing}
+          isFlagged={isFlagged}
+          isSavingFlag={isSavingFlag}
+          canToggleFlag={canToggleFlag}
+          flagError={flagError}
+          onToggleFlag={handleToggleFlag}
           submitError={submitError}
           feedback={currentFeedback}
           allQuestionsSubmitted={allQuestionsSubmitted}
@@ -131,11 +150,13 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           currentQuestion={currentQuestion}
           currentQuestionIndex={currentQuestionIndex}
           totalQuestions={questions.length}
+          flaggedQuestionIndices={flaggedQuestionIndices}
           submittedCount={submittedCount}
           selectedOptionIds={currentSelected}
           isSubmitted={isSubmitted}
           isSubmitting={isSubmitting}
           isFinishing={isFinishing}
+          isSavingFlag={isSavingFlag}
           allQuestionsSubmitted={allQuestionsSubmitted}
           finishError={finishError}
           feedback={currentFeedback}
