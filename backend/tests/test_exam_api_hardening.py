@@ -243,8 +243,10 @@ def test_question_content_is_preserved_and_response_is_allowlisted(
         "difficulty",
         "options",
         "images",
+        "flagged_for_review",
     }
     assert question["images"] == []
+    assert question["flagged_for_review"] is False
     assert set(question["options"][0]) == {"id", "position", "option_text"}
     assert stub.calls == [(learner, cert, 1)]
     assert stub.deliveries == [stub.attempt_id]
