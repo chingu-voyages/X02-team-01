@@ -2,10 +2,11 @@
 
 import { useDemoSession } from "@/features/auth/AuthProvider";
 import { ApiError } from "@/lib/api-client";
-import { getExam, submitAnswer } from "@/lib/exam-api";
+import { getExam, setQuestionFlag, submitAnswer } from "@/lib/exam-api";
 import { submitExam } from "@/lib/exam-submission";
 import {
   AnswerSubmission,
+  ExamAttempt,
   ExamQuestionWithResponse,
   FeedbackEntry,
 } from "@/types/exam-api.types";
@@ -13,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 type LoadStatus = "loading" | "ready" | "error";
+type FlagRequest = { attemptId: string; questionId: string };
 
 export function useExamAttempt(attemptId: string) {
   const router = useRouter();
@@ -40,6 +42,17 @@ export function useExamAttempt(attemptId: string) {
   const [isFinishing, setIsFinishing] = useState(false);
   const [finishError, setFinishError] = useState("");
   const finishingRef = useRef(false);
+
+  // JHEP-104: flag values live on the assigned questions. These states
+  // track only request lifecycle and errors, not another copy of the flags.
+  const [loadedAttempt, setLoadedAttempt] = useState<{
+    id: string;
+    status: ExamAttempt["status"];
+    reloadKey: number;
+  } | null>(null);
+  const [pendingFlag, setPendingFlag] = useState<FlagRequest | null>(null);
+  const [flagErrors, setFlagErrors] = useState<Record<string, string>>({});
+  const flagRequestRef = useRef<FlagRequest | null>(null);
 
   useEffect(() => {
     if (!ready || !token) return;
@@ -80,6 +93,9 @@ export function useExamAttempt(attemptId: string) {
         }
 
         setQuestions(data.questions);
+        setLoadedAttempt({ id: data.attempt_id, status: data.status, reloadKey });
+        setPendingFlag(null);
+        setFlagErrors({});
         setSubmittedMap(restoredSubmitted);
         setSelectedValuesMap(restoredSelection);
         setTextAnswersMap(restoredText);
@@ -109,6 +125,8 @@ export function useExamAttempt(attemptId: string) {
 
     return () => {
       cancelled = true;
+      // Ignore late responses after a reload, account change, or unmount.
+      flagRequestRef.current = null;
     };
   }, [ready, token, attemptId, reloadKey, handleError]);
 
@@ -136,6 +154,22 @@ export function useExamAttempt(attemptId: string) {
     (question) => !submittedMap[question.id],
   );
 
+  const isFlagged = currentQuestion?.flagged_for_review === true;
+  const flaggedQuestionIds = questions
+    .filter((question) => question.flagged_for_review === true)
+    .map((question) => question.id);
+  const flagPendingQuestionId = pendingFlag?.attemptId === attemptId
+    ? pendingFlag.questionId
+    : null;
+  const isSavingFlag = flagPendingQuestionId !== null;
+  const flagError = flagErrors[questionId] ?? "";
+  const canToggleFlag = Boolean(
+    ready && token && loadStatus === "ready" &&
+      loadedAttempt?.id === attemptId && loadedAttempt.reloadKey === reloadKey &&
+      loadedAttempt.status === "in_progress" && currentQuestion &&
+      !isSavingFlag && !isSubmitting && !isFinishing,
+  );
+
   // Navigation changes only the active question. Answers and feedback remain
   // keyed by question ID for the lifetime of this attempt.
   function goToQuestion(index: number): boolean {
@@ -159,6 +193,62 @@ export function useExamAttempt(attemptId: string) {
     }
 
     return true;
+  }
+
+  async function handleToggleFlag(): Promise<void> {
+    // Synchronous ref guards repeated clicks before React commits a render.
+    if (!token || !canToggleFlag || !questionId ||
+        flagRequestRef.current || finishingRef.current) {
+      return;
+    }
+
+    const request = { attemptId, questionId };
+    const desiredFlag = !isFlagged;
+    flagRequestRef.current = request;
+    setPendingFlag(request);
+    setFlagErrors((previous) => ({ ...previous, [questionId]: "" }));
+
+    try {
+      const saved = await setQuestionFlag(
+        attemptId, questionId, desiredFlag, token,
+      );
+      if (flagRequestRef.current !== request) return;
+      if (!saved || saved.attempt_id !== attemptId ||
+          saved.question_version_id !== questionId ||
+          saved.flagged_for_review !== desiredFlag) {
+        throw new Error("Unexpected flag response. Please try again.");
+      }
+
+      // Confirmed server state only. Navigation can continue while saving;
+      // the captured ID ensures the update still targets the original item.
+      setQuestions((previous) => previous.map((question) =>
+        question.id === request.questionId
+          ? { ...question, flagged_for_review: saved.flagged_for_review }
+          : question,
+      ));
+    } catch (error: unknown) {
+      if (flagRequestRef.current !== request) return;
+      if (error instanceof ApiError && error.status === 401) {
+        handleError(error);
+        return;
+      }
+      setFlagErrors((previous) => ({
+        ...previous,
+        [questionId]: error instanceof ApiError && error.status === 409
+          ? "This exam has already been submitted. Flags can no longer be changed."
+          : error instanceof Error
+            ? error.message
+            : "Unable to save the review flag. Please try again.",
+      }));
+      if (error instanceof ApiError && error.status === 409) {
+        setLoadedAttempt({ id: attemptId, status: "submitted", reloadKey });
+      }
+    } finally {
+      if (flagRequestRef.current === request) {
+        flagRequestRef.current = null;
+        setPendingFlag(null);
+      }
+    }
   }
 
   function handleSelect(optionId: string) {
@@ -191,7 +281,8 @@ export function useExamAttempt(attemptId: string) {
       !currentQuestion ||
       isSubmitting ||
       isSubmitted ||
-      isFinishing
+      isFinishing ||
+      flagRequestRef.current
     ) {
       return;
     }
@@ -257,6 +348,7 @@ export function useExamAttempt(attemptId: string) {
       !token ||
       !allQuestionsSubmitted ||
       isSubmitting ||
+      flagRequestRef.current ||
       finishingRef.current
     ) {
       return;
@@ -335,6 +427,13 @@ export function useExamAttempt(attemptId: string) {
     submitError,
     isFinishing,
     finishError,
+    isFlagged,
+    flaggedQuestionIds,
+    flagPendingQuestionId,
+    isSavingFlag,
+    flagError,
+    canToggleFlag,
+    handleToggleFlag,
     handleSelect,
     handleTextChange,
     handleSubmit,

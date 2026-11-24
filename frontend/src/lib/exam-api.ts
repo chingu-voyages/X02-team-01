@@ -4,6 +4,7 @@ import type {
   AnswerSubmission,
   ExamAttempt,
   QuestionFeedback,
+  QuestionFlagSaved,
 } from "@/types/exam-api.types";
 
 /** Load an existing attempt with its pinned questions and saved answers. */
@@ -40,6 +41,23 @@ export async function submitAnswer(
     {
       method: "POST",
       body: JSON.stringify(answer),
+    },
+  );
+}
+
+/** Set an explicit review flag; this never submits or grades an answer. */
+export async function setQuestionFlag(
+  attemptId: string,
+  questionVersionId: string,
+  flaggedForReview: boolean,
+  token: string,
+): Promise<QuestionFlagSaved> {
+  return apiRequest<QuestionFlagSaved>(
+    `/exams/${encodeURIComponent(attemptId)}/questions/${encodeURIComponent(questionVersionId)}/flag`,
+    token,
+    {
+      method: "PUT",
+      body: JSON.stringify({ flagged_for_review: flaggedForReview }),
     },
   );
 }
