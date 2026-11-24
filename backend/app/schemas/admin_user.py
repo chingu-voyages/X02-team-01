@@ -24,6 +24,8 @@ class AdminUserOut(BaseModel):
     full_name: str = Field(serialization_alias="fullName")
     role: Literal["learner", "contributor", "administrator"]
     is_verified: bool
+    grade_short_answers: bool = False
+    grade_essays: bool = False
     created_at: datetime
 
 
@@ -54,3 +56,19 @@ class UserRoleChangeOut(BaseModel):
     role_before: str
     role_after: str
     changed_at: datetime
+
+
+class GradingPermissionsUpdateIn(BaseModel):
+    """JHEP-192: the two independent grading-permission flags. Omitted
+    fields keep their current values (a partial save never zeroes the
+    other flag)."""
+
+    grade_short_answers: bool | None = None
+    grade_essays: bool | None = None
+
+
+class GradingPermissionsChangeOut(BaseModel):
+    """The updated account plus the applied audit rows (AC5)."""
+
+    user: AdminUserOut
+    changes: list[dict]

@@ -37,6 +37,10 @@ class AdministratorRoleChangeError(Exception):
     """This screen cannot change an Administrator's role."""
 
 
+class NotAContributorError(Exception):
+    """Grading permissions apply only to Contributor accounts."""
+
+
 class SelfRoleChangeError(Exception):
     """An Administrator cannot change their own role."""
 
@@ -126,6 +130,130 @@ def change_role(
     session.refresh(audit)
 
     return target, audit
+
+
+def _audit_grading_permission(
+    session: Session,
+    *,
+    actor: User,
+    target_id,
+    permission: str,
+    previous_value: bool,
+    new_value: bool,
+) -> None:
+    from app.models import PermissionChangeAudit
+
+    session.add(
+        PermissionChangeAudit(
+            actor_id=actor.id,
+            target_id=target_id,
+            permission=permission,
+            action="granted" if new_value else "revoked",
+            previous_value=previous_value,
+            new_value=new_value,
+        )
+    )
+
+
+def update_grading_permissions(
+    session: Session,
+    *,
+    actor: User,
+    target_id,
+    grade_short_answers: bool | None,
+    grade_essays: bool | None,
+) -> tuple[User, list]:
+    """JHEP-192 AC1/AC5: save a Contributor's written-response grading
+    permissions (two independent flags). All refusals raise before any
+    mutation; the audit rows commit atomically with the change."""
+    target = session.get(User, target_id)
+
+    if target is None:
+        raise UserNotFoundError(f"User {target_id} does not exist")
+
+    # AC1: only Contributor accounts carry grading permissions —
+    # Administrators grade everything inherently (AC3) and Learners
+    # cannot grade, so neither is a valid target.
+    if target.role != UserRole.CONTRIBUTOR.value:
+        raise NotAContributorError(
+            "Grading permissions apply only to Contributor accounts"
+        )
+
+    audits = []
+
+    if (
+        grade_short_answers is not None
+        and target.grade_short_answers != grade_short_answers
+    ):
+        _audit_grading_permission(
+            session,
+            actor=actor,
+            target_id=target.id,
+            permission="grade_short_answers",
+            previous_value=target.grade_short_answers,
+            new_value=grade_short_answers,
+        )
+        audits.append(
+            {
+                "permission": "grade_short_answers",
+                "action": "granted" if grade_short_answers else "revoked",
+                "previous_value": target.grade_short_answers,
+                "new_value": grade_short_answers,
+            }
+        )
+        target.grade_short_answers = grade_short_answers
+
+    if grade_essays is not None and target.grade_essays != grade_essays:
+        _audit_grading_permission(
+            session,
+            actor=actor,
+            target_id=target.id,
+            permission="grade_essays",
+            previous_value=target.grade_essays,
+            new_value=grade_essays,
+        )
+        audits.append(
+            {
+                "permission": "grade_essays",
+                "action": "granted" if grade_essays else "revoked",
+                "previous_value": target.grade_essays,
+                "new_value": grade_essays,
+            }
+        )
+        target.grade_essays = grade_essays
+
+    if not audits:
+        # no-op save: a safe success without audit rows (mirrors change_role)
+        return target, []
+
+    session.add(target)
+    session.commit()
+    session.refresh(target)
+
+    return target, audits
+
+
+def can_grade_response_type(actor: User, response_type: str) -> bool:
+    """JHEP-122's enforcement hook (AC2/AC3).
+
+    Administrators grade every response type inherently; Contributors
+    grade only the types their permissions allow; other roles never.
+    Call this from every manual-grading route — the flags live on the
+    User row, so a revocation takes effect on the next request (AC4).
+    """
+    if actor.role == UserRole.ADMINISTRATOR.value:
+        return True
+
+    if actor.role != UserRole.CONTRIBUTOR.value:
+        return False
+
+    if response_type == "essay":
+        return actor.grade_essays
+
+    if response_type == "short_answer":
+        return actor.grade_short_answers
+
+    return False
 
 
 def audit_record(audit: RoleChangeAudit) -> dict:

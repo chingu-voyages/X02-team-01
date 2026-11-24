@@ -49,6 +49,8 @@ from app.schemas.admin_question import (
 )
 from app.schemas.admin_user import (
     AdminUserOut,
+    GradingPermissionsChangeOut,
+    GradingPermissionsUpdateIn,
     UserRoleChangeIn,
     UserRoleChangeOut,
     UsersPageOut,
@@ -106,10 +108,12 @@ from app.services.admin_question_service import (
 )
 from app.services.admin_user_service import (
     AdministratorRoleChangeError,
+    NotAContributorError,
     SelfRoleChangeError,
     UserNotFoundError,
     change_role,
     list_users,
+    update_grading_permissions,
 )
 from app.services.media_url import resolve_media_url
 from app.services.question_image_validation import (
@@ -1016,6 +1020,8 @@ def _admin_user_response(
         full_name=user.full_name,
         role=user.role,
         is_verified=user.is_verified,
+        grade_short_answers=user.grade_short_answers,
+        grade_essays=user.grade_essays,
         created_at=user.created_at,
     )
 
@@ -1178,3 +1184,41 @@ def request_question_changes_endpoint(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except QuestionReviewTransitionError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.patch(
+    "/users/{user_id}/grading-permissions",
+    response_model=GradingPermissionsChangeOut,
+)
+def update_grading_permissions_endpoint(
+    user_id: UUID,
+    payload: GradingPermissionsUpdateIn,
+    actor: Annotated[User, Depends(require_administrator)],
+    session: Annotated[Session, Depends(get_session)],
+) -> GradingPermissionsChangeOut:
+    """JHEP-192 AC1/AC5: save a Contributor's written-response grading
+    permissions. Administrator-only; contributor-only targets; the
+    audit rows commit atomically; no partial updates."""
+    try:
+        target, changes = update_grading_permissions(
+            session,
+            actor=actor,
+            target_id=user_id,
+            grade_short_answers=payload.grade_short_answers,
+            grade_essays=payload.grade_essays,
+        )
+    except UserNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "USER_NOT_FOUND", "message": str(exc)},
+        ) from exc
+    except NotAContributorError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "NOT_A_CONTRIBUTOR", "message": str(exc)},
+        ) from exc
+
+    return GradingPermissionsChangeOut(
+        user=_admin_user_response(target),
+        changes=changes,
+    )

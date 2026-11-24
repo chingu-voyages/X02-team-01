@@ -10,6 +10,7 @@ from .exam_result import ExamResult as ExamResult
 from .mfa import MfaLoginChallenge as MfaLoginChallenge
 from .mfa import MfaRecoveryCode as MfaRecoveryCode
 from .password_reset_token import PasswordResetToken as PasswordResetToken
+from .permission_change_audit import PermissionChangeAudit as PermissionChangeAudit
 from .practice_exam import PracticeExam as PracticeExam
 from .question import Question as Question
 from .question_image import QuestionImage as QuestionImage
