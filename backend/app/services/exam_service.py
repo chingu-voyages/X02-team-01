@@ -68,6 +68,7 @@ class ExamQuestionContent:
     difficulty: str
     options: list[ExamOptionContent]
     images: list[ExamImageContent] = field(default_factory=list)
+    flagged_for_review: bool = False
 
 
 class ExamAttemptNotFoundError(LookupError):
@@ -331,6 +332,7 @@ class ExamService:
                 QuestionVersion.question_type,
                 QuestionVersion.allows_multiple_answers,
                 Question.difficulty,
+                ExamAttemptQuestion.flagged_for_review,
             )
             .select_from(ExamAttemptQuestion)
             .join(
@@ -425,6 +427,7 @@ class ExamService:
                 difficulty=difficulty,
                 options=options_by_version[version_id],
                 images=images_by_version[version_id],
+                flagged_for_review=flagged_for_review,
             )
             for (
                 position,
@@ -433,6 +436,7 @@ class ExamService:
                 question_type,
                 allows_multiple_answers,
                 difficulty,
+                flagged_for_review,
             ) in rows
         ]
 

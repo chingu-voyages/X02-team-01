@@ -4,6 +4,7 @@ from sqlalchemy import (
     CheckConstraint,
     ForeignKeyConstraint,
     UniqueConstraint,
+    false,
 )
 from sqlmodel import Field, SQLModel
 
@@ -49,3 +50,9 @@ class ExamAttemptQuestion(SQLModel, table=True):
     question_version_id: UUID = Field(nullable=False)
 
     position: int = Field(nullable=False)
+
+    flagged_for_review: bool = Field(
+        default=False,
+        nullable=False,
+        sa_column_kwargs={"server_default": false()},
+    )

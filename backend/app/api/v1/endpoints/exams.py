@@ -4,6 +4,7 @@ Route surface:
 - POST   /exams                                — start a randomized exam
 - GET    /exams/{attempt_id}                   — resume saved state
 - PATCH  /exams/{attempt_id}/progress          — persist navigation position
+- PUT    /exams/{attempt_id}/questions/{v_id}/flag — set/clear review flag
 - PUT    /exams/{attempt_id}/responses/{v_id}  — save/clear one answer
 - POST   /exams/{attempt_id}/responses/{v_id}/submit — lock + feedback
 - POST   /exams/{attempt_id}/submit            — final submission + grading
@@ -32,6 +33,8 @@ from app.schemas.exam import (
     ProgressSavedOut,
     ProgressUpdateRequest,
     QuestionFeedbackOut,
+    QuestionFlagSavedOut,
+    QuestionFlagUpdateRequest,
     ResponseBlockOut,
     ResponseSavedOut,
     ResponseSaveRequest,
@@ -289,6 +292,46 @@ def get_exam_attempt(
         question_count=attempt.question_count,
         current_position=attempt.current_position,
         questions=questions,
+    )
+
+
+@router.put(
+    "/{attempt_id}/questions/{question_id}/flag",
+    response_model=QuestionFlagSavedOut,
+)
+def set_question_flag(
+    attempt_id: UUID,
+    question_id: UUID,
+    payload: QuestionFlagUpdateRequest,
+    subject: Annotated[str, Depends(get_current_subject)],
+    service: Annotated[ExamService, Depends(get_exam_service)],
+    attempt_service: Annotated[ExamAttemptService, Depends(get_exam_attempt_service)],
+) -> QuestionFlagSavedOut:
+    """Flag or unflag an assigned question, including a locked answer."""
+    learner_id = _learner_id(subject)
+    attempt = _owned_attempt(attempt_id, learner_id, service)
+
+    try:
+        pinned = attempt_service.set_question_flag(
+            attempt,
+            question_id,
+            flagged_for_review=payload.flagged_for_review,
+        )
+    except AttemptQuestionNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Exam attempt not found",
+        ) from exc
+    except AttemptAlreadySubmittedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Attempt already submitted",
+        ) from exc
+
+    return QuestionFlagSavedOut(
+        attempt_id=attempt_id,
+        question_version_id=pinned.question_version_id,
+        flagged_for_review=pinned.flagged_for_review,
     )
 
 

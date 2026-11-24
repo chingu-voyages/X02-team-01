@@ -1,5 +1,10 @@
 import { Button } from "@/components/ui/button";
-import type { ExamQuestionWithResponse, FeedbackEntry } from "@/types/exam-api.types";
+import type {
+  ExamQuestionWithResponse,
+  FeedbackEntry,
+} from "@/types/exam-api.types";
+import type { QuestionState } from "@/lib/question-states";
+import QuestionNavigator from "./QuestionNavigator";
 
 function letterForPosition(position: number) {
   return position >= 1 && position <= 26
@@ -11,14 +16,18 @@ interface ExamSidebarProps {
   currentQuestion: ExamQuestionWithResponse;
   currentQuestionIndex: number;
   totalQuestions: number;
+  questionStates?: readonly QuestionState[];
+  flaggedQuestionIndices?: readonly number[];
   submittedCount: number;
   selectedOptionIds: string[];
   isSubmitted: boolean;
   isSubmitting: boolean;
   isFinishing: boolean;
+  isSavingFlag?: boolean;
   allQuestionsSubmitted: boolean;
   finishError: string;
   feedback?: FeedbackEntry;
+  onNavigate: (index: number) => void;
   onFinish: () => void;
 }
 
@@ -26,19 +35,28 @@ export default function ExamSidebar({
   currentQuestion,
   currentQuestionIndex,
   totalQuestions,
+  questionStates,
+  flaggedQuestionIndices = [],
   submittedCount,
   selectedOptionIds,
   isSubmitted,
   isSubmitting,
   isFinishing,
+  isSavingFlag = false,
   allQuestionsSubmitted,
   finishError,
   feedback,
+  onNavigate,
   onFinish,
 }: ExamSidebarProps) {
-  const isShortAnswer = currentQuestion.question_type === "short_answer";
-  const isMultiple = currentQuestion.allows_multiple_answers;
-  const isLastQuestion = currentQuestionIndex >= totalQuestions - 1;
+  const isShortAnswer =
+    currentQuestion.question_type === "short_answer";
+
+  const isMultiple =
+    currentQuestion.allows_multiple_answers;
+
+  const isLastQuestion =
+    currentQuestionIndex >= totalQuestions - 1;
 
   const selectedLetters = currentQuestion.options
     .filter((option) => selectedOptionIds.includes(option.id))
@@ -48,18 +66,24 @@ export default function ExamSidebar({
   return (
     <aside
       aria-labelledby="attempt-progress-heading"
-      className="rounded-md border border-[#cbd0d3] bg-white p-5 sm:p-6"
+      className="min-w-0 rounded-md border border-[#cbd0d3] bg-white p-5 sm:p-6"
     >
-      <h2 id="attempt-progress-heading" className="text-base font-bold">
+      <h2
+        id="attempt-progress-heading"
+        className="text-base font-bold"
+      >
         Attempt progress
       </h2>
+
       <div className="mt-4 space-y-3 text-sm text-[#56616a]">
         <p>
           Question {currentQuestionIndex + 1} / {totalQuestions}
         </p>
+
         <p>
           Submitted answers: {submittedCount} / {totalQuestions}
         </p>
+
         <p>
           {isSubmitted
             ? isShortAnswer
@@ -68,20 +92,36 @@ export default function ExamSidebar({
             : "Current question not yet submitted"}
         </p>
       </div>
+
+      <div className="hidden lg:block">
+        <div className="my-5 border-t border-[#e2e5e7]" />
+
+        <QuestionNavigator
+          totalQuestions={totalQuestions}
+          currentQuestionIndex={currentQuestionIndex}
+          questionStates={questionStates}
+          flaggedQuestionIndices={flaggedQuestionIndices}
+          disabled={isSubmitting || isFinishing}
+          onNavigate={onNavigate}
+        />
+      </div>
+
       <div className="my-5 border-t border-[#e2e5e7]" />
 
       {isLastQuestion && allQuestionsSubmitted ? (
         <Button
           type="button"
           onClick={onFinish}
-          disabled={isFinishing || isSubmitting}
+          disabled={isFinishing || isSubmitting || isSavingFlag}
           className="h-10 rounded-md bg-[#343a3e] px-5 text-sm text-white hover:bg-[#1e2427] disabled:opacity-50"
         >
           {isFinishing ? "Finishing exam..." : "Finish Exam"}
         </Button>
       ) : (
         <p className="text-sm text-[#687178]">
-          Submit all questions to enable Finish Exam.
+          {allQuestionsSubmitted
+            ? `All answers submitted. Go to question ${totalQuestions} to finish the exam.`
+            : "Submit all questions to enable Finish Exam."}
         </p>
       )}
 
@@ -103,4 +143,3 @@ export default function ExamSidebar({
     </aside>
   );
 }
-

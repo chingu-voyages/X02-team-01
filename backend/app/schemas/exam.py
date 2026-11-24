@@ -80,6 +80,7 @@ class ExamQuestionOut(BaseModel):
     difficulty: Literal["easy", "medium", "hard"]
     options: list[ExamOptionOut]
     images: list[ExamImageOut] = Field(default_factory=list)
+    flagged_for_review: bool = False
     response: ResponseBlockOut | None = None
 
 
@@ -107,6 +108,20 @@ class ExamResumedOut(BaseModel):
 # ----------------------------------------------------------------------
 # JHEP-32: saved responses, navigation, resume
 # ----------------------------------------------------------------------
+
+
+class QuestionFlagUpdateRequest(BaseModel):
+    """Set the review flag without changing the learner's response."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    flagged_for_review: Annotated[bool, Field(strict=True)]
+
+
+class QuestionFlagSavedOut(BaseModel):
+    attempt_id: UUID
+    question_version_id: UUID
+    flagged_for_review: bool
 
 
 class ResponseSaveRequest(BaseModel):

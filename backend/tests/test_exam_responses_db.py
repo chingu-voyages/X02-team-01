@@ -510,3 +510,104 @@ def test_duplicate_start_protection_survives_persistence(postgres_session):
     )
     assert second.attempt_id != first.attempt_id
     assert len(postgres_session.exec(select(ExamAttempt)).all()) == 2
+
+
+@pytest.mark.parametrize("feedback_mode", ["immediate", "deferred"])
+def test_question_flags_are_independent_of_answers(postgres_session, feedback_mode):
+    session = postgres_session
+    bank = SeededAttempt(session)
+    bank.cert.feedback_mode = feedback_mode
+    first_question, first_version, first_options = bank.add_question(
+        correct_positions=(1,)
+    )
+    second_question, second_version, second_options = bank.add_question(
+        correct_positions=(1,)
+    )
+    assignments = [(first_question, first_version), (second_question, second_version)]
+    created = bank.create_attempt(assignments)
+    service = ExamAttemptService(session)
+    attempt = service.get_owned_attempt(
+        attempt_id=created.attempt_id, learner_id=bank.learner.id
+    )
+    pinned = service.resolve_question(attempt.id, first_version)
+    pinned_id = pinned.id
+    assert pinned.flagged_for_review is False
+
+    # Unanswered question: repeated explicit writes create no response rows.
+    for _ in range(2):
+        flagged = service.set_question_flag(attempt, pinned_id, flagged_for_review=True)
+        assert flagged.id == pinned_id
+        assert flagged.flagged_for_review is True
+    assert service.response_blocks(attempt) == {}
+    assert service.answer_counts(attempt) == (0, 2)
+    flags = {
+        q.id: q.flagged_for_review for q in bank.service.get_exam_questions(attempt.id)
+    }
+    assert flags == {first_version: True, second_version: False}
+
+    # An unsubmitted draft survives flagging and unflagging unchanged.
+    service.save_response(
+        attempt,
+        first_version,
+        selected_option_ids=[first_options[0]],
+        text_response=None,
+    )
+    draft = service.response_blocks(attempt)[first_version]
+    service.set_question_flag(attempt, first_version, flagged_for_review=False)
+    assert service.response_blocks(attempt)[first_version] == draft
+    assert draft["is_submitted"] is False
+    service.set_question_flag(attempt, first_version, flagged_for_review=True)
+
+    # Submitted answers remain locked; flags are not grading operations.
+    feedback = service.submit_question(
+        attempt,
+        first_version,
+        selected_option_ids=[first_options[0]],
+        text_response=None,
+    )
+    assert feedback["feedback_released"] is (feedback_mode == "immediate")
+    saved = service.response_blocks(attempt)[first_version]
+    service.set_question_flag(attempt, first_version, flagged_for_review=False)
+    service.set_question_flag(attempt, first_version, flagged_for_review=True)
+    assert service.response_blocks(attempt)[first_version] == saved
+    assert saved["is_submitted"] is True
+    assert "is_correct" not in saved
+    with pytest.raises(QuestionAlreadyLockedError):
+        service.save_response(
+            attempt,
+            first_version,
+            selected_option_ids=[first_options[1]],
+            text_response=None,
+        )
+
+    with pytest.raises(AttemptQuestionNotFoundError):
+        service.set_question_flag(attempt, uuid4(), flagged_for_review=True)
+
+    # Navigation does not change flags or mutate response state.
+    service.apply_progress(attempt, 2)
+    assert service.resolve_question(attempt.id, pinned_id).flagged_for_review is True
+    assert service.response_blocks(attempt)[first_version] == saved
+    service.submit_question(
+        attempt,
+        second_version,
+        selected_option_ids=[second_options[0]],
+        text_response=None,
+    )
+    result = service.final_submit(attempt)
+    assert result.points_earned == 2
+    with pytest.raises(AttemptAlreadySubmittedError):
+        service.set_question_flag(attempt, first_version, flagged_for_review=False)
+
+    # A subsequent attempt using the very same questions starts unflagged.
+    subsequent = bank.create_attempt(assignments)
+    next_attempt = service.get_owned_attempt(
+        attempt_id=subsequent.attempt_id, learner_id=bank.learner.id
+    )
+    assert (
+        service.resolve_question(next_attempt.id, first_version).flagged_for_review
+        is False
+    )
+    with pytest.raises(AttemptQuestionNotFoundError):
+        service.set_question_flag(next_attempt, pinned_id, flagged_for_review=True)
+    assert service.resolve_question(attempt.id, pinned_id).flagged_for_review is True
+    assert session.get(QuestionVersion, first_version).is_flagged is False

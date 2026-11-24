@@ -4,6 +4,7 @@ import QuestionRenderer from "./QuestionRenderer";
 import PageHeader from "@/components/layouts/PageHeader";
 import { Button } from "@/components/ui/button";
 import ExamSidebar from "./ExamSidebar";
+import MobileQuestionNavigation from "./MobileQuestionNavigation";
 import { useExamAttempt } from "@/hooks/useExamAttempt";
 
 interface ExamCardProps {
@@ -16,7 +17,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     token,
     questions,
     currentQuestionIndex,
-    setCurrentQuestionIndex,
+    goToQuestion,
     loadStatus,
     loadError,
     retryLoading,
@@ -27,6 +28,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     isSubmitted,
     currentFeedback,
     textValue,
+    questionStates,
     submittedCount,
     allQuestionsSubmitted,
     firstUnsubmittedIndex,
@@ -34,6 +36,11 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     submitError,
     isFinishing,
     finishError,
+    isFlagged,
+    isSavingFlag,
+    flagError,
+    canToggleFlag,
+    handleToggleFlag,
     handleSelect,
     handleTextChange,
     handleSubmit,
@@ -52,6 +59,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     return (
       <section className="rounded-md border border-[#d4d8db] bg-white p-6">
         <h1 className="mb-3 text-xl font-bold">Practice exam</h1>
+
         {loadStatus === "loading" ? (
           <p role="status">Loading exam...</p>
         ) : (
@@ -59,7 +67,12 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
             <p role="alert" className="mb-4 text-sm text-red-700">
               {loadError}
             </p>
-            <Button type="button" variant="outline" onClick={retryLoading}>
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={retryLoading}
+            >
               Retry
             </Button>
           </>
@@ -72,7 +85,10 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     return (
       <section className="rounded-md border border-[#d4d8db] bg-white p-6">
         <h1 className="mb-2 text-xl font-bold">Practice exam</h1>
-        <p role="status">No questions are available for this attempt.</p>
+
+        <p role="status">
+          No questions are available for this attempt.
+        </p>
       </section>
     );
   }
@@ -97,6 +113,14 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         subtitle={answeredStatus}
       />
 
+      <MobileQuestionNavigation
+        totalQuestions={questions.length}
+        currentQuestionIndex={currentQuestionIndex}
+        questionStates={questionStates}
+        disabled={isSubmitting || isFinishing}
+        onNavigate={goToQuestion}
+      />
+
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
         <QuestionRenderer
           question={currentQuestion}
@@ -107,6 +131,11 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           isSubmitted={isSubmitted}
           isSubmitting={isSubmitting}
           isFinishing={isFinishing}
+          isFlagged={isFlagged}
+          isSavingFlag={isSavingFlag}
+          canToggleFlag={canToggleFlag}
+          flagError={flagError}
+          onToggleFlag={handleToggleFlag}
           submitError={submitError}
           feedback={currentFeedback}
           allQuestionsSubmitted={allQuestionsSubmitted}
@@ -114,33 +143,28 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           onSelectOption={handleSelect}
           onTextChange={handleTextChange}
           onSubmit={handleSubmit}
-          onPrevious={() =>
-            setCurrentQuestionIndex((previous) => Math.max(previous - 1, 0))
+          onPrevious={() => goToQuestion(currentQuestionIndex - 1)}
+          onNext={() => goToQuestion(currentQuestionIndex + 1)}
+          onReviewUnsubmitted={() =>
+            goToQuestion(firstUnsubmittedIndex)
           }
-          onNext={() =>
-            setCurrentQuestionIndex((previous) =>
-              Math.min(previous + 1, questions.length - 1),
-            )
-          }
-          onReviewUnsubmitted={() => {
-            if (firstUnsubmittedIndex >= 0) {
-              setCurrentQuestionIndex(firstUnsubmittedIndex);
-            }
-          }}
         />
 
         <ExamSidebar
           currentQuestion={currentQuestion}
           currentQuestionIndex={currentQuestionIndex}
           totalQuestions={questions.length}
+          questionStates={questionStates}
           submittedCount={submittedCount}
           selectedOptionIds={currentSelected}
           isSubmitted={isSubmitted}
           isSubmitting={isSubmitting}
           isFinishing={isFinishing}
+          isSavingFlag={isSavingFlag}
           allQuestionsSubmitted={allQuestionsSubmitted}
           finishError={finishError}
           feedback={currentFeedback}
+          onNavigate={goToQuestion}
           onFinish={handleFinish}
         />
       </div>

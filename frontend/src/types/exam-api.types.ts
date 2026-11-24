@@ -30,6 +30,15 @@ export type ExamQuestion = {
   difficulty: "easy" | "medium" | "hard";
   options: ExamOption[];
   images: ExamImage[];
+  // JHEP-104: older fixtures and API deployments omit this field.
+  // Only an explicit true means flagged.
+  flagged_for_review?: boolean;
+};
+
+export type QuestionFlagSaved = {
+  attempt_id: string;
+  question_version_id: string;
+  flagged_for_review: boolean;
 };
 
 export type ExamCreatedResponse = {

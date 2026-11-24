@@ -212,6 +212,34 @@ class ExamAttemptService:
             raise AttemptQuestionNotFoundError("Question not part of this attempt")
         return row
 
+    def set_question_flag(
+        self,
+        attempt: ExamAttempt,
+        question_key: UUID,
+        *,
+        flagged_for_review: bool,
+    ) -> ExamAttemptQuestion:
+        """Set an attempt-specific flag without touching answers or grades."""
+        # Serialize flag writes with final submission's update of this row.
+        # Refresh the status in case another request has finalized the attempt.
+        locked_attempt = self._session.exec(
+            select(ExamAttempt)
+            .where(ExamAttempt.id == attempt.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).first()
+        if locked_attempt is None:
+            raise AttemptQuestionNotFoundError("Exam attempt not found")
+        if locked_attempt.status != "in_progress":
+            raise AttemptAlreadySubmittedError("Attempt already submitted")
+
+        pinned = self.resolve_question(locked_attempt.id, question_key)
+        pinned.flagged_for_review = flagged_for_review
+        self._session.add(pinned)
+        self._session.commit()
+        self._session.refresh(pinned)
+        return pinned
+
     def _existing_response(
         self, attempt_id: UUID, question_version_id: UUID
     ) -> ExamResponse | None:
