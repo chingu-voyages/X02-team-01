@@ -12,6 +12,7 @@ import {
 } from "@/types/exam-api.types";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { deriveQuestionStates } from "@/lib/question-states";
 
 type LoadStatus = "loading" | "ready" | "error";
 type FlagRequest = { attemptId: string; questionId: string };
@@ -144,15 +145,19 @@ export function useExamAttempt(attemptId: string) {
   const isSubmitted = submittedMap[questionId] || false;
   const currentFeedback = feedbackMap[questionId];
   const textValue = textAnswersMap[questionId] ?? "";
-  const submittedCount = questions.filter(
-    (question) => submittedMap[question.id],
-  ).length;
-  const allQuestionsSubmitted =
-    questions.length > 0 &&
-    questions.every((question) => submittedMap[question.id] === true);
-  const firstUnsubmittedIndex = questions.findIndex(
-    (question) => !submittedMap[question.id],
-  );
+  const {
+    questionStates,
+    submittedCount,
+    remainingCount,
+    allQuestionsSubmitted,
+    firstUnsubmittedIndex,
+  } = deriveQuestionStates({
+    questions,
+    currentQuestionIndex,
+    submittedMap,
+    selectedValuesMap,
+    textAnswersMap,
+  });
 
   const isFlagged = currentQuestion?.flagged_for_review === true;
   const flaggedQuestionIds = questions
@@ -420,7 +425,9 @@ export function useExamAttempt(attemptId: string) {
     isSubmitted,
     currentFeedback,
     textValue,
+    questionStates,
     submittedCount,
+    remainingCount,
     allQuestionsSubmitted,
     firstUnsubmittedIndex,
     isSubmitting,
