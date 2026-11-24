@@ -1,5 +1,9 @@
 import { Button } from "@/components/ui/button";
-import type { ExamQuestionWithResponse, FeedbackEntry } from "@/types/exam-api.types";
+import type {
+  ExamQuestionWithResponse,
+  FeedbackEntry,
+} from "@/types/exam-api.types";
+import type { QuestionState } from "@/lib/question-states";
 import QuestionNavigator from "./QuestionNavigator";
 
 function letterForPosition(position: number) {
@@ -12,6 +16,7 @@ interface ExamSidebarProps {
   currentQuestion: ExamQuestionWithResponse;
   currentQuestionIndex: number;
   totalQuestions: number;
+  questionStates?: readonly QuestionState[];
   flaggedQuestionIndices?: readonly number[];
   submittedCount: number;
   selectedOptionIds: string[];
@@ -30,6 +35,7 @@ export default function ExamSidebar({
   currentQuestion,
   currentQuestionIndex,
   totalQuestions,
+  questionStates,
   flaggedQuestionIndices = [],
   submittedCount,
   selectedOptionIds,
@@ -43,9 +49,14 @@ export default function ExamSidebar({
   onNavigate,
   onFinish,
 }: ExamSidebarProps) {
-  const isShortAnswer = currentQuestion.question_type === "short_answer";
-  const isMultiple = currentQuestion.allows_multiple_answers;
-  const isLastQuestion = currentQuestionIndex >= totalQuestions - 1;
+  const isShortAnswer =
+    currentQuestion.question_type === "short_answer";
+
+  const isMultiple =
+    currentQuestion.allows_multiple_answers;
+
+  const isLastQuestion =
+    currentQuestionIndex >= totalQuestions - 1;
 
   const selectedLetters = currentQuestion.options
     .filter((option) => selectedOptionIds.includes(option.id))
@@ -55,18 +66,24 @@ export default function ExamSidebar({
   return (
     <aside
       aria-labelledby="attempt-progress-heading"
-      className="rounded-md border border-[#cbd0d3] bg-white p-5 sm:p-6"
+      className="min-w-0 rounded-md border border-[#cbd0d3] bg-white p-5 sm:p-6"
     >
-      <h2 id="attempt-progress-heading" className="text-base font-bold">
+      <h2
+        id="attempt-progress-heading"
+        className="text-base font-bold"
+      >
         Attempt progress
       </h2>
+
       <div className="mt-4 space-y-3 text-sm text-[#56616a]">
         <p>
           Question {currentQuestionIndex + 1} / {totalQuestions}
         </p>
+
         <p>
           Submitted answers: {submittedCount} / {totalQuestions}
         </p>
+
         <p>
           {isSubmitted
             ? isShortAnswer
@@ -78,14 +95,17 @@ export default function ExamSidebar({
 
       <div className="hidden lg:block">
         <div className="my-5 border-t border-[#e2e5e7]" />
+
         <QuestionNavigator
           totalQuestions={totalQuestions}
           currentQuestionIndex={currentQuestionIndex}
+          questionStates={questionStates}
           flaggedQuestionIndices={flaggedQuestionIndices}
           disabled={isSubmitting || isFinishing}
           onNavigate={onNavigate}
         />
       </div>
+
       <div className="my-5 border-t border-[#e2e5e7]" />
 
       {isLastQuestion && allQuestionsSubmitted ? (

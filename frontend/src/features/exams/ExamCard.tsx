@@ -28,6 +28,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     isSubmitted,
     currentFeedback,
     textValue,
+    questionStates,
     submittedCount,
     allQuestionsSubmitted,
     firstUnsubmittedIndex,
@@ -36,7 +37,6 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     isFinishing,
     finishError,
     isFlagged,
-    flaggedQuestionIds,
     isSavingFlag,
     flagError,
     canToggleFlag,
@@ -59,6 +59,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     return (
       <section className="rounded-md border border-[#d4d8db] bg-white p-6">
         <h1 className="mb-3 text-xl font-bold">Practice exam</h1>
+
         {loadStatus === "loading" ? (
           <p role="status">Loading exam...</p>
         ) : (
@@ -66,7 +67,12 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
             <p role="alert" className="mb-4 text-sm text-red-700">
               {loadError}
             </p>
-            <Button type="button" variant="outline" onClick={retryLoading}>
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={retryLoading}
+            >
               Retry
             </Button>
           </>
@@ -79,7 +85,10 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     return (
       <section className="rounded-md border border-[#d4d8db] bg-white p-6">
         <h1 className="mb-2 text-xl font-bold">Practice exam</h1>
-        <p role="status">No questions are available for this attempt.</p>
+
+        <p role="status">
+          No questions are available for this attempt.
+        </p>
       </section>
     );
   }
@@ -95,13 +104,6 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         ? "Type your answer, then submit."
         : "Choose an answer, then submit.";
 
-  // Translate stable question IDs into the current attempt's display order.
-  // Flags are independent of the navigator's current-question highlight.
-  const flaggedIds = new Set(flaggedQuestionIds);
-  const flaggedQuestionIndices = questions.flatMap((question, index) =>
-    flaggedIds.has(question.id) ? [index] : [],
-  );
-
   return (
     <div className="w-full space-y-6">
       <PageHeader
@@ -114,7 +116,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
       <MobileQuestionNavigation
         totalQuestions={questions.length}
         currentQuestionIndex={currentQuestionIndex}
-        flaggedQuestionIndices={flaggedQuestionIndices}
+        questionStates={questionStates}
         disabled={isSubmitting || isFinishing}
         onNavigate={goToQuestion}
       />
@@ -143,14 +145,16 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           onSubmit={handleSubmit}
           onPrevious={() => goToQuestion(currentQuestionIndex - 1)}
           onNext={() => goToQuestion(currentQuestionIndex + 1)}
-          onReviewUnsubmitted={() => goToQuestion(firstUnsubmittedIndex)}
+          onReviewUnsubmitted={() =>
+            goToQuestion(firstUnsubmittedIndex)
+          }
         />
 
         <ExamSidebar
           currentQuestion={currentQuestion}
           currentQuestionIndex={currentQuestionIndex}
           totalQuestions={questions.length}
-          flaggedQuestionIndices={flaggedQuestionIndices}
+          questionStates={questionStates}
           submittedCount={submittedCount}
           selectedOptionIds={currentSelected}
           isSubmitted={isSubmitted}
