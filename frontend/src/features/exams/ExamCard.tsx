@@ -4,6 +4,7 @@ import QuestionRenderer from "./QuestionRenderer";
 import PageHeader from "@/components/layouts/PageHeader";
 import { Button } from "@/components/ui/button";
 import ExamSidebar from "./ExamSidebar";
+import MobileQuestionNavigation from "./MobileQuestionNavigation";
 import { useExamAttempt } from "@/hooks/useExamAttempt";
 
 interface ExamCardProps {
@@ -95,6 +96,13 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         status="In progress"
         stepLabel={`Question ${currentQuestionIndex + 1} of ${questions.length}`}
         subtitle={answeredStatus}
+      />
+
+      <MobileQuestionNavigation
+        totalQuestions={questions.length}
+        currentQuestionIndex={currentQuestionIndex}
+        disabled={isSubmitting || isFinishing}
+        onNavigate={goToQuestion}
       />
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">

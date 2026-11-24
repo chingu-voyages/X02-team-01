@@ -1,7 +1,11 @@
+import type { Ref } from "react";
+
 interface QuestionNavigatorProps {
   totalQuestions: number;
   currentQuestionIndex: number;
   disabled?: boolean;
+  showHeading?: boolean;
+  scrollRef?: Ref<HTMLDivElement>;
   onNavigate: (index: number) => void;
 }
 
@@ -9,12 +13,16 @@ export default function QuestionNavigator({
   totalQuestions,
   currentQuestionIndex,
   disabled = false,
+  showHeading = true,
+  scrollRef,
   onNavigate,
 }: QuestionNavigatorProps) {
   return (
     <nav aria-label="Question navigation">
-      <h3 className="mb-3 text-sm font-bold">Question Navigation</h3>
-      <div className="max-h-80 overflow-y-auto p-1">
+      {showHeading && (
+        <h3 className="mb-3 text-sm font-bold">Question Navigation</h3>
+      )}
+      <div ref={scrollRef} className="max-h-80 overflow-y-auto overscroll-contain p-1">
         <ol className="grid grid-cols-5 gap-2">
           {Array.from({ length: totalQuestions }, (_, index) => {
             const isCurrent = index === currentQuestionIndex;
