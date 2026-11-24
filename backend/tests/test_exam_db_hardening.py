@@ -338,7 +338,9 @@ def test_question_content_unicode_long_text_and_keys_are_safe(
             "difficulty",
             "options",
             "images",
+            "flagged_for_review",
         }
+        assert question.flagged_for_review is False
         for option in question.options:
             assert set(vars(option)) == {"id", "position", "option_text"}
         if question.question_type == "short_answer":
