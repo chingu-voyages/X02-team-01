@@ -200,6 +200,21 @@ def create_draft(
     )
 
 
+def submit_draft(
+    session: Session,
+    *,
+    question_id,
+    owner: User,
+):
+    """JHEP-119: move the pending draft to 'submitted' — the workflow
+    step that must precede any reject (AC3/AC4)."""
+    from app.services.admin_question_service import (
+        submit_question_for_review,
+    )
+
+    return submit_question_for_review(session, question_id, actor=owner)
+
+
 def revision_payload(
     category: Category,
 ) -> QuestionDraftEdit:
@@ -225,10 +240,14 @@ def revision_payload(
     )
 
 
-def test_administrator_can_reject_pending_draft(
+def test_administrator_can_reject_submitted_question(
     client: TestClient,
     session: Session,
 ):
+    """JHEP-119 AC3/AC4: reject applies to submitted questions and the
+    outcome is terminal — publication_status 'inactive', retained, never
+    silently reactivated (the pre-JHEP-119 behavior let an edit reset a
+    rejected draft to pending, which violated this)."""
     administrator = create_user(
         session,
         UserRole.ADMINISTRATOR,
@@ -246,6 +265,12 @@ def test_administrator_can_reject_pending_draft(
         owner=contributor,
         certification=certification,
         category=category,
+    )
+
+    submit_draft(
+        session,
+        question_id=created.question_id,
+        owner=contributor,
     )
 
     response = client.post(
@@ -266,7 +291,7 @@ def test_administrator_can_reject_pending_draft(
 
     assert body["review_status"] == "rejected"
 
-    assert body["publication_status"] == "draft"
+    assert body["publication_status"] == "inactive"
 
     version = session.get(
         QuestionVersion,
@@ -277,7 +302,7 @@ def test_administrator_can_reject_pending_draft(
 
     assert version.review_status == "rejected"
 
-    assert version.publication_status == "draft"
+    assert version.publication_status == "inactive"
 
     assert version.reviewed_by_id == administrator.id
 
@@ -307,6 +332,12 @@ def test_rejection_note_is_trimmed(
         owner=contributor,
         certification=certification,
         category=category,
+    )
+
+    submit_draft(
+        session,
+        question_id=created.question_id,
+        owner=contributor,
     )
 
     response = client.post(
@@ -508,6 +539,12 @@ def test_rejected_question_cannot_be_rejected_again(
 
     headers = auth_header(administrator)
 
+    submit_draft(
+        session,
+        question_id=created.question_id,
+        owner=contributor,
+    )
+
     payload = {
         "review_note": ("Needs correction."),
     }
@@ -529,7 +566,7 @@ def test_rejected_question_cannot_be_rejected_again(
     assert second.status_code == 409
 
     assert second.json() == {
-        "detail": ("Only pending draft questions can be rejected"),
+        "detail": ("Only submitted or in-review questions can be rejected"),
     }
 
 
@@ -628,6 +665,12 @@ def test_rejecting_revision_preserves_old_active_version(
 
     assert revised.publication_status == "draft"
 
+    submit_draft(
+        session,
+        question_id=created.question_id,
+        owner=contributor,
+    )
+
     reject_response = client.post(
         (f"/admin/questions/{created.question_id}/reject"),
         headers=auth_header(administrator),
@@ -659,7 +702,7 @@ def test_rejecting_revision_preserves_old_active_version(
 
     assert revision.review_status == "rejected"
 
-    assert revision.publication_status == "draft"
+    assert revision.publication_status == "inactive"
 
     assert revision.review_note == ("Revision needs additional work.")
 
@@ -672,10 +715,15 @@ def test_rejecting_revision_preserves_old_active_version(
     assert active_versions[0].id == original.id
 
 
-def test_editing_rejected_draft_resets_review_state(
+def test_rejected_question_is_locked_against_editing(
     client: TestClient,
     session: Session,
 ):
+    """JHEP-119 AC4: a rejected question is retained as inactive and
+    CANNOT be edited or silently reactivated — the pre-JHEP-119
+    "editing resets a rejected draft" behavior violated this and was
+    removed. Reactivation of rejected content requires a deliberate
+    Administrator action, not an author edit."""
     administrator = create_user(
         session,
         UserRole.ADMINISTRATOR,
@@ -695,6 +743,8 @@ def test_editing_rejected_draft_resets_review_state(
         category=category,
     )
 
+    submit_draft(session, question_id=created.question_id, owner=contributor)
+
     reject_response = client.post(
         (f"/admin/questions/{created.question_id}/reject"),
         headers=auth_header(administrator),
@@ -705,16 +755,25 @@ def test_editing_rejected_draft_resets_review_state(
 
     assert reject_response.status_code == 200
 
-    edited = edit_question_draft(
-        session,
-        created.question_id,
-        revision_payload(category),
-        actor=contributor,
+    # the author can no longer edit the rejected (inactive) question
+    edit_response = client.patch(
+        f"/admin/questions/{created.question_id}",
+        headers=auth_header(contributor),
+        json={
+            "category_id": str(category.id),
+            "difficulty": "medium",
+            "question_text": "Sneaky reactivation attempt",
+            "question_type": "multiple_choice",
+            "allows_multiple_answers": False,
+            "explanation": "Reactivation attempt",
+            "options": [
+                {"option_text": "A", "is_correct": True},
+                {"option_text": "B", "is_correct": False},
+            ],
+        },
     )
 
-    assert edited.review_status == "pending"
-
-    assert edited.publication_status == "draft"
+    assert edit_response.status_code == 409
 
     version = session.get(
         QuestionVersion,
@@ -723,10 +782,13 @@ def test_editing_rejected_draft_resets_review_state(
 
     assert version is not None
 
-    assert version.review_status == "pending"
+    assert version.review_status == "rejected"
 
-    assert version.reviewed_by_id is None
+    assert version.publication_status == "inactive"
 
-    assert version.reviewed_at is None
+    assert version.reviewed_by_id == administrator.id
 
-    assert version.review_note is None
+    assert version.review_note == "Please revise this."
+
+    # and the question text is unchanged (nothing was overwritten)
+    assert version.question_text != "Sneaky reactivation attempt"

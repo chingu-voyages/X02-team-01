@@ -2,6 +2,8 @@
 // Images are nullable when a media delivery base URL has not been configured.
 export type ExamCreateRequest = {
   certification_id: string; // UUID
+  category_id?: string; // UUID
+  practice_exam_id?: string; // UUID; JHEP-126 published exam
   question_count: number; // positive integer, capped by backend config (max 100)
 };
 

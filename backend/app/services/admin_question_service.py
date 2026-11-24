@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.core.roles import UserRole
@@ -38,6 +39,14 @@ class QuestionPublishedRevisionForbiddenError(PermissionError):
     """Only an Administrator may revise published content."""
 
 
+class QuestionReviewTransitionError(ValueError):
+    """An invalid or out-of-order review-workflow transition (JHEP-119)."""
+
+
+class QuestionBankNotAuthorizedError(Exception):
+    """The actor cannot perform this action on this question."""
+
+
 class QuestionDraftNotPublishableError(ValueError):
     """Latest version cannot be approved and published."""
 
@@ -69,6 +78,7 @@ class QuestionBankRecord:
     question_type: str
     review_status: str
     publication_status: str
+    review_note: str | None
     is_flagged: bool
     created_by_id: UUID
     last_updated: datetime
@@ -109,6 +119,7 @@ class QuestionBankDetails:
     explanation: str | None
     review_status: str
     publication_status: str
+    review_note: str | None
     is_flagged: bool
     created_by_id: UUID
     submitted_by_id: UUID
@@ -118,12 +129,14 @@ class QuestionBankDetails:
     images: list[QuestionBankImage]
 
 
-def create_question_draft(
+def add_question_draft(
     session: Session,
     payload: QuestionDraftCreate,
     *,
     actor_id: UUID,
 ) -> CreatedQuestionDraft:
+    """Add one pending Draft question without committing the transaction."""
+
     _validate_question_scope(
         session,
         payload,
@@ -149,42 +162,38 @@ def create_question_draft(
         submitted_by_id=actor_id,
     )
 
-    try:
-        session.add(question)
-        session.flush()
+    session.add(question)
+    session.flush()
 
-        session.add(version)
-        session.flush()
+    session.add(version)
+    session.flush()
 
-        if payload.question_type == "multiple_choice":
-            for position, option in enumerate(
-                payload.options,
-                start=1,
-            ):
-                session.add(
-                    AnswerOption(
-                        question_version_id=(version.id),
-                        option_text=(option.option_text),
-                        is_correct=(option.is_correct),
-                        position=position,
-                    )
-                )
-
-        else:
-            assert payload.expected_answer is not None
-
+    if payload.question_type == "multiple_choice":
+        for position, option in enumerate(
+            payload.options,
+            start=1,
+        ):
             session.add(
-                TextAnswerKey(
+                AnswerOption(
                     question_version_id=(version.id),
-                    expected_answer=(payload.expected_answer),
+                    option_text=(option.option_text),
+                    is_correct=(option.is_correct),
+                    position=position,
                 )
             )
 
-        session.commit()
+    else:
+        assert payload.expected_answer is not None
 
-    except Exception:
-        session.rollback()
-        raise
+        session.add(
+            TextAnswerKey(
+                question_version_id=(version.id),
+                expected_answer=(payload.expected_answer),
+            )
+        )
+
+    # Surface child-record constraints while remaining transaction-neutral.
+    session.flush()
 
     return CreatedQuestionDraft(
         question_id=question.id,
@@ -193,6 +202,29 @@ def create_question_draft(
         review_status=(version.review_status),
         publication_status=(version.publication_status),
     )
+
+
+def create_question_draft(
+    session: Session,
+    payload: QuestionDraftCreate,
+    *,
+    actor_id: UUID,
+) -> CreatedQuestionDraft:
+    """Create one Draft using the normal single-question transaction."""
+
+    try:
+        created = add_question_draft(
+            session,
+            payload,
+            actor_id=actor_id,
+        )
+        session.commit()
+
+    except Exception:
+        session.rollback()
+        raise
+
+    return created
 
 
 def edit_question_draft(
@@ -407,6 +439,110 @@ def _create_published_revision(
     )
 
 
+def submit_question_for_review(
+    session: Session,
+    question_id: UUID,
+    *,
+    actor: User,
+) -> QuestionBankDetails:
+    """JHEP-119 AC1: a Contributor submits THEIR OWN valid Draft toward
+    review. Submission never publishes; the ownership is enforced by the
+    actor scoping (a Contributor can only ever reach their own
+    questions)."""
+    question = session.get(Question, question_id)
+
+    if question is None:
+        raise QuestionBankNotFoundError("Question not found")
+
+    if not _question_visible_to_actor(question, actor):
+        raise QuestionBankNotAuthorizedError("You can only submit your own questions")
+
+    version = _latest_version(session, question.id)
+
+    if version.publication_status != "draft" or version.review_status != "pending":
+        raise QuestionReviewTransitionError(
+            "Only pending draft questions can be submitted for review"
+        )
+
+    version.review_status = "submitted"
+    version.submitted_by_id = actor.id
+    version.submitted_at = datetime.now(UTC)
+
+    session.add(version)
+    session.commit()
+
+    return get_question_bank_details(session, question.id, actor=actor)
+
+
+def start_question_review(
+    session: Session,
+    question_id: UUID,
+    *,
+    actor: User,
+) -> QuestionBankDetails:
+    """JHEP-119 AC2: an Administrator starts the review — Submitted ->
+    In Review, stamped with the reviewer (the DB constraint requires a
+    reviewer on non-pending states)."""
+    if actor.role != UserRole.ADMINISTRATOR:
+        raise QuestionBankNotAuthorizedError("Only Administrators can start a review")
+
+    question = session.get(Question, question_id)
+
+    if question is None:
+        raise QuestionBankNotFoundError("Question not found")
+
+    version = _latest_version(session, question.id)
+
+    if version.review_status != "submitted":
+        raise QuestionReviewTransitionError("Only submitted questions can enter review")
+
+    version.review_status = "in_review"
+    version.reviewed_by_id = actor.id
+    version.reviewed_at = datetime.now(UTC)
+
+    session.add(version)
+    session.commit()
+
+    return get_question_bank_details(session, question.id, actor=actor)
+
+
+def request_question_changes(
+    session: Session,
+    question_id: UUID,
+    *,
+    actor: User,
+    review_note: str,
+) -> QuestionBankDetails:
+    """JHEP-119 AC3: from In Review, return the question to the author's
+    editable Draft with the required reason kept as feedback. The
+    review state resets to pending — resubmittable after rework."""
+    if actor.role != UserRole.ADMINISTRATOR:
+        raise QuestionBankNotAuthorizedError("Only Administrators can request changes")
+
+    question = session.get(Question, question_id)
+
+    if question is None:
+        raise QuestionBankNotFoundError("Question not found")
+
+    version = _latest_version(session, question.id)
+
+    if version.review_status != "in_review":
+        raise QuestionReviewTransitionError(
+            "Only in-review questions can have changes requested"
+        )
+
+    version.review_status = "pending"
+    version.publication_status = "draft"
+    version.review_note = review_note
+    version.reviewed_by_id = actor.id
+    version.reviewed_at = datetime.now(UTC)
+
+    session.add(version)
+    session.commit()
+
+    return get_question_bank_details(session, question.id, actor=actor)
+
+
 def publish_question_draft(
     session: Session,
     question_id: UUID,
@@ -426,9 +562,15 @@ def publish_question_draft(
         question.id,
     )
 
-    if version.publication_status != "draft" or version.review_status != "pending":
+    # JHEP-119: publish accepts the review-workflow source (in_review)
+    # and keeps the admin-authored direct path (pending/draft) — one
+    # publishing implementation (the scope boundary).
+    if version.publication_status != "draft" or version.review_status not in (
+        "pending",
+        "in_review",
+    ):
         raise QuestionDraftNotPublishableError(
-            "Only pending draft questions can be published"
+            "Only pending draft or in-review questions can be published"
         )
 
     actor_id = actor.id
@@ -492,9 +634,15 @@ def reject_question_draft(
         question.id,
     )
 
-    if version.publication_status != "draft" or version.review_status != "pending":
+    # JHEP-119 AC3/AC4: Reject applies to submitted AND in-review
+    # questions (the admin-authored pending/draft path keeps the direct
+    # publish instead), and the outcome is TERMINAL: publication_status
+    # becomes 'inactive' — retained, never silently reactivated by
+    # editing (the old "edit resets a rejected draft" behavior violated
+    # AC4 and is removed; see the test updates in this PR).
+    if version.review_status not in ("submitted", "in_review"):
         raise QuestionDraftNotRejectableError(
-            "Only pending draft questions can be rejected"
+            "Only submitted or in-review questions can be rejected"
         )
 
     actor_id = actor.id
@@ -507,6 +655,7 @@ def reject_question_draft(
         version.review_note = review_note
 
         version.review_status = "rejected"
+        version.publication_status = "inactive"
 
         session.add(version)
 
@@ -527,7 +676,11 @@ def list_question_bank(
     session: Session,
     *,
     actor: User,
+    review_status: str | None = None,
+    author_email: str | None = None,
 ) -> list[QuestionBankRecord]:
+    """JHEP-119 AC2: the review queue — optional server-side filters for
+    the review status and the author email, on top of the role scoping."""
     statement = select(Question)
 
     if actor.role == UserRole.CONTRIBUTOR:
@@ -535,6 +688,18 @@ def list_question_bank(
 
     elif actor.role != UserRole.ADMINISTRATOR:
         return []
+
+    if review_status:
+        # a queue is built from the review-workflow states
+        statement = statement.join(
+            QuestionVersion,
+            QuestionVersion.question_id == Question.id,
+        ).where(QuestionVersion.review_status == review_status)
+    if author_email:
+        statement = statement.join(
+            User,
+            User.id == Question.created_by_id,
+        ).where(func.lower(User.email) == author_email.strip().lower())
 
     records = [
         _question_bank_record(
@@ -657,6 +822,7 @@ def get_question_bank_details(
         explanation=(version.explanation),
         review_status=(version.review_status),
         publication_status=(version.publication_status),
+        review_note=(version.review_note),
         is_flagged=(version.is_flagged),
         created_by_id=(question.created_by_id),
         submitted_by_id=(version.submitted_by_id),

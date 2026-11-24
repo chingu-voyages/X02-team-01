@@ -383,7 +383,7 @@ def test_active_question_cannot_be_published_again(
     assert second.status_code == 409
 
     assert second.json() == {
-        "detail": ("Only pending draft questions can be published")
+        "detail": ("Only pending draft or in-review questions can be published")
     }
 
     version = session.get(

@@ -221,6 +221,8 @@ class QuestionBankItem(BaseModel):
 
     review_status: Literal[
         "pending",
+        "submitted",
+        "in_review",
         "approved",
         "rejected",
     ]
@@ -228,10 +230,14 @@ class QuestionBankItem(BaseModel):
     publication_status: Literal[
         "draft",
         "active",
+        "inactive",
         "retired",
     ]
 
+    review_note: str | None = None
+
     is_flagged: bool
+    has_image: bool = False
 
     created_by_id: UUID
     last_updated: datetime
@@ -301,6 +307,8 @@ class QuestionBankDetail(BaseModel):
 
     review_status: Literal[
         "pending",
+        "submitted",
+        "in_review",
         "approved",
         "rejected",
     ]
@@ -308,8 +316,11 @@ class QuestionBankDetail(BaseModel):
     publication_status: Literal[
         "draft",
         "active",
+        "inactive",
         "retired",
     ]
+
+    review_note: str | None = None
 
     is_flagged: bool
 
