@@ -22,6 +22,7 @@ from app.models import (
     AnswerOption,
     Category,
     Certification,
+    PermissionChangeAudit,
     Question,
     QuestionImage,
     QuestionVersion,
@@ -80,6 +81,7 @@ class UsersHarness:
                 AnswerOption.__table__,
                 QuestionImage.__table__,
                 RoleChangeAudit.__table__,
+                PermissionChangeAudit.__table__,
             ],
         )
 
@@ -167,6 +169,8 @@ def test_listing_returns_accounts_with_search_and_order() -> None:
             "fullName",
             "role",
             "is_verified",
+            "grade_short_answers",
+            "grade_essays",
             "created_at",
         }
         assert "hashed_password" not in first
@@ -426,5 +430,207 @@ def test_revocation_preserves_authored_questions() -> None:
             headers=harness.contributor_headers,
         )
         assert denied.status_code == 403
+    finally:
+        harness.close()
+
+
+# --- JHEP-192: grading permissions for written responses ---
+
+
+def test_grant_and_revoke_grading_permissions_independently() -> None:
+    """AC1: only the targeted flags change; each save is audited."""
+    harness = UsersHarness()
+    try:
+        # grant short answers only
+        response = harness.client.patch(
+            f"/api/v1/admin/users/{harness.contributor.id}/grading-permissions",
+            json={"grade_short_answers": True, "grade_essays": False},
+            headers=harness.admin_headers,
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["user"]["grade_short_answers"] is True
+        assert body["user"]["grade_essays"] is False
+        changes = body["changes"]
+        assert len(changes) == 1
+        assert changes[0]["permission"] == "grade_short_answers"
+        assert changes[0]["action"] == "granted"
+
+        stored = harness.session.exec(
+            select(User).where(User.id == harness.contributor.id)
+        ).one()
+        assert stored.grade_short_answers is True
+        assert stored.grade_essays is False
+
+        audits = harness.session.exec(
+            select(PermissionChangeAudit).where(
+                PermissionChangeAudit.target_id == harness.contributor.id
+            )
+        ).all()
+        assert len(audits) == 1
+        assert audits[0].actor_id == harness.admin.id
+        assert audits[0].permission == "grade_short_answers"
+        assert audits[0].action == "granted"
+        assert audits[0].previous_value is False
+        assert audits[0].new_value is True
+
+        # grant essays later — the other flag untouched (AC1 independent)
+        grant_essays = harness.client.patch(
+            f"/api/v1/admin/users/{harness.contributor.id}/grading-permissions",
+            json={"grade_short_answers": None, "grade_essays": True},
+            headers=harness.admin_headers,
+        )
+        assert grant_essays.status_code == 200
+        body2 = grant_essays.json()
+        assert body2["user"]["grade_short_answers"] is True
+        assert body2["user"]["grade_essays"] is True
+        assert len(body2["changes"]) == 1
+
+        stored2 = harness.session.exec(
+            select(User).where(User.id == harness.contributor.id)
+        ).one()
+        assert stored2.grade_short_answers is True
+        assert stored2.grade_essays is True
+
+        # revoke both
+        revoke = harness.client.patch(
+            f"/api/v1/admin/users/{harness.contributor.id}/grading-permissions",
+            json={"grade_short_answers": False, "grade_essays": False},
+            headers=harness.admin_headers,
+        )
+        assert revoke.status_code == 200
+        assert revoke.json()["changes"][0]["action"] == "revoked"
+        assert revoke.json()["changes"][1]["action"] == "revoked"
+
+        stored3 = harness.session.exec(
+            select(User).where(User.id == harness.contributor.id)
+        ).one()
+        assert stored3.grade_short_answers is False
+        assert stored3.grade_essays is False
+    finally:
+        harness.close()
+
+
+def test_grading_permissions_require_administrator() -> None:
+    harness = UsersHarness()
+    try:
+        for headers in (harness.learner_headers, harness.contributor_headers):
+            response = harness.client.patch(
+                f"/api/v1/admin/users/{harness.contributor.id}/grading-permissions",
+                json={"grade_short_answers": True},
+                headers=headers,
+            )
+            assert response.status_code == 403
+    finally:
+        harness.close()
+
+
+def test_grading_permissions_refuse_non_contributor_targets() -> None:
+    """AC1: only Contributor accounts are valid targets — Administrators
+    grade inherently (AC3) and Learners cannot grade."""
+    harness = UsersHarness()
+    try:
+        admin_target = harness.client.patch(
+            f"/api/v1/admin/users/{harness.other_admin.id}/grading-permissions",
+            json={"grade_short_answers": True},
+            headers=harness.admin_headers,
+        )
+        assert admin_target.status_code == 409
+        assert admin_target.json()["detail"]["code"] == "NOT_A_CONTRIBUTOR"
+
+        learner_target = harness.client.patch(
+            f"/api/v1/admin/users/{harness.learner.id}/grading-permissions",
+            json={"grade_short_answers": True},
+            headers=harness.admin_headers,
+        )
+        assert learner_target.status_code == 409
+
+        audits = harness.session.exec(select(PermissionChangeAudit)).all()
+        assert audits == []
+    finally:
+        harness.close()
+
+
+def test_grading_permissions_unknown_user_404() -> None:
+    harness = UsersHarness()
+    try:
+        response = harness.client.patch(
+            f"/api/v1/admin/users/{uuid4()}/grading-permissions",
+            json={"grade_short_answers": True},
+            headers=harness.admin_headers,
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"]["code"] == "USER_NOT_FOUND"
+    finally:
+        harness.close()
+
+
+def test_noop_permission_save_is_safe() -> None:
+    """A save with no actual change succeeds without audit rows."""
+    harness = UsersHarness()
+    try:
+        response = harness.client.patch(
+            f"/api/v1/admin/users/{harness.contributor.id}/grading-permissions",
+            json={"grade_short_answers": False, "grade_essays": False},
+            headers=harness.admin_headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["changes"] == []
+        audits = harness.session.exec(select(PermissionChangeAudit)).all()
+        assert audits == []
+    finally:
+        harness.close()
+
+
+def test_can_grade_response_type_enforcement_hook() -> None:
+    """AC2/AC3: the JHEP-122 enforcement helper — contributors grade
+    only permitted types; admins inherently; learners never."""
+    harness = UsersHarness()
+    try:
+        harness.contributor.grade_short_answers = True
+        harness.contributor.grade_essays = False
+        harness.session.add(harness.contributor)
+        harness.session.commit()
+
+        from app.services.admin_user_service import can_grade_response_type
+
+        assert can_grade_response_type(harness.contributor, "short_answer")
+        assert not can_grade_response_type(harness.contributor, "essay")
+        assert can_grade_response_type(harness.admin, "essay")
+        assert can_grade_response_type(harness.admin, "short_answer")
+        assert not can_grade_response_type(harness.learner, "short_answer")
+    finally:
+        harness.close()
+
+
+def test_permission_revocation_takes_effect_immediately() -> None:
+    """AC4: the flags live on the User row — the DB-row-per-request
+    pattern gives immediate effect, mirroring the role checks."""
+    harness = UsersHarness()
+    try:
+        harness.contributor.grade_short_answers = True
+        harness.session.add(harness.contributor)
+        harness.session.commit()
+
+        granted = harness.client.patch(
+            f"/api/v1/admin/users/{harness.contributor.id}/grading-permissions",
+            json={"grade_short_answers": False},
+            headers=harness.admin_headers,
+        )
+        assert granted.status_code == 200
+
+        stored = harness.session.exec(
+            select(User).where(User.id == harness.contributor.id)
+        ).one()
+        assert stored.grade_short_answers is False
+
+        audits = harness.session.exec(
+            select(PermissionChangeAudit).where(
+                PermissionChangeAudit.target_id == harness.contributor.id,
+                PermissionChangeAudit.permission == "grade_short_answers",
+            )
+        ).all()
+        assert len(audits) == 1
+        assert audits[0].action == "revoked"
     finally:
         harness.close()

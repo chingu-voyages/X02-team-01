@@ -11,6 +11,8 @@ const baseUser: AdminUserItem = {
   email: "ada@example.com",
   role: "learner",
   is_verified: true,
+  grade_short_answers: false,
+  grade_essays: false,
   created_at: "2026-01-01T00:00:00Z",
 };
 
@@ -32,6 +34,7 @@ describe("AdminUserRow", () => {
       <ul>
         <AdminUserRow
           user={baseUser}
+          onRequestGradingPermissions={vi.fn()}
           onRequestRoleChange={onRequestRoleChange}
         />
       </ul>,
@@ -61,6 +64,7 @@ describe("AdminUserRow", () => {
       <ul>
         <AdminUserRow
           user={contributorUser}
+          onRequestGradingPermissions={vi.fn()}
           onRequestRoleChange={onRequestRoleChange}
         />
       </ul>,
@@ -89,6 +93,7 @@ describe("AdminUserRow", () => {
       <ul>
         <AdminUserRow
           user={adminUser}
+          onRequestGradingPermissions={vi.fn()}
           onRequestRoleChange={onRequestRoleChange}
         />
       </ul>,

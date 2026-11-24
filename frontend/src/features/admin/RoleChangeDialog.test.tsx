@@ -11,6 +11,8 @@ const mockUser: AdminUserItem = {
   email: "grace@example.com",
   role: "learner",
   is_verified: true,
+  grade_short_answers: false,
+  grade_essays: false,
   created_at: "2026-01-01T00:00:00Z",
 };
 

@@ -6,6 +6,7 @@ import { ApiError } from "@/lib/api-client";
 import {
   changeAdminUserRole,
   getAdminUsers,
+  updateGradingPermissions,
   type AdminUserItem,
   type AdminUsersPage,
   type ManageableUserRole,
@@ -28,6 +29,14 @@ export default function AdminUsersPage() {
     user: AdminUserItem;
     role: ManageableUserRole;
   } | null>(null);
+
+  // JHEP-192: the written-response grading-permissions flow — a
+  // second independent dialog for Contributor accounts.
+  const [pendingPermissions, setPendingPermissions] = useState<{
+    user: AdminUserItem;
+  } | null>(null);
+  const [permissionInFlight, setPermissionInFlight] = useState(false);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
   const [changeError, setChangeError] = useState<string | null>(null);
   const [changeInFlight, setChangeInFlight] = useState(false);
   const [successNote, setSuccessNote] = useState<string | null>(null);
@@ -207,6 +216,11 @@ export default function AdminUsersPage() {
                 setChangeError(null);
                 setSuccessNote(null);
                 setPendingChange({ user: targetUser, role });
+              }}
+              onRequestGradingPermissions={(targetUser) => {
+                setPermissionError(null);
+                setSuccessNote(null);
+                setPendingPermissions({ user: targetUser });
               }}
             />
           ))}
