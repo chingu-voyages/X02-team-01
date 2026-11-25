@@ -1,10 +1,10 @@
 "use client";
 
+import ExamHeader from "./ExamHeader";
+import QuestionControls from "../questions/QuestionControls";
 import QuestionRenderer from "./QuestionRenderer";
-import PageHeader from "@/components/layouts/PageHeader";
 import { Button } from "@/components/ui/button";
 import ExamSidebar from "./ExamSidebar";
-import MobileQuestionNavigation from "./MobileQuestionNavigation";
 import { useExamAttempt } from "@/hooks/useExamAttempt";
 
 interface ExamCardProps {
@@ -23,7 +23,6 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     retryLoading,
     currentQuestion,
     isShortAnswer,
-    isMultiple,
     currentSelected,
     isSubmitted,
     currentFeedback,
@@ -49,7 +48,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
 
   if (!ready || !token) {
     return (
-      <p role="status" className="p-6">
+      <p role="status" className="p-6 text-brand-text">
         Checking session...
       </p>
     );
@@ -57,7 +56,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
 
   if (loadStatus === "loading" || loadStatus === "error") {
     return (
-      <section className="rounded-md border border-[#d4d8db] bg-white p-6">
+      <section className="rounded-md border border-brand-border bg-white p-6 text-brand-text shadow-xs">
         <h1 className="mb-3 text-xl font-bold">Practice exam</h1>
 
         {loadStatus === "loading" ? (
@@ -72,6 +71,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
               type="button"
               variant="outline"
               onClick={retryLoading}
+              className="border-brand-border text-brand-text hover:bg-brand-surface"
             >
               Retry
             </Button>
@@ -83,80 +83,97 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
 
   if (!currentQuestion) {
     return (
-      <section className="rounded-md border border-[#d4d8db] bg-white p-6">
+      <section className="rounded-md border border-brand-border bg-white p-6 text-brand-text shadow-xs">
         <h1 className="mb-2 text-xl font-bold">Practice exam</h1>
 
-        <p role="status">
+        <p role="status" className="text-brand-text/75">
           No questions are available for this attempt.
         </p>
       </section>
     );
   }
 
-  const answeredStatus = isSubmitted
-    ? typeof currentFeedback?.is_correct === "boolean" ||
-      Boolean(currentFeedback?.explanation)
-      ? "Answer submitted. Feedback shown below."
-      : "Answer submitted. Answer locked for this attempt."
-    : isMultiple
-      ? "Choose all that apply, then submit your answer."
-      : isShortAnswer
-        ? "Type your answer, then submit."
-        : "Choose an answer, then submit.";
+  const flaggedQuestionIndices = questions
+    .map((question, index) =>
+      question.flagged_for_review === true ? index : -1,
+    )
+    .filter((index) => index !== -1);
+
+  const selectedCount = isShortAnswer
+    ? textValue.trim().length
+    : currentSelected.length;
 
   return (
     <div className="w-full space-y-6">
-      <PageHeader
-        title="Practice exam"
-        status="In progress"
-        stepLabel={`Question ${currentQuestionIndex + 1} of ${questions.length}`}
-        subtitle={answeredStatus}
-      />
-
-      <MobileQuestionNavigation
+      <ExamHeader
+        questionIndex={currentQuestionIndex}
         totalQuestions={questions.length}
-        currentQuestionIndex={currentQuestionIndex}
-        questionStates={questionStates}
+        submittedCount={submittedCount}
+        isFlagged={isFlagged}
+        isSavingFlag={isSavingFlag}
+        canToggleFlag={canToggleFlag}
         disabled={isSubmitting || isFinishing}
-        onNavigate={goToQuestion}
+        flagError={flagError}
+        onToggleFlag={handleToggleFlag}
       />
 
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-        <QuestionRenderer
-          question={currentQuestion}
-          questionIndex={currentQuestionIndex}
-          totalQuestions={questions.length}
-          selectedOptionIds={currentSelected}
-          textValue={textValue}
-          isSubmitted={isSubmitted}
-          isSubmitting={isSubmitting}
-          isFinishing={isFinishing}
-          isFlagged={isFlagged}
-          isSavingFlag={isSavingFlag}
-          canToggleFlag={canToggleFlag}
-          flagError={flagError}
-          onToggleFlag={handleToggleFlag}
-          submitError={submitError}
-          feedback={currentFeedback}
-          allQuestionsSubmitted={allQuestionsSubmitted}
-          firstUnsubmittedIndex={firstUnsubmittedIndex}
-          onSelectOption={handleSelect}
-          onTextChange={handleTextChange}
-          onSubmit={handleSubmit}
-          onPrevious={() => goToQuestion(currentQuestionIndex - 1)}
-          onNext={() => goToQuestion(currentQuestionIndex + 1)}
-          onReviewUnsubmitted={() =>
-            goToQuestion(firstUnsubmittedIndex)
-          }
-        />
+      <ExamSidebar
+        variant="mobile"
+        currentQuestion={currentQuestion}
+        currentQuestionIndex={currentQuestionIndex}
+        totalQuestions={questions.length}
+        questionStates={questionStates}
+        flaggedQuestionIndices={flaggedQuestionIndices}
+        isSubmitted={isSubmitted}
+        isSubmitting={isSubmitting}
+        isFinishing={isFinishing}
+        isSavingFlag={isSavingFlag}
+        allQuestionsSubmitted={allQuestionsSubmitted}
+        finishError={finishError}
+        feedback={currentFeedback}
+        onNavigate={goToQuestion}
+        onFinish={handleFinish}
+      />
+
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-5">
+          <QuestionRenderer
+            question={currentQuestion}
+            selectedOptionIds={currentSelected}
+            textValue={textValue}
+            isSubmitted={isSubmitted}
+            isSubmitting={isSubmitting}
+            isFinishing={isFinishing}
+            submitError={submitError}
+            feedback={currentFeedback}
+            onSelectOption={handleSelect}
+            onTextChange={handleTextChange}
+          />
+
+          <QuestionControls
+            questionIndex={currentQuestionIndex}
+            totalQuestions={questions.length}
+            selectedCount={selectedCount}
+            isSubmitted={isSubmitted}
+            isSubmitting={isSubmitting}
+            isFinishing={isFinishing}
+            isSavingFlag={isSavingFlag}
+            allQuestionsSubmitted={allQuestionsSubmitted}
+            firstUnsubmittedIndex={firstUnsubmittedIndex}
+            onSubmit={handleSubmit}
+            onPrevious={() => goToQuestion(currentQuestionIndex - 1)}
+            onNext={() => goToQuestion(currentQuestionIndex + 1)}
+            onReviewUnsubmitted={() => goToQuestion(firstUnsubmittedIndex)}
+          />
+        </div>
 
         <ExamSidebar
+          variant="panel"
           currentQuestion={currentQuestion}
           currentQuestionIndex={currentQuestionIndex}
           totalQuestions={questions.length}
           questionStates={questionStates}
-          submittedCount={submittedCount}
-          selectedOptionIds={currentSelected}
+          flaggedQuestionIndices={flaggedQuestionIndices}
           isSubmitted={isSubmitted}
           isSubmitting={isSubmitting}
           isFinishing={isFinishing}

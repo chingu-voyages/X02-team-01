@@ -130,7 +130,7 @@ export default function MobileQuestionNavigation({
             event.preventDefault();
             closeDialog();
           }}
-          className="fixed inset-0 m-auto max-h-[calc(100dvh_-_2rem)] w-[calc(100%_-_2rem)] max-w-md overflow-y-auto overscroll-contain rounded-md border border-[#cbd0d3] bg-white p-5 text-[#303639] shadow-lg backdrop:bg-black/40 sm:p-6"
+          className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-y-auto overscroll-contain rounded-md border border-[#cbd0d3] bg-white p-5 text-[#303639] shadow-lg backdrop:bg-black/40 sm:p-6"
         >
           <div className="mb-4 flex items-center justify-between gap-3">
             <h2
@@ -166,8 +166,6 @@ export default function MobileQuestionNavigation({
             questionStates={questionStates}
             flaggedQuestionIndices={flaggedQuestionIndices}
             disabled={disabled}
-            showHeading={false}
-            scrollRef={scrollRef}
             onNavigate={handleNavigate}
           />
         </dialog>
