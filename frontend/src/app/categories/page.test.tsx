@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import CategoriesPage from "./page";
@@ -8,6 +8,7 @@ import {
   startPublishedPracticeExam,
 } from "@/lib/practice-exam-api";
 import { ApiError } from "@/lib/api-client";
+import type { ExamCreatedResponse } from "@/types/exam-api.types";
 
 const { mockPush, mockHandleError } = vi.hoisted(() => ({
   mockPush: vi.fn(),
@@ -49,6 +50,14 @@ const otherExam = {
   name: "Advanced Science Practice",
 };
 const existingAttemptId = "77777777-7777-4777-8777-777777777777";
+const otherAttemptId = "88888888-8888-4888-8888-888888888888";
+
+function conflict(attemptId: string) {
+  return new ApiError(409, "Conflict", {
+    code: "ATTEMPT_IN_PROGRESS",
+    attempt_id: attemptId,
+  });
+}
 
 async function startSelectedExam() {
   const user = userEvent.setup();
@@ -62,7 +71,7 @@ async function startSelectedExam() {
 
 describe("Published learner exam selection", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     vi.mocked(getPublishedPracticeExams).mockResolvedValue([exam]);
     vi.mocked(startPublishedPracticeExam).mockResolvedValue({
       attempt_id: "33333333-3333-4333-8333-333333333333",
@@ -130,29 +139,32 @@ describe("Published learner exam selection", () => {
     expect(await screen.findByText("Science Practice")).toBeTruthy();
   });
 
-  it("offers to resume an existing started attempt", async () => {
+  it("offers to resume only the selected exam's existing attempt", async () => {
     vi.mocked(startPublishedPracticeExam).mockRejectedValueOnce(
-      new ApiError(409, "Conflict", {
-        code: "ATTEMPT_IN_PROGRESS",
-        attempt_id: existingAttemptId,
-      }),
+      conflict(existingAttemptId),
     );
     const user = await startSelectedExam();
-    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(
+      await screen.findByText("You have an unfinished attempt for Science Practice."),
+    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Continue Science Practice" })).toBeTruthy();
+    expect(screen.getByText("IN PROGRESS")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Start Exam" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reload available exams" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Continue existing exam" }));
     expect(mockPush).toHaveBeenCalledWith(`/exams/${existingAttemptId}`);
+    expect(startPublishedPracticeExam).toHaveBeenCalledTimes(1);
   });
 
   it("does not navigate to unsafe resume IDs", async () => {
     vi.mocked(startPublishedPracticeExam).mockRejectedValueOnce(
-      new ApiError(409, "Conflict", {
-        code: "ATTEMPT_IN_PROGRESS",
-        attempt_id: "//unsafe.example/path",
-      }),
+      conflict("//unsafe.example/path"),
     );
     await startSelectedExam();
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Continue existing exam" })).toBeNull();
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it("reports a stale or unpublished exam without resume controls", async () => {
@@ -168,10 +180,7 @@ describe("Published learner exam selection", () => {
   it("clears a recovered attempt when switching to another exam", async () => {
     vi.mocked(getPublishedPracticeExams).mockResolvedValue([exam, otherExam]);
     vi.mocked(startPublishedPracticeExam).mockRejectedValueOnce(
-      new ApiError(409, "Conflict", {
-        code: "ATTEMPT_IN_PROGRESS",
-        attempt_id: existingAttemptId,
-      }),
+      conflict(existingAttemptId),
     );
     const user = await startSelectedExam();
     expect(await screen.findByRole("button", { name: "Continue existing exam" })).toBeTruthy();
@@ -179,5 +188,83 @@ describe("Published learner exam selection", () => {
       screen.getByRole("button", { name: /View exam.*Advanced Science Practice/i }),
     );
     expect(screen.queryByRole("button", { name: "Continue existing exam" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Start Advanced Science Practice" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Start Exam" }));
+    await waitFor(() => {
+      expect(startPublishedPracticeExam).toHaveBeenLastCalledWith("demo-token", otherExam);
+      expect(mockPush).toHaveBeenCalledWith("/exams/33333333-3333-4333-8333-333333333333");
+    });
+    expect(mockPush).not.toHaveBeenCalledWith(`/exams/${existingAttemptId}`);
+  });
+
+  it("keeps distinct resume IDs for exams with identical category and count", async () => {
+    vi.mocked(getPublishedPracticeExams).mockResolvedValue([exam, otherExam]);
+    vi.mocked(startPublishedPracticeExam)
+      .mockRejectedValueOnce(conflict(existingAttemptId))
+      .mockRejectedValueOnce(conflict(otherAttemptId))
+      .mockRejectedValueOnce(conflict(existingAttemptId));
+    const user = await startSelectedExam();
+    expect(await screen.findByText("You have an unfinished attempt for Science Practice.")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "View exam — Advanced Science Practice" }));
+    await user.click(screen.getByRole("button", { name: "Start Exam" }));
+    expect(await screen.findByText("You have an unfinished attempt for Advanced Science Practice.")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Continue existing exam" }));
+    expect(mockPush).toHaveBeenLastCalledWith(`/exams/${otherAttemptId}`);
+
+    await user.click(screen.getByRole("button", { name: "View exam — Science Practice" }));
+    await user.click(screen.getByRole("button", { name: "Start Exam" }));
+    expect(await screen.findByText("You have an unfinished attempt for Science Practice.")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Continue existing exam" }));
+    expect(mockPush.mock.calls).toEqual([
+      [`/exams/${otherAttemptId}`],
+      [`/exams/${existingAttemptId}`],
+    ]);
+  });
+
+  it("keeps the selection fixed while starting and restores it after a conflict", async () => {
+    vi.mocked(getPublishedPracticeExams).mockResolvedValue([exam, otherExam]);
+    let rejectStart!: (reason: unknown) => void;
+    vi.mocked(startPublishedPracticeExam).mockImplementationOnce(
+      () => new Promise<ExamCreatedResponse>((_resolve, reject) => {
+        rejectStart = reject;
+      }),
+    );
+    const user = await startSelectedExam();
+    const otherCard = screen.getByRole<HTMLButtonElement>("button", { name: "View exam — Advanced Science Practice" });
+    expect(otherCard.disabled).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "All exams" }).disabled).toBe(true);
+    expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Certification or topic" }).disabled).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Starting exam..." }).disabled).toBe(true);
+    await user.click(otherCard);
+    expect(screen.getByRole("heading", { name: "Start Science Practice" })).toBeTruthy();
+    expect(startPublishedPracticeExam).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      rejectStart(conflict(existingAttemptId));
+    });
+    expect(await screen.findByText("You have an unfinished attempt for Science Practice.")).toBeTruthy();
+    expect(otherCard.disabled).toBe(false);
+    await user.click(otherCard);
+    expect(screen.getByRole("heading", { name: "Start Advanced Science Practice" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Continue existing exam" })).toBeNull();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("does not discard a resume link by reselecting the same exam", async () => {
+    vi.mocked(startPublishedPracticeExam).mockRejectedValueOnce(conflict(existingAttemptId));
+    const user = await startSelectedExam();
+    await screen.findByRole("button", { name: "Continue existing exam" });
+    await user.click(screen.getByRole("button", { name: "View exam — Science Practice" }));
+    expect(screen.getByRole("button", { name: "Continue existing exam" })).toBeTruthy();
+    expect(startPublishedPracticeExam).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears a recovered attempt when the certification filter is reset", async () => {
+    vi.mocked(startPublishedPracticeExam).mockRejectedValueOnce(conflict(existingAttemptId));
+    const user = await startSelectedExam();
+    await screen.findByRole("button", { name: "Continue existing exam" });
+    await user.click(screen.getByRole("button", { name: "All exams" }));
+    expect(screen.queryByRole("button", { name: "Continue existing exam" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Continue Science Practice" })).toBeNull();
   });
 });

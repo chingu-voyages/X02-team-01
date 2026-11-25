@@ -11,6 +11,7 @@ import {
 import type { PublishedPracticeExam } from "@/types/practice-exam-api.types";
 
 type LoadStatus = "loading" | "ready" | "error";
+type ResumeAttempt = { practiceExamId: string; attemptId: string };
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -42,7 +43,7 @@ export default function CategoriesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState("");
-  const [existingAttemptId, setExistingAttemptId] = useState<string | null>(null);
+  const [resumeAttempt, setResumeAttempt] = useState<ResumeAttempt | null>(null);
 
   useEffect(() => {
     if (!ready || !token) return;
@@ -93,13 +94,19 @@ export default function CategoriesPage() {
       exam.certification_id === certificationFilter,
   );
   const selectedExam = exams.find((exam) => exam.id === selectedId) ?? null;
+  // A resume link belongs to the exact practice exam that produced it.
+  const existingAttemptId =
+    resumeAttempt && resumeAttempt.practiceExamId === selectedExam?.id
+      ? resumeAttempt.attemptId
+      : null;
 
   function clearStartState() {
     setStartError("");
-    setExistingAttemptId(null);
+    setResumeAttempt(null);
   }
 
   function reloadExams() {
+    if (isStarting) return;
     setLoadStatus("loading");
     setLoadError("");
     clearStartState();
@@ -108,13 +115,15 @@ export default function CategoriesPage() {
 
   async function handleStart(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!token || !selectedExam || isStarting) return;
+    if (!token || !selectedExam || isStarting || existingAttemptId) return;
 
+    // Selection and filtering are disabled until this request settles.
+    const requestedExam = selectedExam;
     setIsStarting(true);
     clearStartState();
 
     try {
-      const attempt = await startPublishedPracticeExam(token, selectedExam);
+      const attempt = await startPublishedPracticeExam(token, requestedExam);
       router.push(`/exams/${encodeURIComponent(attempt.attempt_id)}`);
     } catch (error: unknown) {
       if (error instanceof ApiError && error.status === 401) {
@@ -125,10 +134,7 @@ export default function CategoriesPage() {
       if (error instanceof ApiError && error.status === 409) {
         const attemptId = getExistingAttemptId(error.detail);
         if (attemptId) {
-          setExistingAttemptId(attemptId);
-          setStartError(
-            "You already have an unfinished exam for this certification.",
-          );
+          setResumeAttempt({ practiceExamId: requestedExam.id, attemptId });
         } else {
           setStartError(
             "This practice exam is no longer available as shown. Reload the list and try again.",
@@ -146,7 +152,7 @@ export default function CategoriesPage() {
   }
 
   function continueExistingExam() {
-    if (!existingAttemptId) return;
+    if (!existingAttemptId || isStarting) return;
     router.push(`/exams/${encodeURIComponent(existingAttemptId)}`);
   }
 
@@ -173,12 +179,13 @@ export default function CategoriesPage() {
       <div className="flex flex-wrap items-center gap-4 rounded-md border border-brand-border bg-white px-5 py-3 shadow-xs">
         <button
           type="button"
+          disabled={isStarting}
           onClick={() => {
             setCertificationFilter("all");
             setSelectedId(null);
             clearStartState();
           }}
-          className={`cursor-pointer text-sm transition-colors ${
+          className={`cursor-pointer text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
             certificationFilter === "all"
               ? "font-semibold text-brand-text"
               : "font-medium text-brand-text/65 hover:text-brand-text"
@@ -192,13 +199,14 @@ export default function CategoriesPage() {
         </label>
         <select
           id="certification-filter"
+          disabled={isStarting}
           value={certificationFilter}
           onChange={(event) => {
             setCertificationFilter(event.target.value);
             setSelectedId(null);
             clearStartState();
           }}
-          className="max-w-full cursor-pointer rounded bg-transparent py-1 text-sm text-brand-text focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="max-w-full cursor-pointer rounded bg-transparent py-1 text-sm text-brand-text focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <option value="all">Certification / topic</option>
           {certifications.map((certification) => (
@@ -259,7 +267,7 @@ export default function CategoriesPage() {
                 >
                   <div>
                     <span className="inline-flex rounded-full bg-brand-secondary/50 px-3 py-1 text-xs font-semibold tracking-wide text-brand-text">
-                      AVAILABLE
+                      {isSelected && existingAttemptId ? "IN PROGRESS" : "AVAILABLE"}
                     </span>
                   </div>
                   <div className="mt-4 flex-1">
@@ -279,11 +287,13 @@ export default function CategoriesPage() {
                     type="button"
                     aria-label={`View exam — ${exam.name}`}
                     aria-pressed={isSelected}
+                    disabled={isStarting}
                     onClick={() => {
+                      if (isSelected) return;
                       setSelectedId(exam.id);
                       clearStartState();
                     }}
-                    className={`mt-4 w-fit cursor-pointer rounded-md px-4 py-2.5 text-sm font-semibold transition-colors ${
+                    className={`mt-4 w-fit cursor-pointer rounded-md px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                       isSelected
                         ? "bg-brand-accent text-brand-text"
                         : "border border-brand-border bg-brand-surface text-brand-text hover:bg-brand-accent-tint"
@@ -305,13 +315,16 @@ export default function CategoriesPage() {
           {selectedExam && (
             <form
               onSubmit={handleStart}
+              aria-busy={isStarting}
               className="space-y-5 rounded-md border border-brand-border bg-white p-6 text-brand-text shadow-xs"
             >
               <div>
                 <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-brand-text/65">
                   Selected practice exam
                 </p>
-                <h2 className="text-xl font-bold">Start {selectedExam.name}</h2>
+                <h2 className="text-xl font-bold">
+                  {existingAttemptId ? "Continue" : "Start"} {selectedExam.name}
+                </h2>
                 <p className="mt-1 text-sm text-brand-text/70">
                   {selectedExam.certification_name} / {selectedExam.category_name}
                 </p>
@@ -333,33 +346,43 @@ export default function CategoriesPage() {
               )}
 
               {existingAttemptId && (
-                <div className="rounded-md border border-brand-border bg-brand-surface p-4">
-                  <p className="mb-3 text-sm text-brand-text/80">
-                    Continue your existing attempt instead of starting another exam.
+                <div
+                  role="status"
+                  className="rounded-md border border-brand-border bg-brand-surface p-4"
+                >
+                  <p className="text-sm font-semibold">
+                    You have an unfinished attempt for {selectedExam.name}.
                   </p>
-                  <button
-                    type="button"
-                    onClick={continueExistingExam}
-                    className="cursor-pointer rounded-md border border-brand-border bg-white px-5 py-2.5 text-sm font-semibold text-brand-text transition-colors hover:bg-brand-secondary/30"
-                  >
-                    Continue existing exam
-                  </button>
+                  <p className="mt-1 text-sm text-brand-text/80">
+                    Continue where you left off, or select a different practice exam.
+                  </p>
                 </div>
               )}
 
               <div className="flex flex-wrap gap-3">
-                <button
-                  type="submit"
-                  disabled={isStarting}
-                  className="cursor-pointer rounded-md bg-brand-accent px-6 py-2.5 text-sm font-semibold text-brand-text transition-colors hover:bg-brand-accent-tint disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isStarting ? "Starting exam..." : "Start Exam"}
-                </button>
+                {existingAttemptId ? (
+                  <button
+                    type="button"
+                    onClick={continueExistingExam}
+                    className="cursor-pointer rounded-md bg-brand-accent px-6 py-2.5 text-sm font-semibold text-brand-text transition-colors hover:bg-brand-accent-tint"
+                  >
+                    Continue existing exam
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={isStarting}
+                    className="cursor-pointer rounded-md bg-brand-accent px-6 py-2.5 text-sm font-semibold text-brand-text transition-colors hover:bg-brand-accent-tint disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isStarting ? "Starting exam..." : "Start Exam"}
+                  </button>
+                )}
                 {startError && (
                   <button
                     type="button"
                     onClick={reloadExams}
-                    className="cursor-pointer rounded-md border border-brand-border bg-white px-6 py-2.5 text-sm font-semibold text-brand-text transition-colors hover:bg-brand-secondary/30"
+                    disabled={isStarting}
+                    className="cursor-pointer rounded-md border border-brand-border bg-white px-6 py-2.5 text-sm font-semibold text-brand-text transition-colors hover:bg-brand-secondary/30 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Reload available exams
                   </button>
