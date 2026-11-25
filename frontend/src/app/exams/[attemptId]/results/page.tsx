@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { useParams } from "next/navigation";
 
 import { useDemoSession } from "@/features/auth/AuthProvider";
-import ExamResultsScreen from "@/features/exams/ExamResultsScreen";
+import ExamResultsScreen from "@/features/results/ExamResultsScreen";
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -31,7 +31,7 @@ function ResultsPageContent() {
 
   return (
     <main
-      className="min-h-screen bg-[#f3f4f5] px-4 py-6 text-[#2c3134] sm:px-6 lg:px-8"
+      className="min-h-screen bg-brand-surface px-4 py-6 text-[#2c3134] sm:px-6 lg:px-8"
       style={{
         fontFamily: "Arial, Helvetica, sans-serif",
       }}

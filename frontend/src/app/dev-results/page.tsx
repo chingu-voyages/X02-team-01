@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import ExamResultsScreen from "@/features/exams/ExamResultsScreen";
+import ExamResultsScreen from "@/features/results/ExamResultsScreen";
 
 interface TestRequest {
   attemptId: string;

@@ -13,9 +13,9 @@ export default function FeedbackCard({
 
   const containerStyle = hasBooleanVerdict
     ? feedback?.is_correct
-      ? "border-[#9fcfad] bg-[#e7f5ea] text-[#225c38]"
-      : "border-[#e8abb2] bg-[#fff0f1] text-[#933443]"
-    : "border-[#d4dadd] bg-[#f7f8f9] text-[#56616a]";
+      ? "border-emerald-300 bg-emerald-50 text-emerald-950"
+      : "border-red-300 bg-red-50 text-red-950"
+    : "border-brand-border bg-brand-surface text-brand-text";
 
   const headingText = isShortAnswer
     ? "Answer recorded."
@@ -28,7 +28,7 @@ export default function FeedbackCard({
   return (
     <div
       role="status"
-      className={`mt-5 rounded-md border p-4 text-sm ${containerStyle}`}
+      className={`mt-5 rounded-xl border p-4 text-sm ${containerStyle}`}
     >
       <p className="font-semibold">{headingText}</p>
       {feedback?.explanation ? (
@@ -37,7 +37,7 @@ export default function FeedbackCard({
           {feedback.explanation}
         </p>
       ) : (
-        <p className="mt-2 leading-5">
+        <p className="mt-2 leading-5 opacity-80">
           {isShortAnswer
             ? "Short answers are not automatically graded."
             : "Your submitted answer is locked for this attempt."}

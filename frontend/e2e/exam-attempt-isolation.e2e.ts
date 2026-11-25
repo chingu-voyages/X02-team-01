@@ -51,14 +51,12 @@ async function selectAndStart(
   exam: PublishedExamFixture,
 ) {
   await page.goto("/categories");
-  await page.getByRole("button", { name: `View exam — ${exam.name}`, exact: true }).click();
-  await expect(page.getByRole("heading", { name: `Start ${exam.name}`, exact: true })).toBeVisible();
   const [response] = await Promise.all([
     page.waitForResponse((response) =>
       new URL(response.url()).pathname === "/api/v1/exams" &&
       response.request().method() === "POST",
     ),
-    page.getByRole("button", { name: "Start Exam", exact: true }).click(),
+    page.getByRole("button", { name: `Start exam — ${exam.name}`, exact: true }).click(),
   ]);
   expect(response.request().postDataJSON()).toEqual({
     practice_exam_id: exam.id,
@@ -90,10 +88,15 @@ async function resume(
   expect(await response.json()).toMatchObject({
     detail: { code: "ATTEMPT_IN_PROGRESS", attempt_id: attempt.attempt_id },
   });
-  await expect(page.getByRole("heading", { name: `Continue ${exam.name}`, exact: true })).toBeVisible();
-  await expect(page.getByText(`You have an unfinished attempt for ${exam.name}.`, { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Start Exam", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Continue existing exam", exact: true }).click();
+  const card = page.getByRole("article", { name: exam.name, exact: true });
+  await expect(card.getByText("In progress", { exact: true })).toBeVisible();
+  await expect(card.getByText(`You have an unfinished attempt for ${exam.name}.`, { exact: true })).toBeVisible();
+  await expect(card.getByRole("button", { name: `Start exam — ${exam.name}`, exact: true })).toHaveCount(0);
+  // The sibling stays independently startable, even after a resume conflict.
+  const sibling = fixture.exams.find((item) => item.id !== exam.id);
+  if (!sibling) throw new Error("Missing sibling practice exam fixture");
+  await expect(page.getByRole("button", { name: `Start exam — ${sibling.name}`, exact: true })).toBeEnabled();
+  await card.getByRole("button", { name: `Continue exam — ${exam.name}`, exact: true }).click();
   await expectQuestion(page, attempt, position);
 }
 
@@ -144,7 +147,7 @@ async function flag(page: Page, attempt: ExamCreatedResponse, number: number) {
     question_version_id: attempt.questions[number - 1].id,
     flagged_for_review: true,
   });
-  await expect(page.getByRole("button", { name: "Remove Flag", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Flagged for Review", exact: true })).toBeEnabled();
 }
 
 async function readAttempt(page: Page, headers: Headers, attempt: ExamCreatedResponse): Promise<ExamAttempt> {
@@ -250,7 +253,7 @@ test("JHEP-203: identical published exam configurations keep independent attempt
   await navigate(page, data, 1, true);
   await expect(radio(page, true)).toBeChecked();
   await expect(radio(page, true)).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Remove Flag", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Flagged for Review", exact: true })).toBeEnabled();
 
   for (const number of [2, 3]) {
     await navigate(page, data, number);

@@ -26,7 +26,7 @@ vi.mock("@/features/auth/AuthProvider", () => ({
   useDemoSession: mockUseDemoSession,
 }));
 
-vi.mock("@/features/exams/ExamResultsScreen", () => ({
+vi.mock("@/features/results/ExamResultsScreen", () => ({
   default: ({
     attemptId,
     accessToken,

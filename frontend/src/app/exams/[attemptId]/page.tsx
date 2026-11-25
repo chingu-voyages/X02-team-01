@@ -13,7 +13,7 @@ export default async function ExamPage({
 
   return (
     <main
-      className="min-h-screen bg-[#f3f4f5] px-4 py-6 text-[#303639] sm:px-6 lg:px-8"
+      className="min-h-screen bg-brand-surface px-4 py-6 text-brand-text sm:px-6 lg:px-8"
       style={{ fontFamily: "Arial, Helvetica, sans-serif" }}
     >
       <div className="mx-auto max-w-7xl">

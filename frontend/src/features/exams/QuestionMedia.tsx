@@ -12,28 +12,24 @@ interface HostedQuestionImageProps {
   image: ExamImage;
 }
 
-function HostedQuestionImage({
-  image,
-}: HostedQuestionImageProps) {
-  const [loading, setLoading] = useState(
-    Boolean(image.url),
-  );
+function HostedQuestionImage({ image }: HostedQuestionImageProps) {
+  const [loading, setLoading] = useState(Boolean(image.url));
   const [failed, setFailed] = useState(false);
 
   const imageUrl = image.url;
 
   if (!imageUrl || failed) {
     return (
-      <figure className="rounded-md border border-[#d7dbde] bg-[#f8f9f9] p-3 sm:p-4">
+      <figure className="rounded-xl border border-brand-border bg-brand-surface p-3 sm:p-4">
         <div
           role="status"
-          className="rounded-md border border-dashed border-[#c4c9cd] bg-white px-4 py-6 text-center"
+          className="rounded-lg border border-dashed border-brand-border bg-white px-4 py-6 text-center"
         >
-          <p className="text-sm font-semibold text-[#3f474c]">
+          <p className="text-sm font-semibold text-brand-text">
             Image unavailable
           </p>
 
-          <p className="mt-2 text-sm leading-6 text-[#626b71]">
+          <p className="mt-2 text-sm leading-6 text-brand-text/70">
             {image.alt_text}
           </p>
         </div>
@@ -43,13 +39,13 @@ function HostedQuestionImage({
 
   return (
     <figure
-      className="rounded-md border border-[#d7dbde] bg-[#f8f9f9] p-3 sm:p-4"
+      className="rounded-xl border border-brand-border bg-brand-surface p-3 sm:p-4"
       aria-busy={loading}
     >
       {loading && (
         <p
           role="status"
-          className="mb-3 text-center text-sm text-[#687178]"
+          className="mb-3 text-center text-sm text-brand-text/70"
         >
           Loading image...
         </p>
@@ -67,34 +63,25 @@ function HostedQuestionImage({
           setLoading(false);
           setFailed(true);
         }}
-        className="mx-auto h-auto max-h-104 max-w-full rounded object-contain"
+        className="mx-auto h-auto max-h-104 max-w-full rounded-lg object-contain"
       />
     </figure>
   );
 }
 
-export default function QuestionMedia({
-  images,
-}: QuestionMediaProps) {
+export default function QuestionMedia({ images }: QuestionMediaProps) {
   if (images.length === 0) {
     return null;
   }
 
   const orderedImages = [...images].sort(
-    (first, second) =>
-      first.position - second.position,
+    (first, second) => first.position - second.position,
   );
 
   return (
-    <div
-      className="mb-5 space-y-4"
-      aria-label="Question media"
-    >
+    <div className="mb-6 space-y-4" aria-label="Question media">
       {orderedImages.map((image) => (
-        <HostedQuestionImage
-          key={image.id}
-          image={image}
-        />
+        <HostedQuestionImage key={image.id} image={image} />
       ))}
     </div>
   );

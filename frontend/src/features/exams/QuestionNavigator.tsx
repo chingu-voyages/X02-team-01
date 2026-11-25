@@ -1,9 +1,12 @@
-import { Flag, Minus, Pencil, Send, type LucideIcon } from "lucide-react";
-import { useId, type Ref } from "react";
-import type {
-  QuestionResponseState,
-  QuestionState,
-} from "@/lib/question-states";
+"use client";
+
+import { useState } from "react";
+import type { QuestionState } from "@/lib/question-states";
+import NavigatorLegend from "../questions/NavigatorLegend";
+import QuestionSetPager from "../questions/QuestionSetPager";
+import QuestionTile from "../questions/QuestionTile";
+
+const pageSize = 15;
 
 interface QuestionNavigatorProps {
   totalQuestions: number;
@@ -11,49 +14,9 @@ interface QuestionNavigatorProps {
   questionStates?: readonly QuestionState[];
   flaggedQuestionIndices?: readonly number[];
   disabled?: boolean;
-  showHeading?: boolean;
-  scrollRef?: Ref<HTMLDivElement>;
+  showHeader?: boolean;
   onNavigate: (index: number) => void;
 }
-
-const responsePresentation = {
-  unanswered: {
-    label: "Unanswered",
-    Icon: Minus,
-    buttonClass:
-      "border-[#cbd0d3] bg-white text-[#303639] hover:bg-[#f3f4f5]",
-    iconClass: "text-[#56616a]",
-  },
-  unsubmitted: {
-    label: "Selected but unsubmitted",
-    Icon: Pencil,
-    buttonClass:
-      "border-amber-300 bg-amber-50 text-[#303639] hover:bg-amber-100",
-    iconClass: "text-amber-800",
-  },
-  submitted: {
-    label: "Submitted",
-    // Submission is a completion state, not grading feedback.
-    Icon: Send,
-    buttonClass:
-      "border-indigo-300 bg-indigo-50 text-[#303639] hover:bg-indigo-100",
-    iconClass: "text-indigo-800",
-  },
-} satisfies Record<
-  QuestionResponseState,
-  {
-    label: string;
-    Icon: LucideIcon;
-    buttonClass: string;
-    iconClass: string;
-  }
->;
-
-const responseStates: QuestionResponseState[] = [
-  "unanswered",
-  "unsubmitted",
-  "submitted",
-];
 
 export default function QuestionNavigator({
   totalQuestions,
@@ -61,226 +24,120 @@ export default function QuestionNavigator({
   questionStates,
   flaggedQuestionIndices = [],
   disabled = false,
-  showHeading = true,
-  scrollRef,
+  showHeader = true,
   onNavigate,
 }: QuestionNavigatorProps) {
-  const legendId = useId();
-  const flagged = new Set(flaggedQuestionIndices);
+  const questionCount = Math.max(0, questionStates?.length ?? totalQuestions);
+  const totalPages = Math.max(1, Math.ceil(questionCount / pageSize));
+  const currentQuestionPage = Math.min(
+    totalPages - 1,
+    Math.max(0, Math.floor(currentQuestionIndex / pageSize)),
+  );
 
-  const hasQuestionStates = questionStates !== undefined;
-  const questionCount = questionStates?.length ?? totalQuestions;
+  const [pageState, setPageState] = useState({
+    anchorIndex: currentQuestionIndex,
+    page: currentQuestionPage,
+  });
 
+  const activePage =
+    pageState.anchorIndex === currentQuestionIndex
+      ? Math.min(totalPages - 1, Math.max(0, pageState.page))
+      : currentQuestionPage;
+
+  // Follow question changes from Previous, Next, or direct navigation.
+  // Reset the anchor so returning to an earlier question cannot restore
+  // a stale manually browsed page.
+  if (pageState.anchorIndex !== currentQuestionIndex) {
+    setPageState({ anchorIndex: currentQuestionIndex, page: currentQuestionPage });
+  }
+
+  const flaggedSet = new Set(flaggedQuestionIndices);
   const submittedCount =
-    questionStates?.filter(
-      (question) => question.responseState === "submitted",
-    ).length ?? 0;
+    questionStates?.filter((state) => state.responseState === "submitted")
+      .length ?? 0;
+  const draftCount =
+    questionStates?.filter((state) => state.responseState === "unsubmitted")
+      .length ?? 0;
+  const flaggedCount = questionStates
+    ? questionStates.filter((state) => state.isFlagged).length
+    : [...flaggedSet].filter((index) => index >= 0 && index < questionCount).length;
+  const remainingCount = Math.max(0, questionCount - submittedCount);
+  const unansweredCount = Math.max(0, remainingCount - draftCount);
 
-  const remainingCount = questionCount - submittedCount;
-
-  const progressPercent =
-    questionCount > 0
-      ? (submittedCount / questionCount) * 100
-      : 0;
+  const startIndex = activePage * pageSize;
+  const endIndex = Math.min(questionCount, startIndex + pageSize);
+  const visibleCount = Math.max(0, endIndex - startIndex);
 
   return (
-    <nav aria-label="Question navigation">
-      {showHeading && (
-        <h3 className="mb-3 text-sm font-bold">
-          Question Navigation
-        </h3>
-      )}
-
-      {hasQuestionStates && (
-        <div className="mb-4 space-y-3">
-          <div
-            aria-live="polite"
-            aria-atomic="true"
-            className="grid grid-cols-3 gap-2 text-center"
-          >
-            <div className="rounded-md border border-[#e2e5e7] bg-[#f7f8f9] p-2">
-              <span className="block text-lg font-bold text-[#303639]">
-                {questionCount}
-              </span>
-              <span className="text-xs text-[#56616a]">
-                Total
-              </span>
-            </div>
-
-            <div className="rounded-md border border-[#e2e5e7] bg-[#f7f8f9] p-2">
-              <span className="block text-lg font-bold text-[#303639]">
-                {submittedCount}
-              </span>
-              <span className="text-xs text-[#56616a]">
-                Submitted
-              </span>
-            </div>
-
-            <div className="rounded-md border border-[#e2e5e7] bg-[#f7f8f9] p-2">
-              <span className="block text-lg font-bold text-[#303639]">
-                {remainingCount}
-              </span>
-              <span className="text-xs text-[#56616a]">
-                Remaining
-              </span>
-            </div>
-          </div>
-
-          <div
-            role="progressbar"
-            aria-label="Exam submission progress"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(progressPercent)}
-            aria-valuetext={`${submittedCount} of ${questionCount} questions submitted`}
-            className="h-2 overflow-hidden rounded-full bg-[#e2e5e7]"
-          >
-            <div
-              className="h-full rounded-full bg-[#343a3e] transition-[width]"
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
+    <nav aria-label="Question navigation" className="space-y-5">
+      <div className="space-y-1">
+        {showHeader && (
+          <h2 className="text-lg font-bold tracking-tight text-brand-text">
+            Question navigation
+          </h2>
+        )}
+        <div aria-live="polite" className="space-y-1 text-xs font-medium text-brand-text/70">
+          <p>Submitted answers: {submittedCount} / {questionCount}</p>
+          <p>Remaining: {remainingCount}</p>
+          <p>Draft: {draftCount} · Unanswered: {unansweredCount} · Flagged: {flaggedCount}</p>
         </div>
-      )}
-
-      <div
-        ref={scrollRef}
-        className="max-h-80 overflow-y-auto overscroll-contain p-1"
-      >
-        <ol className="grid grid-cols-5 gap-2">
-          {Array.from({ length: questionCount }, (_, index) => {
-            const state = questionStates?.[index];
-
-            const isCurrent =
-              state?.isCurrent ?? index === currentQuestionIndex;
-
-            const isFlagged =
-              state?.isFlagged ?? flagged.has(index);
-
-            const presentation = state
-              ? responsePresentation[state.responseState]
-              : undefined;
-
-            const ResponseIcon = presentation?.Icon;
-
-            return (
-              <li
-                key={state?.questionId ?? index}
-                className="min-w-0"
-              >
-                <button
-                  type="button"
-                  aria-label={`Question ${index + 1}${
-                    isFlagged ? ", flagged for review" : ""
-                  }`}
-                  aria-describedby={
-                    state
-                      ? `${legendId}-${state.responseState}`
-                      : undefined
-                  }
-                  aria-current={isCurrent ? "step" : undefined}
-                  disabled={disabled}
-                  onClick={() => onNavigate(index)}
-                  className={`relative flex min-h-12 w-full flex-col items-center justify-center gap-0.5 rounded-md border px-1 py-1 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#343a3e] disabled:cursor-not-allowed disabled:opacity-50 ${
-                    presentation?.buttonClass ??
-                    "border-[#cbd0d3] bg-white text-[#303639] hover:bg-[#f3f4f5]"
-                  } ${
-                    isCurrent
-                      ? "ring-2 ring-inset ring-[#343a3e]"
-                      : ""
-                  }`}
-                >
-                  <span>{index + 1}</span>
-
-                  {(ResponseIcon || isFlagged) && (
-                    <span className="flex items-center justify-center gap-1">
-                      {ResponseIcon && (
-                        <ResponseIcon
-                          aria-hidden="true"
-                          className={`size-3.5 ${presentation?.iconClass}`}
-                        />
-                      )}
-
-                      {isFlagged && (
-                        <Flag
-                          aria-hidden="true"
-                          className="size-3.5 text-[#8a5a0a]"
-                          fill="currentColor"
-                        />
-                      )}
-                    </span>
-                  )}
-                </button>
-              </li>
-            );
-          })}
-        </ol>
       </div>
 
-      {hasQuestionStates ? (
-        <section
-          aria-label="Question state legend"
-          className="mt-4 border-t border-[#e2e5e7] pt-3"
-        >
-          <h4 className="mb-2 text-xs font-bold text-[#303639]">
-            Question states
-          </h4>
+      <NavigatorLegend />
 
-          <ul className="space-y-2 text-xs text-[#56616a]">
-            {responseStates.map((state) => {
-              const { label, Icon, iconClass } =
-                responsePresentation[state];
+      <div className="border-t border-brand-border" />
 
-              return (
-                <li
-                  key={state}
-                  className="flex items-center gap-2"
-                >
-                  <Icon
-                    aria-hidden="true"
-                    className={`size-4 shrink-0 ${iconClass}`}
-                  />
+      <ol aria-label="Question numbers" className="grid grid-cols-5 justify-items-center gap-2.5">
+        {Array.from({ length: visibleCount }, (_, offset) => {
+          const index = startIndex + offset;
+          const state = questionStates?.[index];
+          const isCurrent = state?.isCurrent ?? index === currentQuestionIndex;
+          const isAnswered = state?.responseState === "submitted";
+          const isUnsubmitted = state?.responseState === "unsubmitted";
+          const isFlagged = state?.isFlagged ?? flaggedSet.has(index);
 
-                  <span id={`${legendId}-${state}`}>
-                    {label}
-                  </span>
-                </li>
-              );
-            })}
-
-            <li className="flex items-center gap-2">
-              <Flag
-                aria-hidden="true"
-                className="size-4 shrink-0 text-[#8a5a0a]"
-                fill="currentColor"
+          return (
+            <li key={state?.questionId ?? index}>
+              <QuestionTile
+                questionNumber={index + 1}
+                isCurrent={isCurrent}
+                isAnswered={isAnswered}
+                isUnsubmitted={isUnsubmitted}
+                isFlagged={isFlagged}
+                disabled={disabled}
+                onSelect={() => onNavigate(index)}
               />
-              <span>Flagged for review</span>
             </li>
+          );
+        })}
+      </ol>
 
-            <li className="flex items-center gap-2">
-              <span
-                aria-hidden="true"
-                className="size-4 shrink-0 rounded-sm border-2 border-[#343a3e]"
-              />
-              <span>Current question</span>
-            </li>
-          </ul>
-          <p className="mt-3 text-xs leading-relaxed text-[#56616a]">
-            Submitted means your answer was saved, not that it was correct.
-          </p>
-        </section>
-      ) : (
-        flaggedQuestionIndices.length > 0 && (
-          <p className="mt-2 flex items-center gap-2 text-xs text-[#56616a]">
-            <Flag
-              aria-hidden="true"
-              className="size-3.5 text-[#8a5a0a]"
-              fill="currentColor"
-            />
-            Flagged for review
-          </p>
-        )
+      {totalPages > 1 && (
+        <QuestionSetPager
+          startIndex={startIndex}
+          endIndex={endIndex}
+          totalQuestions={questionCount}
+          canPrevious={activePage > 0}
+          canNext={activePage < totalPages - 1}
+          disabled={disabled}
+          onPrevious={() =>
+            setPageState({
+              anchorIndex: currentQuestionIndex,
+              page: Math.max(0, activePage - 1),
+            })
+          }
+          onNext={() =>
+            setPageState({
+              anchorIndex: currentQuestionIndex,
+              page: Math.min(totalPages - 1, activePage + 1),
+            })
+          }
+        />
       )}
+
+      <p className="text-xs text-brand-text/65">
+        Select any number to navigate.
+      </p>
     </nav>
   );
 }
