@@ -4,6 +4,7 @@ import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  ClipboardList,
   FileQuestion,
   FileText,
   History,
@@ -67,6 +68,12 @@ const navSections: NavSection[] = [
         label: "Certifications & Categories",
         href: "/admin/catalog",
         icon: Shapes,
+        roles: ["administrator"],
+      },
+      {
+        label: "Manage Exams",
+        href: "/admin/practice-exams",
+        icon: ClipboardList,
         roles: ["administrator"],
       },
       {
