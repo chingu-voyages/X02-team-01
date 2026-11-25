@@ -1,6 +1,7 @@
 "use client";
 
 import ExamHeader from "./ExamHeader";
+import QuestionControls from "../questions/QuestionControls";
 import QuestionRenderer from "./QuestionRenderer";
 import { Button } from "@/components/ui/button";
 import ExamSidebar from "./ExamSidebar";
@@ -22,6 +23,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     loadError,
     retryLoading,
     currentQuestion,
+    isShortAnswer,
     currentSelected,
     isSubmitted,
     currentFeedback,
@@ -93,8 +95,14 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
   }
 
   const flaggedQuestionIndices = questions
-    .map((question, index) => (question.flagged_for_review === true ? index : -1))
+    .map((question, index) =>
+      question.flagged_for_review === true ? index : -1,
+    )
     .filter((index) => index !== -1);
+
+  const selectedCount = isShortAnswer
+    ? textValue.trim().length
+    : currentSelected.length;
 
   return (
     <div className="w-full space-y-6">
@@ -119,29 +127,38 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
       />
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-        <QuestionRenderer
-          question={currentQuestion}
-          questionIndex={currentQuestionIndex}
-          totalQuestions={questions.length}
-          selectedOptionIds={currentSelected}
-          textValue={textValue}
-          isSubmitted={isSubmitted}
-          isSubmitting={isSubmitting}
-          isFinishing={isFinishing}
-          isSavingFlag={isSavingFlag}
-          submitError={submitError}
-          feedback={currentFeedback}
-          allQuestionsSubmitted={allQuestionsSubmitted}
-          firstUnsubmittedIndex={firstUnsubmittedIndex}
-          onSelectOption={handleSelect}
-          onTextChange={handleTextChange}
-          onSubmit={handleSubmit}
-          onPrevious={() => goToQuestion(currentQuestionIndex - 1)}
-          onNext={() => goToQuestion(currentQuestionIndex + 1)}
-          onReviewUnsubmitted={() =>
-            goToQuestion(firstUnsubmittedIndex)
-          }
-        />
+        <div className="min-w-0 space-y-5">
+          <QuestionRenderer
+            question={currentQuestion}
+            selectedOptionIds={currentSelected}
+            textValue={textValue}
+            isSubmitted={isSubmitted}
+            isSubmitting={isSubmitting}
+            isFinishing={isFinishing}
+            submitError={submitError}
+            feedback={currentFeedback}
+            onSelectOption={handleSelect}
+            onTextChange={handleTextChange}
+          />
+
+          <QuestionControls
+            questionIndex={currentQuestionIndex}
+            totalQuestions={questions.length}
+            selectedCount={selectedCount}
+            isSubmitted={isSubmitted}
+            isSubmitting={isSubmitting}
+            isFinishing={isFinishing}
+            isSavingFlag={isSavingFlag}
+            allQuestionsSubmitted={allQuestionsSubmitted}
+            firstUnsubmittedIndex={firstUnsubmittedIndex}
+            onSubmit={handleSubmit}
+            onPrevious={() => goToQuestion(currentQuestionIndex - 1)}
+            onNext={() => goToQuestion(currentQuestionIndex + 1)}
+            onReviewUnsubmitted={() =>
+              goToQuestion(firstUnsubmittedIndex)
+            }
+          />
+        </div>
 
         <ExamSidebar
           currentQuestion={currentQuestion}

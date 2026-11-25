@@ -1,3 +1,5 @@
+import { Check } from "lucide-react";
+
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroupItem } from "@/components/ui/radio-group";
 
@@ -38,22 +40,30 @@ export default function OptionItem({
       : null;
 
   const appearance = isCorrectOption
-    ? "border-[#9fcfad] bg-[#e7f5ea] text-[#225c38]"
+    ? "border border-emerald-300 bg-emerald-50 text-emerald-950"
     : isIncorrectSelection
-      ? "border-[#e8abb2] bg-[#fff0f1] text-[#933443]"
+      ? "border border-red-300 bg-red-50 text-red-950"
       : isSelected
-        ? "border-[#adb7bd] bg-[#edf1f3] text-[#303639]"
-        : "border-[#d4dadd] bg-white text-[#303639]";
+        ? "border-2 border-brand-primary bg-brand-surface text-brand-text"
+        : "border border-brand-border bg-white text-brand-text";
+
+  const letterBadgeAppearance = isCorrectOption
+    ? "bg-emerald-600 text-white"
+    : isIncorrectSelection
+      ? "bg-red-600 text-white"
+      : isSelected
+        ? "bg-brand-primary text-white"
+        : "bg-brand-surface text-brand-primary";
 
   return (
     <div
       onClick={() => {
         if (!isLocked) onSelect();
       }}
-      className={`flex min-h-12 items-center gap-3 rounded-md border px-4 py-3 text-sm transition-colors ${appearance} ${
+      className={`flex min-h-13 items-center gap-3.5 rounded-xl px-4 py-3.5 text-sm transition-colors ${appearance} ${
         isLocked
           ? "cursor-default"
-          : "cursor-pointer hover:border-[#89959c] hover:bg-[#f4f6f7]"
+          : "cursor-pointer hover:border-brand-primary/60 hover:bg-brand-surface/70"
       }`}
     >
       {questionType === "single" ? (
@@ -62,6 +72,7 @@ export default function OptionItem({
           id={id}
           disabled={isLocked}
           onClick={(event) => event.stopPropagation()}
+          className="border-brand-secondary text-brand-primary data-[state=checked]:border-brand-primary"
         />
       ) : (
         <Checkbox
@@ -70,24 +81,41 @@ export default function OptionItem({
           onCheckedChange={!isLocked ? onSelect : undefined}
           disabled={isLocked}
           onClick={(event) => event.stopPropagation()}
+          className="border-brand-secondary data-[state=checked]:border-brand-primary data-[state=checked]:bg-brand-primary data-[state=checked]:text-white"
         />
       )}
 
       <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2">
-        <span className="leading-5">
-          {choiceLabel && <span className="mr-2 font-semibold">{choiceLabel}.</span>}
-          {option}
+        <span
+          className={`flex min-w-0 items-center gap-3 leading-5 ${
+            isSelected ? "font-semibold" : "font-normal"
+          }`}
+        >
+          {choiceLabel && (
+            <span
+              className={`inline-flex size-6 shrink-0 items-center justify-center rounded-md text-xs font-bold transition-colors ${letterBadgeAppearance}`}
+            >
+              {choiceLabel}
+            </span>
+          )}
+          <span>{option}</span>
         </span>
 
-        {isCorrectOption && (
-          <span className="rounded bg-[#d7ebdc] px-2 py-1 text-xs font-semibold text-[#225c38]">
+        {isCorrectOption ? (
+          <span className="rounded-md bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
             ✓ Correct answer
           </span>
-        )}
-        {isIncorrectSelection && (
-          <span className="rounded bg-[#f8dfe2] px-2 py-1 text-xs font-semibold text-[#933443]">
+        ) : isIncorrectSelection ? (
+          <span className="rounded-md bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-800">
             × Your answer
           </span>
+        ) : (
+          isSelected && (
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-brand-primary">
+              <Check aria-hidden="true" className="size-3.5 stroke-[2.5]" />
+              Selected
+            </span>
+          )
         )}
       </div>
     </div>
