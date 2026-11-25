@@ -94,6 +94,51 @@ describe("JHEP-106 QuestionNavigator states", () => {
     ).toHaveAccessibleDescription("Unanswered");
   });
 
+  it("distinguishes submission visually from grading feedback", () => {
+    renderNavigator(
+      states.map((question) =>
+        question.questionId === "q4"
+          ? { ...question, responseState: "submitted" }
+          : question,
+      ),
+    );
+
+    const flagged = navigator().getByRole("button", {
+      name: "Question 3, flagged for review",
+    });
+    const unflagged = navigator().getByRole("button", {
+      name: "Question 4",
+    });
+
+    for (const button of [flagged, unflagged]) {
+      expect(button).toHaveAccessibleDescription("Submitted");
+      expect(button).toHaveClass("border-indigo-300", "bg-indigo-50");
+      expect(button).not.toHaveClass("bg-green-50");
+      expect(button).not.toHaveClass("bg-red-50");
+      expect(button.querySelector("svg.lucide-send")).toBeInTheDocument();
+      expect(button.querySelector("svg.lucide-check")).toBeNull();
+    }
+
+    expect(flagged.querySelector("svg.lucide-flag")).toBeInTheDocument();
+    expect(unflagged.querySelector("svg.lucide-flag")).toBeNull();
+
+    const legend = within(
+      navigator().getByRole("region", { name: "Question state legend" }),
+    );
+    expect(legend.getByText("Submitted", { exact: true })).toBeVisible();
+    expect(
+      legend.getByText(
+        "Submitted means your answer was saved, not that it was correct.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+
+    expect(navigator().getByRole("progressbar")).toHaveAttribute(
+      "aria-valuetext",
+      "2 of 4 questions submitted",
+    );
+  });
+
   it("preserves current, flagged and response states together", () => {
     renderNavigator();
 
