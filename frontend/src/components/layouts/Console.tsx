@@ -4,6 +4,7 @@ import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  ClipboardCheck,
   FileQuestion,
   FileText,
   History,
@@ -74,6 +75,17 @@ const navSections: NavSection[] = [
         href: "/categories",
         icon: FileQuestion,
         roles: ["learner", "contributor", "administrator"],
+      },
+    ],
+  },
+  {
+    title: "GRADING",
+    items: [
+      {
+        label: "Manual Grading",
+        href: "/admin/manual-grading",
+        icon: ClipboardCheck,
+        roles: ["contributor", "administrator"],
       },
     ],
   },

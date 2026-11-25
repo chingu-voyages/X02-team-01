@@ -173,6 +173,8 @@ class StubAttemptService:
             "passing_score_percent": 70,
             "passed": False,
             "grading_complete": True,
+            "pending_manual_grading_count": 0,
+            "questions": [],
             "submitted_at": datetime.now(UTC),
             "graded_at": datetime.now(UTC),
         }

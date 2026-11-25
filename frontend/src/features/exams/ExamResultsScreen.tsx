@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import QuestionResultsList from "./QuestionResultsList";
 import ResultCard from "./ResultCard";
 import { getExamResults } from "@/lib/exam-results";
 import { ApiError } from "@/lib/api-client";
@@ -43,10 +44,6 @@ export default function ExamResultsScreen({
           data.status !== "submitted"
         ) {
           throw new Error("Unexpected exam result received.");
-        }
-
-        if (!data.grading_complete) {
-          throw new Error("Exam grading is not complete.");
         }
 
         setState({
@@ -106,12 +103,17 @@ export default function ExamResultsScreen({
   const results = state.data;
 
   return (
-    <ResultCard
-      scorePercent={results.score_percent}
-      correctCount={results.correct_count}
-      incorrectCount={results.incorrect_count}
-      isPassed={results.passed}
-      passingScorePercent={results.passing_score_percent}
-    />
+    <div className="space-y-6">
+      <ResultCard
+        scorePercent={results.score_percent}
+        correctCount={results.correct_count}
+        incorrectCount={results.incorrect_count}
+        isPassed={results.passed}
+        passingScorePercent={results.passing_score_percent}
+        isGradingComplete={results.grading_complete}
+        pendingManualGradingCount={results.pending_manual_grading_count ?? 0}
+      />
+      <QuestionResultsList questions={results.questions ?? []} />
+    </div>
   );
 }

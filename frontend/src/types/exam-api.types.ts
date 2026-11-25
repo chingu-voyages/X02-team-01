@@ -66,6 +66,95 @@ export type ExamResultsResponse = {
   passing_score_percent: number | null;
   passed: boolean | null;
   grading_complete: boolean;
+  pending_manual_grading_count?: number;
+  questions?: QuestionResult[];
+};
+
+export type QuestionResult = {
+  attempt_id: string;
+  question_version_id: string;
+  position: number;
+  question_text: string;
+  response_type: string;
+  outcome: string;
+  status: "graded" | "pending_manual_grading" | "unavailable";
+  points_earned: number;
+  max_points: number;
+  feedback: string | null;
+  learner_response: string | null;
+};
+
+export type ManualResponseType = "short_answer" | "essay";
+
+export type GradingPermissions = {
+  short_answer: boolean;
+  essay: boolean;
+};
+
+export type PendingManualResponse = {
+  attempt_id: string;
+  question_version_id: string;
+  response_type: ManualResponseType;
+  learner_email: string | null;
+  learner_name: string | null;
+  question_preview: string;
+  submitted_at: string | null;
+  max_points: number;
+};
+
+export type ManualGradeQueueResponse = {
+  items: PendingManualResponse[];
+  count: number;
+};
+
+export type ManualGradeHistoryItem = {
+  grader_role: string;
+  action: "graded" | "revised";
+  score: number;
+  max_points: number;
+  feedback: string | null;
+  created_at: string;
+};
+
+export type ManualGradeHistoryResponse = {
+  items: ManualGradeHistoryItem[];
+  count: number;
+};
+
+export type WrittenResponseDetail = {
+  attempt_id: string;
+  question_version_id: string;
+  response_type: ManualResponseType;
+  question_text: string;
+  learner_response: string;
+  expected_answer: string | null;
+  max_points: number;
+  current_grade: {
+    outcome: string | null;
+    points_earned: number | null;
+    feedback: string | null;
+    graded_by_id: string | null;
+    grader_role: string | null;
+    max_points: number | null;
+    graded_at: string | null;
+  } | null;
+  history: ManualGradeHistoryItem[];
+  provisional_ai_feedback: {
+    available: boolean;
+    label: string;
+    content: string | null;
+  };
+};
+
+export type ManualGradeSubmitResponse = {
+  attempt_id: string;
+  question_version_id: string;
+  outcome: "manually_graded";
+  score: number;
+  max_points: number;
+  feedback: string | null;
+  grader_role: string;
+  action: "graded" | "revised";
 };
 
 // --- JHEP-99: live exam interface (resume + per-question feedback) ---

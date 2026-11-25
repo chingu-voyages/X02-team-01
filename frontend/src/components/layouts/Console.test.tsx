@@ -111,6 +111,8 @@ describe("Console layout shell", () => {
 
     // Admin & Contributor sections/items must be hidden
     expect(screen.queryByText("OVERVIEW")).toBeNull();
+    expect(screen.queryByText("GRADING")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Manual Grading" })).toBeNull();
     expect(screen.queryByText("USER MANAGEMENT")).toBeNull();
     expect(screen.queryByText("REPORTING")).toBeNull();
     expect(screen.queryByText("Question Bank")).toBeNull();
@@ -132,6 +134,7 @@ describe("Console layout shell", () => {
     );
     expect(screen.getByText("OVERVIEW")).toBeTruthy();
     expect(screen.getByText("REPORTING")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Manual Grading" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Question Bank" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Practice Exams" })).toBeTruthy();
 
@@ -155,8 +158,10 @@ describe("Console layout shell", () => {
     expect(screen.getByText("CONTENT MANAGEMENT")).toBeTruthy();
     expect(screen.getByText("USER MANAGEMENT")).toBeTruthy();
     expect(screen.getByText("REPORTING")).toBeTruthy();
+    expect(screen.getByText("GRADING")).toBeTruthy();
 
     expect(screen.getByRole("link", { name: "Question Bank" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Manual Grading" })).toBeTruthy();
     expect(
       screen.getByRole("link", { name: "Certifications & Categories" }),
     ).toBeTruthy();

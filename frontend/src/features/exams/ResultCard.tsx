@@ -4,6 +4,8 @@ interface ResultCardProps {
   incorrectCount: number;
   isPassed: boolean | null;
   passingScorePercent: number | null;
+  isGradingComplete?: boolean;
+  pendingManualGradingCount?: number;
 }
 
 export default function ResultCard({
@@ -12,17 +14,23 @@ export default function ResultCard({
   incorrectCount,
   isPassed,
   passingScorePercent,
+  isGradingComplete = true,
+  pendingManualGradingCount = 0,
 }: ResultCardProps) {
   const hasScore = scorePercent !== null && isPassed !== null;
+  const awaitingReview =
+    !isGradingComplete && pendingManualGradingCount > 0;
 
   const formattedScore =
     scorePercent === null ? "—" : `${Math.round(scorePercent)}%`;
 
-  const resultLabel = !hasScore
-    ? "Not assessed"
-    : isPassed
-      ? "Passed"
-      : "Not passed";
+  const resultLabel = awaitingReview
+    ? "Awaiting review"
+    : !hasScore
+      ? "Not assessed"
+      : isPassed
+        ? "Passed"
+        : "Not passed";
 
   return (
     <section
@@ -35,12 +43,15 @@ export default function ResultCard({
           id="results-heading"
           className="text-2xl font-bold tracking-tight sm:text-3xl"
         >
-          Practice exam complete
+          {awaitingReview
+            ? "Written responses awaiting review"
+            : "Practice exam complete"}
         </h1>
 
         <p className="text-sm text-[#687178]">
-          Your results are based on automatically graded multiple-choice
-          answers.
+          {awaitingReview
+            ? `${pendingManualGradingCount} written response${pendingManualGradingCount === 1 ? "" : "s"} must receive a final human grade before the result is complete.`
+            : "Your results are based on automatically graded multiple-choice answers."}
         </p>
       </header>
 
@@ -111,11 +122,12 @@ export default function ResultCard({
         </p>
 
         <p className="mt-2 text-sm leading-6 text-[#687178]">
-          Scores reflect automatically graded questions. Your passing
-          requirement and final pass/fail result come directly from the backend.
+          {awaitingReview
+            ? "Your final pass/fail result is withheld until every submitted written response has a final human grade. An unavailable or ungraded response is never treated as a failure."
+            : "Scores reflect automatically graded questions. Your passing requirement and final pass/fail result come directly from the backend."}
         </p>
 
-        {!hasScore && (
+        {!hasScore && !awaitingReview && (
           <p className="mt-3 text-sm text-[#687178]">
             No automatically graded score is available for this attempt. This
             does not mean the exam was failed.

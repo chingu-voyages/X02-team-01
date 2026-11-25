@@ -204,8 +204,27 @@ class FinalSubmitOut(BaseModel):
     results_url: str
 
 
+class QuestionResultOut(BaseModel):
+    """One learner-facing line: a score/feedback or a pending state.
+
+    Never carries answer keys, correct options, or the expected answer.
+    """
+
+    attempt_id: UUID
+    question_version_id: UUID
+    position: int
+    question_text: str
+    response_type: str
+    outcome: str
+    status: Literal["graded", "pending_manual_grading", "unavailable"]
+    points_earned: int
+    max_points: int
+    feedback: str | None
+    learner_response: str | None
+
+
 class ResultsOut(BaseModel):
-    """Attempt results (screen 08) — aggregates only, no answer keys."""
+    """Attempt results (screen 08) — learner scores only, no answer keys."""
 
     attempt_id: UUID
     certification_id: UUID
@@ -226,5 +245,7 @@ class ResultsOut(BaseModel):
     passing_score_percent: int | None
     passed: bool | None
     grading_complete: bool
+    pending_manual_grading_count: int
+    questions: list[QuestionResultOut]
     submitted_at: datetime | None
     graded_at: datetime
