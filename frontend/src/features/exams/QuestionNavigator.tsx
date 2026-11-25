@@ -1,4 +1,4 @@
-import { Check, Flag, Minus, Pencil } from "lucide-react";
+import { Flag, Minus, Pencil, Send, type LucideIcon } from "lucide-react";
 import { useId, type Ref } from "react";
 import type {
   QuestionResponseState,
@@ -33,16 +33,17 @@ const responsePresentation = {
   },
   submitted: {
     label: "Submitted",
-    Icon: Check,
+    // Submission is a completion state, not grading feedback.
+    Icon: Send,
     buttonClass:
-      "border-green-300 bg-green-50 text-[#303639] hover:bg-green-100",
-    iconClass: "text-green-800",
+      "border-indigo-300 bg-indigo-50 text-[#303639] hover:bg-indigo-100",
+    iconClass: "text-indigo-800",
   },
 } satisfies Record<
   QuestionResponseState,
   {
     label: string;
-    Icon: typeof Check;
+    Icon: LucideIcon;
     buttonClass: string;
     iconClass: string;
   }
@@ -264,6 +265,9 @@ export default function QuestionNavigator({
               <span>Current question</span>
             </li>
           </ul>
+          <p className="mt-3 text-xs leading-relaxed text-[#56616a]">
+            Submitted means your answer was saved, not that it was correct.
+          </p>
         </section>
       ) : (
         flaggedQuestionIndices.length > 0 && (
