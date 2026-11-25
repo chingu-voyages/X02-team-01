@@ -12,7 +12,7 @@ from uuid import UUID
 from sqlmodel import select
 
 from app.models import Category, Certification, PracticeExam
-from app.services.exam_service import ExamService
+from app.services.exam_service import CreatedExam, ExamService
 
 
 class PracticeExamUnavailableError(ValueError):
@@ -37,12 +37,12 @@ class PublishedExamService(ExamService):
         question_count: int,
         category_id: UUID | None = None,
         practice_exam_id: UUID | None = None,
-    ):
+    ) -> CreatedExam:
         """Only start a matching published exam; do not accept learner count edits.
 
         API clients should pass practice_exam_id. Old clients may still supply
-        the certification/category/count triple, but the triple must match an
-        already published exam exactly; there is no legacy bypass.
+        the certification/category/count triple, but it must identify exactly
+        one published exam. Ambiguous triples cannot safely identify an exam.
         """
         try:
             if category_id is None:
@@ -58,21 +58,26 @@ class PublishedExamService(ExamService):
             if practice_exam_id is not None:
                 statement = statement.where(PracticeExam.id == practice_exam_id)
             else:
-                # Legacy clients are allowed only if their exact length is
-                # associated with an already published configured exam.
+                # A legacy caller may omit the ID only when its exact
+                # configuration uniquely identifies a published practice exam.
                 statement = statement.where(
                     PracticeExam.question_count == question_count
                 )
 
             # PostgreSQL FOR SHARE conflicts with the admin service's FOR
             # UPDATE. SQLite ignores this lock; concurrency is tested on PG.
-            published = self._session.exec(
-                statement.order_by(PracticeExam.id).with_for_update(read=True)
-            ).first()
-            if published is None or published.question_count is None:
+            matches = self._session.exec(
+                statement.order_by(PracticeExam.id).limit(2).with_for_update(read=True)
+            ).all()
+            if len(matches) > 1:
+                raise PracticeExamUnavailableError(
+                    "Multiple published practice exams match; select a specific exam"
+                )
+            if not matches or matches[0].question_count is None:
                 raise PracticeExamUnavailableError(
                     "This practice exam is unavailable for new attempts"
                 )
+            published = matches[0]
 
             if question_count != published.question_count:
                 raise PracticeExamQuestionCountMismatchError(
@@ -97,11 +102,13 @@ class PublishedExamService(ExamService):
             # The base service rechecks the learner, the threshold, the
             # selected category, and the live eligible question pool, then
             # commits the attempt atomically. Its commit releases our lock.
+            # Always pass the resolved ID, including for unique legacy starts.
             return super().create_exam(
                 learner_id=learner_id,
                 certification_id=certification_id,
                 question_count=published.question_count,
                 category_id=published.category_id,
+                practice_exam_id=published.id,
             )
         except Exception:
             # In the base service errors roll back internally. For early
