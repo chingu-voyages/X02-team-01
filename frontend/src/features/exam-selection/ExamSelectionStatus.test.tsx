@@ -5,9 +5,7 @@ import userEvent from "@testing-library/user-event";
 import ExamSelectionStatus from "./ExamSelectionStatus";
 
 describe("ExamSelectionStatus", () => {
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(() => cleanup());
 
   it("renders loading status message when loading", () => {
     render(
@@ -17,12 +15,9 @@ describe("ExamSelectionStatus", () => {
         totalExamCount={0}
         visibleExamCount={0}
         startError=""
-        existingAttemptId={null}
         onRetryLoad={vi.fn()}
-        onContinueExisting={vi.fn()}
       />,
     );
-
     expect(screen.getByRole("status").textContent).toBe(
       "Loading practice exams...",
     );
@@ -31,7 +26,6 @@ describe("ExamSelectionStatus", () => {
   it("renders load error alert and triggers onRetryLoad when Retry is clicked", async () => {
     const user = userEvent.setup();
     const onRetryLoad = vi.fn();
-
     render(
       <ExamSelectionStatus
         loadStatus="error"
@@ -39,19 +33,11 @@ describe("ExamSelectionStatus", () => {
         totalExamCount={0}
         visibleExamCount={0}
         startError=""
-        existingAttemptId={null}
         onRetryLoad={onRetryLoad}
-        onContinueExisting={vi.fn()}
       />,
     );
-
-    expect(screen.getByRole("alert").textContent).toContain(
-      "Failed to fetch catalog",
-    );
-
-    await user.click(
-      screen.getByRole("button", { name: "Retry loading practice exams" }),
-    );
+    expect(screen.getByRole("alert").textContent).toContain("Failed to fetch catalog");
+    await user.click(screen.getByRole("button", { name: "Retry loading practice exams" }));
     expect(onRetryLoad).toHaveBeenCalledTimes(1);
   });
 
@@ -63,16 +49,10 @@ describe("ExamSelectionStatus", () => {
         totalExamCount={0}
         visibleExamCount={0}
         startError=""
-        existingAttemptId={null}
         onRetryLoad={vi.fn()}
-        onContinueExisting={vi.fn()}
       />,
     );
-
-    expect(screen.getByRole("status").textContent).toBe(
-      "No published practice exams are currently available.",
-    );
-
+    expect(screen.getByRole("status").textContent).toBe("No published practice exams are currently available.");
     rerender(
       <ExamSelectionStatus
         loadStatus="ready"
@@ -80,44 +60,27 @@ describe("ExamSelectionStatus", () => {
         totalExamCount={4}
         visibleExamCount={0}
         startError=""
-        existingAttemptId={null}
         onRetryLoad={vi.fn()}
-        onContinueExisting={vi.fn()}
       />,
     );
-
-    expect(screen.getByRole("status").textContent).toBe(
-      "No published exams match this certification.",
-    );
+    expect(screen.getByRole("status").textContent).toBe("No published exams match this certification.");
   });
 
-  it("renders startError banner with Continue existing exam action when existingAttemptId is present", async () => {
+  it("offers reload for a real start error without a global resume action", async () => {
     const user = userEvent.setup();
-    const onContinueExisting = vi.fn();
     const onRetryLoad = vi.fn();
-
     render(
       <ExamSelectionStatus
         loadStatus="ready"
         loadError=""
         totalExamCount={2}
         visibleExamCount={2}
-        startError="You already have an unfinished exam for this certification."
-        existingAttemptId="11111111-1111-1111-1111-111111111111"
+        startError="This practice exam is unavailable."
         onRetryLoad={onRetryLoad}
-        onContinueExisting={onContinueExisting}
       />,
     );
-
-    expect(screen.getByRole("alert").textContent).toContain(
-      "You already have an unfinished exam for this certification.",
-    );
-
-    await user.click(
-      screen.getByRole("button", { name: "Continue existing exam" }),
-    );
-    expect(onContinueExisting).toHaveBeenCalledTimes(1);
-
+    expect(screen.getByRole("alert").textContent).toContain("This practice exam is unavailable.");
+    expect(screen.queryByRole("button", { name: /Continue/i })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Reload exams" }));
     expect(onRetryLoad).toHaveBeenCalledTimes(1);
   });

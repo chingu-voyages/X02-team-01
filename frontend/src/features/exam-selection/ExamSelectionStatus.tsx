@@ -4,9 +4,7 @@ interface ExamSelectionStatusProps {
   totalExamCount: number;
   visibleExamCount: number;
   startError: string;
-  existingAttemptId: string | null;
   onRetryLoad: () => void;
-  onContinueExisting: () => void;
 }
 
 export default function ExamSelectionStatus({
@@ -15,9 +13,7 @@ export default function ExamSelectionStatus({
   totalExamCount,
   visibleExamCount,
   startError,
-  existingAttemptId,
   onRetryLoad,
-  onContinueExisting,
 }: ExamSelectionStatusProps) {
   return (
     <>
@@ -26,34 +22,14 @@ export default function ExamSelectionStatus({
           role="alert"
           className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-red-200 bg-red-50/80 p-5 text-brand-text"
         >
-          <div className="space-y-1">
-            <p className="text-sm font-semibold text-red-800">{startError}</p>
-            {existingAttemptId && (
-              <p className="text-xs text-brand-text/75">
-                Continue your existing attempt instead of starting another exam.
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2.5">
-            {existingAttemptId && (
-              <button
-                type="button"
-                onClick={onContinueExisting}
-                className="min-h-10 cursor-pointer rounded-full bg-brand-primary px-5 text-xs font-bold text-white transition-colors hover:bg-brand-primary-dark"
-              >
-                Continue existing exam
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={onRetryLoad}
-              className="min-h-10 cursor-pointer rounded-full border border-brand-border bg-white px-4 text-xs font-semibold text-brand-text transition-colors hover:bg-brand-surface"
-            >
-              Reload exams
-            </button>
-          </div>
+          <p className="text-sm font-semibold text-red-800">{startError}</p>
+          <button
+            type="button"
+            onClick={onRetryLoad}
+            className="min-h-10 cursor-pointer rounded-full border border-brand-border bg-white px-4 text-xs font-semibold text-brand-text transition-colors hover:bg-brand-surface"
+          >
+            Reload exams
+          </button>
         </div>
       )}
 

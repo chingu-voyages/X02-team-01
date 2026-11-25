@@ -15,7 +15,9 @@ interface BrowseExamCardProps {
   variant: ExamCardVariant;
   iconIndex?: number;
   isStarting: boolean;
+  disabled?: boolean;
   onStartExam: (exam: PublishedPracticeExam) => void;
+  onContinueExam?: () => void;
 }
 
 const cardIcons = [Rocket, Users, TrendingUp] as const;
@@ -33,11 +35,15 @@ export default function BrowseExamCard({
   variant,
   iconIndex = 0,
   isStarting,
+  disabled = false,
   onStartExam,
+  onContinueExam,
 }: BrowseExamCardProps) {
   const titleId = useId();
   const Icon = cardIcons[iconIndex % cardIcons.length];
   const isFeatured = variant === "featured";
+  const canResume = onContinueExam !== undefined;
+  const actionLabel = canResume ? "Continue exam" : "Start exam";
 
   return (
     <article
@@ -71,9 +77,9 @@ export default function BrowseExamCard({
       <p className="mt-1 inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-white/80">
         <span
           aria-hidden="true"
-          className="size-2 rounded-full bg-emerald-400"
+          className={`size-2 rounded-full ${canResume ? "bg-brand-accent" : "bg-emerald-400"}`}
         />
-        <span>Available</span>
+        <span>{canResume ? "In progress" : "Available"}</span>
       </p>
 
       {/* Title & subtitle */}
@@ -98,22 +104,31 @@ export default function BrowseExamCard({
         <p className="mt-1 text-xs font-medium text-white/70">questions</p>
       </div>
 
+      {canResume && (
+        <p role="status" className="text-sm font-medium leading-5 text-white/90">
+          You have an unfinished attempt for {exam.name}.
+        </p>
+      )}
+
       {/* Footer action */}
       <div className="mt-auto flex items-center justify-between gap-3 pt-4">
         <span className="text-xs text-white/70">From the approved bank</span>
 
         <button
           type="button"
-          aria-label={`Start exam — ${exam.name}`}
-          disabled={isStarting}
-          onClick={() => onStartExam(exam)}
+          aria-label={`${actionLabel} — ${exam.name}`}
+          disabled={disabled || isStarting}
+          onClick={() => {
+            if (onContinueExam) onContinueExam();
+            else onStartExam(exam);
+          }}
           className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-colors focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#19184d] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 ${
             isFeatured
               ? "bg-brand-accent text-brand-text shadow-sm hover:bg-brand-accent/90"
               : "bg-white text-brand-primary shadow-2xs hover:bg-brand-surface"
           }`}
         >
-          <span>{isStarting ? "Starting..." : "Start exam"}</span>
+          <span>{isStarting ? "Starting..." : actionLabel}</span>
           <ArrowRight aria-hidden="true" className="size-4 stroke-[2.25]" />
         </button>
       </div>

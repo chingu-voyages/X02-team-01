@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useDemoSession } from "@/features/auth/AuthProvider";
 import { ApiError } from "@/lib/api-client";
@@ -15,6 +15,7 @@ import ExamSelectionStatus from "./ExamSelectionStatus";
 import PageHero from "./PageHero";
 
 type LoadStatus = "loading" | "ready" | "error";
+type ResumeState = { token: string; attempts: Record<string, string> };
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -50,9 +51,8 @@ export default function PracticeExamsScreen() {
   const [certificationFilter, setCertificationFilter] = useState("all");
   const [startingExamId, setStartingExamId] = useState<string | null>(null);
   const [startError, setStartError] = useState("");
-  const [existingAttemptId, setExistingAttemptId] = useState<string | null>(
-    null,
-  );
+  const [resumeState, setResumeState] = useState<ResumeState | null>(null);
+  const startingRef = useRef(false);
 
   useEffect(() => {
     if (!ready || !token) return;
@@ -101,24 +101,26 @@ export default function PracticeExamsScreen() {
       certificationFilter === "all" ||
       exam.certification_id === certificationFilter,
   );
-
-  function clearStartState() {
-    setStartError("");
-    setExistingAttemptId(null);
-  }
+  const resumeAttempts: Record<string, string> =
+    resumeState && resumeState.token === token ? resumeState.attempts : {};
+  const isStarting = startingExamId !== null;
 
   function reloadExams() {
+    if (startingRef.current) return;
     setLoadStatus("loading");
     setLoadError("");
-    clearStartState();
+    setStartError("");
+    setResumeState(null);
     setReloadKey((value) => value + 1);
   }
 
   async function handleStartExam(exam: PublishedPracticeExam) {
-    if (!token || startingExamId !== null) return;
+    if (!token || startingRef.current || resumeAttempts[exam.id]) return;
 
+    // Prevent multiple card actions before React has rendered disabled controls.
+    startingRef.current = true;
     setStartingExamId(exam.id);
-    clearStartState();
+    setStartError("");
 
     try {
       const attempt = await startPublishedPracticeExam(token, exam);
@@ -132,10 +134,14 @@ export default function PracticeExamsScreen() {
       if (error instanceof ApiError && error.status === 409) {
         const attemptId = getExistingAttemptId(error.detail);
         if (attemptId) {
-          setExistingAttemptId(attemptId);
-          setStartError(
-            "You already have an unfinished exam for this certification.",
-          );
+          // A resume ID belongs to the exact requested exam and session.
+          setResumeState((previous) => ({
+            token,
+            attempts: {
+              ...(previous && previous.token === token ? previous.attempts : {}),
+              [exam.id]: attemptId,
+            },
+          }));
         } else {
           setStartError(
             "This practice exam is no longer available as shown. Reload the list and try again.",
@@ -150,13 +156,16 @@ export default function PracticeExamsScreen() {
           : "Unable to start practice exam.",
       );
     } finally {
+      startingRef.current = false;
       setStartingExamId(null);
     }
   }
 
-  function continueExistingExam() {
-    if (!existingAttemptId) return;
-    router.push(`/exams/${encodeURIComponent(existingAttemptId)}`);
+  function continueExam(examId: string) {
+    if (!token || startingRef.current) return;
+    const attemptId = resumeAttempts[examId];
+    if (!attemptId) return;
+    router.push(`/exams/${encodeURIComponent(attemptId)}`);
   }
 
   if (!ready || !token) {
@@ -172,23 +181,25 @@ export default function PracticeExamsScreen() {
       <PageHero
         eyebrow="Practice exams"
         title="Select a practice exam"
-        description="Choose a certification or category. Questions are selected from the approved question bank each time you start."
+        description="Choose a published practice exam. Questions are selected from the approved question bank each time you start."
       />
 
-      <ExamFilterBar
-        certifications={certifications}
-        selectedCertificationId={certificationFilter}
-        totalExamCount={exams.length}
-        visibleExamCount={visibleExams.length}
-        onSelectAll={() => {
-          setCertificationFilter("all");
-          clearStartState();
-        }}
-        onSelectCertification={(certificationId) => {
-          setCertificationFilter(certificationId);
-          clearStartState();
-        }}
-      />
+      <fieldset disabled={isStarting} className="min-w-0">
+        <ExamFilterBar
+          certifications={certifications}
+          selectedCertificationId={certificationFilter}
+          totalExamCount={exams.length}
+          visibleExamCount={visibleExams.length}
+          onSelectAll={() => {
+            setCertificationFilter("all");
+            setStartError("");
+          }}
+          onSelectCertification={(certificationId) => {
+            setCertificationFilter(certificationId);
+            setStartError("");
+          }}
+        />
+      </fieldset>
 
       <ExamSelectionStatus
         loadStatus={loadStatus}
@@ -196,14 +207,13 @@ export default function PracticeExamsScreen() {
         totalExamCount={exams.length}
         visibleExamCount={visibleExams.length}
         startError={startError}
-        existingAttemptId={existingAttemptId}
         onRetryLoad={reloadExams}
-        onContinueExisting={continueExistingExam}
       />
 
       {loadStatus === "ready" && visibleExams.length > 0 && (
         <section
           aria-label="Available practice exams"
+          aria-busy={isStarting}
           className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3"
         >
           {visibleExams.map((exam, index) => (
@@ -213,7 +223,11 @@ export default function PracticeExamsScreen() {
               variant={getCardVariant(index)}
               iconIndex={index}
               isStarting={startingExamId === exam.id}
+              disabled={isStarting}
               onStartExam={handleStartExam}
+              onContinueExam={
+                resumeAttempts[exam.id] ? () => continueExam(exam.id) : undefined
+              }
             />
           ))}
         </section>
