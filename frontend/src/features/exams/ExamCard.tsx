@@ -5,7 +5,6 @@ import QuestionControls from "../questions/QuestionControls";
 import QuestionRenderer from "./QuestionRenderer";
 import { Button } from "@/components/ui/button";
 import ExamSidebar from "./ExamSidebar";
-import MobileQuestionNavigation from "./MobileQuestionNavigation";
 import { useExamAttempt } from "@/hooks/useExamAttempt";
 
 interface ExamCardProps {
@@ -118,15 +117,25 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         onToggleFlag={handleToggleFlag}
       />
 
-      <MobileQuestionNavigation
-        totalQuestions={questions.length}
+      <ExamSidebar
+        variant="mobile"
+        currentQuestion={currentQuestion}
         currentQuestionIndex={currentQuestionIndex}
+        totalQuestions={questions.length}
         questionStates={questionStates}
-        disabled={isSubmitting || isFinishing}
+        flaggedQuestionIndices={flaggedQuestionIndices}
+        isSubmitted={isSubmitted}
+        isSubmitting={isSubmitting}
+        isFinishing={isFinishing}
+        isSavingFlag={isSavingFlag}
+        allQuestionsSubmitted={allQuestionsSubmitted}
+        finishError={finishError}
+        feedback={currentFeedback}
         onNavigate={goToQuestion}
+        onFinish={handleFinish}
       />
 
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-5">
           <QuestionRenderer
             question={currentQuestion}
@@ -154,19 +163,17 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
             onSubmit={handleSubmit}
             onPrevious={() => goToQuestion(currentQuestionIndex - 1)}
             onNext={() => goToQuestion(currentQuestionIndex + 1)}
-            onReviewUnsubmitted={() =>
-              goToQuestion(firstUnsubmittedIndex)
-            }
+            onReviewUnsubmitted={() => goToQuestion(firstUnsubmittedIndex)}
           />
         </div>
 
         <ExamSidebar
+          variant="panel"
           currentQuestion={currentQuestion}
           currentQuestionIndex={currentQuestionIndex}
           totalQuestions={questions.length}
           questionStates={questionStates}
           flaggedQuestionIndices={flaggedQuestionIndices}
-          selectedOptionIds={currentSelected}
           isSubmitted={isSubmitted}
           isSubmitting={isSubmitting}
           isFinishing={isFinishing}
