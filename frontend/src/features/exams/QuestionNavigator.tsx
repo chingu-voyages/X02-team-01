@@ -27,7 +27,7 @@ export default function QuestionNavigator({
   showHeader = true,
   onNavigate,
 }: QuestionNavigatorProps) {
-  const questionCount = questionStates?.length ?? totalQuestions;
+  const questionCount = Math.max(0, questionStates?.length ?? totalQuestions);
   const totalPages = Math.max(1, Math.ceil(questionCount / pageSize));
   const currentQuestionPage = Math.min(
     totalPages - 1,
@@ -44,17 +44,25 @@ export default function QuestionNavigator({
       ? Math.min(totalPages - 1, Math.max(0, pageState.page))
       : currentQuestionPage;
 
-  const flaggedSet = new Set(flaggedQuestionIndices);
+  // Follow question changes from Previous, Next, or direct navigation.
+  // Reset the anchor so returning to an earlier question cannot restore
+  // a stale manually browsed page.
+  if (pageState.anchorIndex !== currentQuestionIndex) {
+    setPageState({ anchorIndex: currentQuestionIndex, page: currentQuestionPage });
+  }
 
-  const answeredCount =
+  const flaggedSet = new Set(flaggedQuestionIndices);
+  const submittedCount =
     questionStates?.filter((state) => state.responseState === "submitted")
       .length ?? 0;
-
+  const draftCount =
+    questionStates?.filter((state) => state.responseState === "unsubmitted")
+      .length ?? 0;
   const flaggedCount = questionStates
     ? questionStates.filter((state) => state.isFlagged).length
-    : flaggedSet.size;
-
-  const unansweredCount = Math.max(0, questionCount - answeredCount);
+    : [...flaggedSet].filter((index) => index >= 0 && index < questionCount).length;
+  const remainingCount = Math.max(0, questionCount - submittedCount);
+  const unansweredCount = Math.max(0, remainingCount - draftCount);
 
   const startIndex = activePage * pageSize;
   const endIndex = Math.min(questionCount, startIndex + pageSize);
@@ -62,30 +70,30 @@ export default function QuestionNavigator({
 
   return (
     <nav aria-label="Question navigation" className="space-y-5">
-      {showHeader && (
-        <div className="space-y-1">
+      <div className="space-y-1">
+        {showHeader && (
           <h2 className="text-lg font-bold tracking-tight text-brand-text">
             Question navigation
           </h2>
-          <p className="text-xs font-medium text-brand-text/70">
-            {answeredCount} answered · {flaggedCount} flagged ·{" "}
-            {unansweredCount} unanswered
-          </p>
+        )}
+        <div aria-live="polite" className="space-y-1 text-xs font-medium text-brand-text/70">
+          <p>Submitted answers: {submittedCount} / {questionCount}</p>
+          <p>Remaining: {remainingCount}</p>
+          <p>Draft: {draftCount} · Unanswered: {unansweredCount} · Flagged: {flaggedCount}</p>
         </div>
-      )}
+      </div>
 
       <NavigatorLegend />
 
       <div className="border-t border-brand-border" />
 
-      <ol className="grid grid-cols-5 justify-items-center gap-2.5">
+      <ol aria-label="Question numbers" className="grid grid-cols-5 justify-items-center gap-2.5">
         {Array.from({ length: visibleCount }, (_, offset) => {
           const index = startIndex + offset;
           const state = questionStates?.[index];
-
-          const isCurrent =
-            state?.isCurrent ?? index === currentQuestionIndex;
+          const isCurrent = state?.isCurrent ?? index === currentQuestionIndex;
           const isAnswered = state?.responseState === "submitted";
+          const isUnsubmitted = state?.responseState === "unsubmitted";
           const isFlagged = state?.isFlagged ?? flaggedSet.has(index);
 
           return (
@@ -94,6 +102,7 @@ export default function QuestionNavigator({
                 questionNumber={index + 1}
                 isCurrent={isCurrent}
                 isAnswered={isAnswered}
+                isUnsubmitted={isUnsubmitted}
                 isFlagged={isFlagged}
                 disabled={disabled}
                 onSelect={() => onNavigate(index)}

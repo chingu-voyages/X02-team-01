@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type {
   ExamQuestionWithResponse,
@@ -46,9 +46,17 @@ export default function ExamSidebar({
 }: ExamSidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const disclosurePanelId = useId();
+  const mobileTriggerRef = useRef<HTMLButtonElement>(null);
 
   const isLastQuestion = currentQuestionIndex >= totalQuestions - 1;
   const navigationDisabled = isSubmitting || isFinishing;
+
+  function closeMobileNavigation() {
+    // Return focus before removing the selected tile. ExamHeader moves focus
+    // to the new question heading when the active question actually changes.
+    mobileTriggerRef.current?.focus({ preventScroll: true });
+    setMobileOpen(false);
+  }
 
   const finishSection = (
     <>
@@ -83,7 +91,7 @@ export default function ExamSidebar({
             ? feedback.is_correct
               ? "✓ Correct · Answer locked for this attempt."
               : "× Incorrect · Answer locked for this attempt."
-            : "✓ Answer saved · Locked for this attempt."}
+            : "Answer saved · Locked for this attempt."}
         </p>
       )}
     </>
@@ -94,11 +102,18 @@ export default function ExamSidebar({
       <div className="md:hidden">
         <div className="overflow-hidden rounded-2xl border border-brand-border bg-white text-brand-text shadow-xs">
           <button
+            ref={mobileTriggerRef}
             type="button"
             aria-expanded={mobileOpen}
             aria-controls={disclosurePanelId}
             disabled={totalQuestions === 0}
             onClick={() => setMobileOpen((open) => !open)}
+            onKeyDown={(event) => {
+              if (mobileOpen && event.key === "Escape") {
+                event.preventDefault();
+                closeMobileNavigation();
+              }
+            }}
             className="flex min-h-12 w-full cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left text-sm font-bold text-brand-text transition-colors hover:bg-brand-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span>
@@ -116,28 +131,37 @@ export default function ExamSidebar({
             />
           </button>
 
-          {mobileOpen && (
-            <div
-              id={disclosurePanelId}
-              className="border-t border-brand-border px-5 py-5"
-            >
-              <QuestionNavigator
-                totalQuestions={totalQuestions}
-                currentQuestionIndex={currentQuestionIndex}
-                questionStates={questionStates}
-                flaggedQuestionIndices={flaggedQuestionIndices}
-                disabled={navigationDisabled}
-                showHeader={false}
-                onNavigate={(index) => {
-                  if (onNavigate(index) !== false) {
-                    setMobileOpen(false);
-                  }
-                }}
-              />
-
-              {finishSection}
-            </div>
-          )}
+          <section
+            id={disclosurePanelId}
+            aria-label="Mobile question navigation"
+            hidden={!mobileOpen}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                closeMobileNavigation();
+              }
+            }}
+            className="border-t border-brand-border px-5 py-5"
+          >
+            {mobileOpen && (
+              <>
+                <QuestionNavigator
+                  totalQuestions={totalQuestions}
+                  currentQuestionIndex={currentQuestionIndex}
+                  questionStates={questionStates}
+                  flaggedQuestionIndices={flaggedQuestionIndices}
+                  disabled={navigationDisabled}
+                  showHeader={false}
+                  onNavigate={(index) => {
+                    if (!navigationDisabled && onNavigate(index) !== false) {
+                      closeMobileNavigation();
+                    }
+                  }}
+                />
+                {finishSection}
+              </>
+            )}
+          </section>
         </div>
       </div>
     );
@@ -156,7 +180,6 @@ export default function ExamSidebar({
         disabled={navigationDisabled}
         onNavigate={onNavigate}
       />
-
       {finishSection}
     </aside>
   );

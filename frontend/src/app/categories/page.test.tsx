@@ -3,7 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 
 import CategoriesPage from "./page";
 
-vi.mock("@/features/exams/PracticeExamsScreen", () => ({
+vi.mock("@/features/exam-selection/PracticeExamsScreen", () => ({
   default: () => <div data-testid="practice-exams-screen" />,
 }));
 

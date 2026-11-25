@@ -1,9 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ComponentProps, ReactNode } from "react";
 
 import QuestionRenderer from "./QuestionRenderer";
 import type { ExamQuestionWithResponse } from "@/types/exam-api.types";
+
+// Isolate the renderer's prop wiring from the underlying option controls.
+vi.mock("@/components/ui/radio-group", () => ({
+  RadioGroup: ({ children, "aria-labelledby": labelledBy }: {
+    children: ReactNode;
+    "aria-labelledby"?: string;
+  }) => <div role="radiogroup" aria-labelledby={labelledBy}>{children}</div>,
+}));
 
 vi.mock("@/features/questions/OptionItem", () => ({
   default: ({
@@ -12,18 +21,20 @@ vi.mock("@/features/questions/OptionItem", () => ({
     isSelected,
     onSelect,
     disabled,
+    isSubmitted,
   }: {
     id: string;
     option: string;
     isSelected: boolean;
     onSelect: () => void;
     disabled: boolean;
+    isSubmitted: boolean;
   }) => (
     <button
       type="button"
       data-testid={`option-${id}`}
       aria-pressed={isSelected}
-      disabled={disabled}
+      disabled={disabled || isSubmitted}
       onClick={onSelect}
     >
       {option}
@@ -41,6 +52,8 @@ vi.mock("./FeedbackCard", () => ({
 
 const singleChoiceQuestion: ExamQuestionWithResponse = {
   id: "q-1",
+  position: 1,
+  difficulty: "medium",
   question_type: "multiple_choice",
   allows_multiple_answers: false,
   question_text: "Which artifact represents work for the Sprint?",
@@ -49,38 +62,32 @@ const singleChoiceQuestion: ExamQuestionWithResponse = {
     { id: "opt-1", position: 1, option_text: "Product Backlog" },
     { id: "opt-2", position: 2, option_text: "Sprint Backlog" },
   ],
-} as unknown as ExamQuestionWithResponse;
+};
 
 const shortAnswerQuestion: ExamQuestionWithResponse = {
   id: "q-2",
+  position: 2,
+  difficulty: "medium",
   question_type: "short_answer",
   allows_multiple_answers: false,
   question_text: "Define empiricism in one sentence.",
   images: [],
   options: [],
-} as unknown as ExamQuestionWithResponse;
+};
 
 function renderQuestionRenderer(
-  overrides: Partial<React.ComponentProps<typeof QuestionRenderer>> = {},
+  overrides: Partial<ComponentProps<typeof QuestionRenderer>> = {},
 ) {
-  const defaultProps: React.ComponentProps<typeof QuestionRenderer> = {
+  const defaultProps: ComponentProps<typeof QuestionRenderer> = {
     question: singleChoiceQuestion,
-    questionIndex: 0,
-    totalQuestions: 5,
     selectedOptionIds: [],
     textValue: "",
     isSubmitted: false,
     isSubmitting: false,
     isFinishing: false,
     submitError: "",
-    allQuestionsSubmitted: false,
-    firstUnsubmittedIndex: 1,
     onSelectOption: vi.fn(),
     onTextChange: vi.fn(),
-    onSubmit: vi.fn(),
-    onPrevious: vi.fn(),
-    onNext: vi.fn(),
-    onReviewUnsubmitted: vi.fn(),
     ...overrides,
   };
 
@@ -95,7 +102,7 @@ describe("QuestionRenderer", () => {
     cleanup();
   });
 
-  it("renders question stem, options, and keeps Submit disabled until an option is selected", async () => {
+  it("renders the question stem and options and forwards option selection", async () => {
     const user = userEvent.setup();
     const { props } = renderQuestionRenderer();
 
@@ -105,99 +112,75 @@ describe("QuestionRenderer", () => {
         name: "Which artifact represents work for the Sprint?",
       }),
     ).toBeTruthy();
-
-    const submitButton = screen.getByRole("button", {
-      name: "Submit answer",
-    }) as HTMLButtonElement;
-    expect(submitButton.disabled).toBe(true);
+    expect(screen.getByRole("radiogroup")).toBeTruthy();
+    expect(screen.getByText("Product Backlog")).toBeTruthy();
+    expect(screen.getByText("Sprint Backlog")).toBeTruthy();
+    expect(screen.queryByTestId("feedback-card")).toBeNull();
 
     await user.click(screen.getByTestId("option-opt-2"));
     expect(props.onSelectOption).toHaveBeenCalledWith("opt-2");
   });
 
-  it("enables Submit when an option is selected and calls onSubmit", async () => {
+  it("reflects a selected option from the current response", () => {
+    renderQuestionRenderer({ selectedOptionIds: ["opt-2"] });
+
+    expect(screen.getByTestId("option-opt-1").getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByTestId("option-opt-2").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("renders multiple-choice options as a group and forwards selection", async () => {
     const user = userEvent.setup();
     const { props } = renderQuestionRenderer({
+      question: { ...singleChoiceQuestion, allows_multiple_answers: true },
+      selectedOptionIds: ["opt-1"],
+    });
+
+    expect(screen.getByRole("group", { name: singleChoiceQuestion.question_text })).toBeTruthy();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    await user.click(screen.getByTestId("option-opt-2"));
+    expect(props.onSelectOption).toHaveBeenCalledWith("opt-2");
+  });
+
+  it("renders the short-answer textarea and forwards input changes", () => {
+    const { props } = renderQuestionRenderer({ question: shortAnswerQuestion });
+
+    const textarea = screen.getByRole("textbox", { name: "Your answer" });
+    fireEvent.change(textarea, { target: { value: "Transparency" } });
+    expect(props.onTextChange).toHaveBeenCalledWith("Transparency");
+  });
+
+  it("renders feedback and locks the selected answer after submission", async () => {
+    const user = userEvent.setup();
+    const { props } = renderQuestionRenderer({
+      isSubmitted: true,
       selectedOptionIds: ["opt-2"],
     });
 
-    const submitButton = screen.getByRole("button", {
-      name: "Submit answer",
-    }) as HTMLButtonElement;
-    expect(submitButton.disabled).toBe(false);
-
-    await user.click(submitButton);
-    expect(props.onSubmit).toHaveBeenCalledTimes(1);
-  });
-
-  it("renders short answer textarea and forwards input changes", async () => {
-    const user = userEvent.setup();
-    const { props } = renderQuestionRenderer({
-      question: shortAnswerQuestion,
-      textValue: "",
-    });
-
-    const textarea = screen.getByLabelText("Your answer");
-    await user.type(textarea, "Transparency");
-    expect(props.onTextChange).toHaveBeenCalled();
-  });
-
-  it("renders feedback and Next question button after submission", async () => {
-    const user = userEvent.setup();
-    const { props } = renderQuestionRenderer({
-      isSubmitted: true,
-      questionIndex: 1,
-      totalQuestions: 5,
-    });
-
     expect(screen.getByTestId("feedback-card")).toBeTruthy();
-
-    await user.click(screen.getByRole("button", { name: "Next question" }));
-    expect(props.onNext).toHaveBeenCalledTimes(1);
-
-    await user.click(screen.getByRole("button", { name: "Previous" }));
-    expect(props.onPrevious).toHaveBeenCalledTimes(1);
+    const option = screen.getByTestId("option-opt-2") as HTMLButtonElement;
+    expect(option.disabled).toBe(true);
+    expect(option.getAttribute("aria-pressed")).toBe("true");
+    await user.click(option);
+    expect(props.onSelectOption).not.toHaveBeenCalled();
   });
 
-  it("shows Review unanswered questions or completion message on the last question", async () => {
-    const user = userEvent.setup();
-    const { props, rerender } = renderQuestionRenderer({
-      isSubmitted: true,
-      questionIndex: 4,
-      totalQuestions: 5,
-      allQuestionsSubmitted: false,
-      firstUnsubmittedIndex: 2,
-    });
-
-    await user.click(
-      screen.getByRole("button", { name: "Review unanswered questions" }),
-    );
-    expect(props.onReviewUnsubmitted).toHaveBeenCalledTimes(1);
-
-    rerender(
-      <QuestionRenderer
-        {...props}
-        isSubmitted
-        questionIndex={4}
-        totalQuestions={5}
-        allQuestionsSubmitted
-      />,
-    );
-
-    expect(
-      screen.getByText(
-        "All answers submitted. Finish the exam in the progress panel.",
-      ),
-    ).toBeTruthy();
-  });
+  it.each(["isSubmitted", "isSubmitting", "isFinishing"] as const)(
+    "locks short-answer input when %s is true",
+    (state) => {
+      renderQuestionRenderer({
+        question: shortAnswerQuestion,
+        textValue: "Existing answer",
+        [state]: true,
+      });
+      const textarea = screen.getByRole("textbox", { name: "Your answer" }) as HTMLTextAreaElement;
+      expect(textarea.disabled).toBe(true);
+      expect(textarea.value).toBe("Existing answer");
+    },
+  );
 
   it("displays submitError alert when submission fails", () => {
-    renderQuestionRenderer({
-      submitError: "Failed to save answer.",
-    });
+    renderQuestionRenderer({ submitError: "Failed to save answer." });
 
-    expect(screen.getByRole("alert").textContent).toBe(
-      "Failed to save answer.",
-    );
+    expect(screen.getByRole("alert").textContent).toBe("Failed to save answer.");
   });
 });

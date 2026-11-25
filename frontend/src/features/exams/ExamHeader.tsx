@@ -129,6 +129,7 @@ export default function ExamHeader({
           aria-valuenow={progressPercent}
           aria-valuemin={0}
           aria-valuemax={100}
+          aria-valuetext={`${submittedCount} of ${totalQuestions} questions submitted`}
           className="relative h-2.5 w-full rounded-full bg-brand-secondary/55"
         >
           <div

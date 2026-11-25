@@ -15,6 +15,7 @@ describe("ExamHeader", () => {
         categoryTitle="Agile Fundamentals"
         questionIndex={11}
         totalQuestions={25}
+        submittedCount={8}
       />,
     );
 
@@ -25,12 +26,32 @@ describe("ExamHeader", () => {
     expect(heading.textContent).toContain("of 25");
   });
 
+  it("calculates progress from submitted answers rather than the current question", () => {
+    const { rerender } = render(
+      <ExamHeader questionIndex={11} totalQuestions={25} submittedCount={8} />,
+    );
+
+    expect(screen.getByRole("progressbar", { name: "Progress" }).getAttribute("aria-valuenow")).toBe("32");
+    expect(screen.getByText("32%")).toBeTruthy();
+
+    rerender(
+      <ExamHeader questionIndex={0} totalQuestions={25} submittedCount={8} />,
+    );
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("32");
+
+    rerender(
+      <ExamHeader questionIndex={0} totalQuestions={25} submittedCount={9} />,
+    );
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("36");
+  });
+
   it("moves focus to the heading when questionIndex changes after initial mount", () => {
     const { rerender } = render(
       <ExamHeader
         categoryTitle="Agile Fundamentals"
         questionIndex={0}
         totalQuestions={25}
+        submittedCount={0}
       />,
     );
 
@@ -42,6 +63,7 @@ describe("ExamHeader", () => {
         categoryTitle="Agile Fundamentals"
         questionIndex={1}
         totalQuestions={25}
+        submittedCount={0}
       />,
     );
 
@@ -57,6 +79,7 @@ describe("ExamHeader", () => {
         categoryTitle="Agile Fundamentals"
         questionIndex={3}
         totalQuestions={25}
+        submittedCount={0}
         canToggleFlag
         isFlagged={false}
         onToggleFlag={onToggleFlag}
@@ -77,6 +100,7 @@ describe("ExamHeader", () => {
         categoryTitle="Agile Fundamentals"
         questionIndex={3}
         totalQuestions={25}
+        submittedCount={0}
         canToggleFlag
         isFlagged
         isSavingFlag

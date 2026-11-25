@@ -1,4 +1,4 @@
-import { Check, Flag } from "lucide-react";
+import { Flag, Pencil, Send } from "lucide-react";
 
 export default function NavigatorLegend() {
   return (
@@ -9,7 +9,7 @@ export default function NavigatorLegend() {
             aria-hidden="true"
             className="inline-flex size-6.5 shrink-0 rounded-[7px] bg-brand-primary ring-[3px] ring-brand-accent-tint"
           />
-          <span>Current</span>
+          <span>Current question</span>
         </li>
 
         <li className="flex items-center gap-2.5">
@@ -17,9 +17,9 @@ export default function NavigatorLegend() {
             aria-hidden="true"
             className="inline-flex size-6.5 shrink-0 items-center justify-center rounded-[7px] bg-brand-secondary/75 text-brand-primary-dark"
           >
-            <Check className="size-3.75 stroke-[2.25]" />
+            <Send className="size-3.75 stroke-[2.25]" />
           </span>
-          <span>Answered</span>
+          <span>Submitted</span>
         </li>
 
         <li className="flex items-center gap-2.5">
@@ -33,23 +33,37 @@ export default function NavigatorLegend() {
         <li className="flex items-center gap-2.5">
           <span
             aria-hidden="true"
+            className="inline-flex size-6.5 shrink-0 items-center justify-center rounded-[7px] border-[1.5px] border-brand-primary/50 bg-brand-accent-tint text-brand-primary-dark"
+          >
+            <Pencil className="size-3.75 stroke-[2.25]" />
+          </span>
+          <span>Selected but unsubmitted</span>
+        </li>
+
+        <li className="flex items-center gap-2.5">
+          <span
+            aria-hidden="true"
             className="inline-flex size-6.5 shrink-0 items-center justify-center rounded-[7px] border-[1.5px] border-dashed border-brand-primary bg-white text-brand-primary"
           >
             <Flag className="size-3.75" />
           </span>
-          <span>Flagged</span>
+          <span>Flagged for review</span>
         </li>
 
-        <li className="col-span-2 flex items-center gap-2.5">
+        <li className="flex items-center gap-2.5">
           <span
             aria-hidden="true"
-            className="inline-flex size-6.5 shrink-0 items-center justify-center rounded-[7px] border-[1.5px] border-dashed border-brand-primary bg-brand-secondary/75 text-brand-primary"
+            className="inline-flex size-6.5 shrink-0 items-center justify-center gap-0.5 rounded-[7px] border-[1.5px] border-dashed border-brand-primary bg-brand-secondary/75 text-brand-primary-dark"
           >
-            <Flag className="size-3.75" />
+            <Send className="size-2.5" />
+            <Flag className="size-2.5" />
           </span>
-          <span>Answered + flagged</span>
+          <span>Submitted + flagged</span>
         </li>
       </ul>
+      <p className="mt-3 text-xs leading-5 text-brand-text/70">
+        Submitted means your answer was saved, not that it was correct.
+      </p>
     </section>
   );
 }
