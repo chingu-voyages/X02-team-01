@@ -1,7 +1,7 @@
 "use client";
 
+import ExamHeader from "./ExamHeader";
 import QuestionRenderer from "./QuestionRenderer";
-import PageHeader from "@/components/layouts/PageHeader";
 import { Button } from "@/components/ui/button";
 import ExamSidebar from "./ExamSidebar";
 import MobileQuestionNavigation from "./MobileQuestionNavigation";
@@ -22,8 +22,6 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     loadError,
     retryLoading,
     currentQuestion,
-    isShortAnswer,
-    isMultiple,
     currentSelected,
     isSubmitted,
     currentFeedback,
@@ -49,7 +47,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
 
   if (!ready || !token) {
     return (
-      <p role="status" className="p-6">
+      <p role="status" className="p-6 text-brand-text">
         Checking session...
       </p>
     );
@@ -57,7 +55,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
 
   if (loadStatus === "loading" || loadStatus === "error") {
     return (
-      <section className="rounded-md border border-[#d4d8db] bg-white p-6">
+      <section className="rounded-md border border-brand-border bg-white p-6 text-brand-text shadow-xs">
         <h1 className="mb-3 text-xl font-bold">Practice exam</h1>
 
         {loadStatus === "loading" ? (
@@ -72,6 +70,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
               type="button"
               variant="outline"
               onClick={retryLoading}
+              className="border-brand-border text-brand-text hover:bg-brand-surface"
             >
               Retry
             </Button>
@@ -83,34 +82,32 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
 
   if (!currentQuestion) {
     return (
-      <section className="rounded-md border border-[#d4d8db] bg-white p-6">
+      <section className="rounded-md border border-brand-border bg-white p-6 text-brand-text shadow-xs">
         <h1 className="mb-2 text-xl font-bold">Practice exam</h1>
 
-        <p role="status">
+        <p role="status" className="text-brand-text/75">
           No questions are available for this attempt.
         </p>
       </section>
     );
   }
 
-  const answeredStatus = isSubmitted
-    ? typeof currentFeedback?.is_correct === "boolean" ||
-      Boolean(currentFeedback?.explanation)
-      ? "Answer submitted. Feedback shown below."
-      : "Answer submitted. Answer locked for this attempt."
-    : isMultiple
-      ? "Choose all that apply, then submit your answer."
-      : isShortAnswer
-        ? "Type your answer, then submit."
-        : "Choose an answer, then submit.";
+  const flaggedQuestionIndices = questions
+    .map((question, index) => (question.flagged_for_review === true ? index : -1))
+    .filter((index) => index !== -1);
 
   return (
     <div className="w-full space-y-6">
-      <PageHeader
-        title="Practice exam"
-        status="In progress"
-        stepLabel={`Question ${currentQuestionIndex + 1} of ${questions.length}`}
-        subtitle={answeredStatus}
+      <ExamHeader
+        questionIndex={currentQuestionIndex}
+        totalQuestions={questions.length}
+        submittedCount={submittedCount}
+        isFlagged={isFlagged}
+        isSavingFlag={isSavingFlag}
+        canToggleFlag={canToggleFlag}
+        disabled={isSubmitting || isFinishing}
+        flagError={flagError}
+        onToggleFlag={handleToggleFlag}
       />
 
       <MobileQuestionNavigation
@@ -131,11 +128,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           isSubmitted={isSubmitted}
           isSubmitting={isSubmitting}
           isFinishing={isFinishing}
-          isFlagged={isFlagged}
           isSavingFlag={isSavingFlag}
-          canToggleFlag={canToggleFlag}
-          flagError={flagError}
-          onToggleFlag={handleToggleFlag}
           submitError={submitError}
           feedback={currentFeedback}
           allQuestionsSubmitted={allQuestionsSubmitted}
@@ -155,7 +148,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           currentQuestionIndex={currentQuestionIndex}
           totalQuestions={questions.length}
           questionStates={questionStates}
-          submittedCount={submittedCount}
+          flaggedQuestionIndices={flaggedQuestionIndices}
           selectedOptionIds={currentSelected}
           isSubmitted={isSubmitted}
           isSubmitting={isSubmitting}

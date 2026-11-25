@@ -18,7 +18,6 @@ interface ExamSidebarProps {
   totalQuestions: number;
   questionStates?: readonly QuestionState[];
   flaggedQuestionIndices?: readonly number[];
-  submittedCount: number;
   selectedOptionIds: string[];
   isSubmitted: boolean;
   isSubmitting: boolean;
@@ -37,7 +36,6 @@ export default function ExamSidebar({
   totalQuestions,
   questionStates,
   flaggedQuestionIndices = [],
-  submittedCount,
   selectedOptionIds,
   isSubmitted,
   isSubmitting,
@@ -66,35 +64,25 @@ export default function ExamSidebar({
   return (
     <aside
       aria-labelledby="attempt-progress-heading"
-      className="min-w-0 rounded-md border border-[#cbd0d3] bg-white p-5 sm:p-6"
+      className="min-w-0 rounded-md border border-brand-border bg-white p-5 text-brand-text shadow-xs sm:p-6"
     >
       <h2
         id="attempt-progress-heading"
-        className="text-base font-bold"
+        className="text-base font-bold text-brand-text"
       >
         Attempt progress
       </h2>
 
-      <div className="mt-4 space-y-3 text-sm text-[#56616a]">
-        <p>
-          Question {currentQuestionIndex + 1} / {totalQuestions}
-        </p>
-
-        <p>
-          Submitted answers: {submittedCount} / {totalQuestions}
-        </p>
-
-        <p>
-          {isSubmitted
-            ? isShortAnswer
-              ? "Submitted: short answer"
-              : `Submitted answer${isMultiple ? "s" : ""}: ${selectedLetters || "recorded"}`
-            : "Current question not yet submitted"}
-        </p>
-      </div>
+      <p className="mt-3 text-sm text-brand-text/75">
+        {isSubmitted
+          ? isShortAnswer
+            ? "Submitted: short answer"
+            : `Submitted answer${isMultiple ? "s" : ""}: ${selectedLetters || "recorded"}`
+          : "Current question not yet submitted"}
+      </p>
 
       <div className="hidden lg:block">
-        <div className="my-5 border-t border-[#e2e5e7]" />
+        <div className="my-5 border-t border-brand-border" />
 
         <QuestionNavigator
           totalQuestions={totalQuestions}
@@ -106,19 +94,19 @@ export default function ExamSidebar({
         />
       </div>
 
-      <div className="my-5 border-t border-[#e2e5e7]" />
+      <div className="my-5 border-t border-brand-border" />
 
       {isLastQuestion && allQuestionsSubmitted ? (
         <Button
           type="button"
           onClick={onFinish}
           disabled={isFinishing || isSubmitting || isSavingFlag}
-          className="h-10 rounded-md bg-[#343a3e] px-5 text-sm text-white hover:bg-[#1e2427] disabled:opacity-50"
+          className="min-h-10 cursor-pointer rounded-md bg-brand-primary px-5 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-brand-primary-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isFinishing ? "Finishing exam..." : "Finish Exam"}
         </Button>
       ) : (
-        <p className="text-sm text-[#687178]">
+        <p className="text-sm text-brand-text/70">
           {allQuestionsSubmitted
             ? `All answers submitted. Go to question ${totalQuestions} to finish the exam.`
             : "Submit all questions to enable Finish Exam."}
@@ -132,7 +120,7 @@ export default function ExamSidebar({
       )}
 
       {isSubmitted && (
-        <p className="mt-4 text-xs leading-5 text-[#687178]">
+        <p className="mt-4 text-xs leading-5 text-brand-text/70">
           {typeof feedback?.is_correct === "boolean"
             ? feedback.is_correct
               ? "✓ Correct · Answer locked for this attempt."
