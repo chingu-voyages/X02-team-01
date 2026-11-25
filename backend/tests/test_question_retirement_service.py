@@ -13,6 +13,7 @@ from app.models.category import Category
 from app.models.certification import Certification
 from app.models.exam_attempt import ExamAttempt
 from app.models.exam_attempt_question import ExamAttemptQuestion
+from app.models.practice_exam import PracticeExam
 from app.models.question import Question
 from app.models.question_version import QuestionVersion
 from app.models.user import User
@@ -46,6 +47,7 @@ def engine():
             User.__table__,
             Certification.__table__,
             Category.__table__,
+            PracticeExam.__table__,
             Question.__table__,
             QuestionVersion.__table__,
             AnswerOption.__table__,

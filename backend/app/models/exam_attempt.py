@@ -1,7 +1,14 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, func, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKeyConstraint,
+    Index,
+    func,
+    text,
+)
 from sqlmodel import Field, SQLModel
 
 
@@ -29,6 +36,23 @@ class ExamAttempt(SQLModel, table=True):
             "feedback_mode IS NULL OR feedback_mode IN ('immediate', 'deferred')",
             name="ck_exam_attempts_feedback_mode",
         ),
+        ForeignKeyConstraint(
+            ["practice_exam_id"],
+            ["practice_exams.id"],
+            name="fk_exam_attempts_practice_exam_id",
+        ),
+        Index(
+            "uq_exam_attempts_active_practice_exam",
+            "user_id",
+            "practice_exam_id",
+            unique=True,
+            postgresql_where=text(
+                "status = 'in_progress' AND practice_exam_id IS NOT NULL"
+            ),
+            sqlite_where=text(
+                "status = 'in_progress' AND practice_exam_id IS NOT NULL"
+            ),
+        ),
     )
 
     id: UUID = Field(
@@ -45,6 +69,14 @@ class ExamAttempt(SQLModel, table=True):
     certification_id: UUID = Field(
         foreign_key="certifications.id",
         nullable=False,
+        index=True,
+    )
+
+    # JHEP-203: identify the exact configured exam. Historical attempts have
+    # no reliable exam identity and retain NULL; never infer it from category.
+    practice_exam_id: UUID | None = Field(
+        default=None,
+        nullable=True,
         index=True,
     )
 
