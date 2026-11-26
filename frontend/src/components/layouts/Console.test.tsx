@@ -117,6 +117,7 @@ describe("Console layout shell", () => {
     expect(screen.queryByText("REPORTING")).toBeNull();
     expect(screen.queryByText("Question Bank")).toBeNull();
     expect(screen.queryByText("Certifications & Categories")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Manage Exams" })).toBeNull();
     expect(screen.queryByText("Users & Access")).toBeNull();
   });
 
@@ -142,6 +143,7 @@ describe("Console layout shell", () => {
     expect(screen.queryByText("USER MANAGEMENT")).toBeNull();
     expect(screen.queryByText("Users & Access")).toBeNull();
     expect(screen.queryByText("Certifications & Categories")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Manage Exams" })).toBeNull();
   });
 
   it("renders all sections and admin routes for administrators", () => {
@@ -166,6 +168,12 @@ describe("Console layout shell", () => {
       screen.getByRole("link", { name: "Certifications & Categories" }),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: "Practice Exams" })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Manage Exams" }).getAttribute("href"),
+    ).toBe("/admin/practice-exams");
+    expect(
+      screen.getByRole("link", { name: "Practice Exams" }).getAttribute("href"),
+    ).toBe("/categories");
     expect(screen.getByRole("link", { name: "Users & Access" })).toBeTruthy();
   });
 
@@ -185,6 +193,47 @@ describe("Console layout shell", () => {
     expect(activeLink.className).toContain("bg-brand-accent");
     expect(inactiveLink.className).not.toContain("bg-brand-accent");
   });
+
+  it("highlights Manage Exams without highlighting the learner exam link", () => {
+    mockUsePathname.mockReturnValue("/admin/practice-exams");
+    setAuthState("administrator");
+
+    render(
+      <Console>
+        <div>Exam Management</div>
+      </Console>,
+    );
+
+    const manageLink = screen.getByRole("link", { name: "Manage Exams" });
+    const practiceLink = screen.getByRole("link", { name: "Practice Exams" });
+
+    expect(manageLink.className).toContain("bg-brand-accent");
+    expect(practiceLink.className).not.toContain("bg-brand-accent");
+  });
+
+  it.each(["administrator", "contributor", "learner"] as const)(
+    "applies Manage Exams permissions in the mobile drawer for %s",
+    async (role) => {
+      const user = userEvent.setup();
+      setAuthState(role);
+
+      render(
+        <Console>
+          <div>Page Content</div>
+        </Console>,
+      );
+
+      await user.click(
+        screen.getByRole("button", { name: "Open navigation menu" }),
+      );
+
+      const links = screen.queryAllByRole("link", { name: "Manage Exams" });
+      expect(links).toHaveLength(role === "administrator" ? 2 : 0);
+      for (const link of links) {
+        expect(link.getAttribute("href")).toBe("/admin/practice-exams");
+      }
+    },
+  );
 
   it("marks upcoming sprint features and My Account as disabled", () => {
     setAuthState("administrator");

@@ -7,7 +7,8 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { CircleAlert, Plus } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, CircleAlert, ClipboardList, Plus } from "lucide-react";
 
 import PageHeader from "@/components/layouts/PageHeader";
 import { useDemoSession } from "@/features/auth/AuthProvider";
@@ -31,7 +32,7 @@ import CertificationCard from "@/features/categories/CertificationCard";
 type LoadStatus = "loading" | "ready" | "error";
 
 export default function AdminCatalogPage() {
-  const { token, ready, handleError } = useDemoSession();
+  const { token, ready, role, handleError } = useDemoSession();
 
   const [certifications, setCertifications] = useState<
     AdminCertification[]
@@ -515,7 +516,7 @@ export default function AdminCatalogPage() {
         <PageHeader
           stepLabel="JHEP-159 / Catalog Management"
           title="Certification & Category Catalog"
-          subtitle="Create and publish certification content before it becomes available to learners."
+          subtitle="Create and publish certifications and categories for use in practice exams."
         />
 
         <div className="flex flex-wrap gap-2">
@@ -545,6 +546,37 @@ export default function AdminCatalogPage() {
           </button>
         </div>
       </div>
+
+      {role === "administrator" && (
+        <section
+          aria-labelledby="practice-exam-availability-heading"
+          className="mb-5 flex flex-col gap-4 rounded-md border border-brand-border bg-white p-4 shadow-xs sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <h2
+              id="practice-exam-availability-heading"
+              className="flex items-center gap-2 text-sm font-semibold text-brand-text"
+            >
+              <ClipboardList aria-hidden="true" className="size-4 shrink-0" />
+              Practice exam availability
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-brand-text/70">
+              Publishing certifications, categories and questions does not
+              automatically publish a practice exam. Create and publish a
+              configured exam in Manage Exams after enough eligible questions
+              are available.
+            </p>
+          </div>
+
+          <Link
+            href="/admin/practice-exams"
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md bg-brand-accent px-5 text-sm font-semibold text-brand-text transition-colors hover:bg-brand-accent-tint focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            Open Manage Exams
+            <ArrowRight aria-hidden="true" className="size-4" />
+          </Link>
+        </section>
+      )}
 
       {actionError && (
         <div
@@ -719,10 +751,6 @@ export default function AdminCatalogPage() {
         </div>
       )}
 
-      <p className="mt-6 text-xs leading-5 text-brand-text/70">
-        Learners only see categories when the certification and category are
-        published and the category contains eligible approved questions.
-      </p>
     </section>
   );
 }

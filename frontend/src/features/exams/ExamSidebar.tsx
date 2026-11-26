@@ -1,3 +1,7 @@
+"use client";
+
+import { ChevronDown } from "lucide-react";
+import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type {
   ExamQuestionWithResponse,
@@ -6,20 +10,12 @@ import type {
 import type { QuestionState } from "@/lib/question-states";
 import QuestionNavigator from "./QuestionNavigator";
 
-function letterForPosition(position: number) {
-  return position >= 1 && position <= 26
-    ? String.fromCharCode(64 + position)
-    : String(position);
-}
-
 interface ExamSidebarProps {
   currentQuestion: ExamQuestionWithResponse;
   currentQuestionIndex: number;
   totalQuestions: number;
   questionStates?: readonly QuestionState[];
   flaggedQuestionIndices?: readonly number[];
-  submittedCount: number;
-  selectedOptionIds: string[];
   isSubmitted: boolean;
   isSubmitting: boolean;
   isFinishing: boolean;
@@ -27,18 +23,16 @@ interface ExamSidebarProps {
   allQuestionsSubmitted: boolean;
   finishError: string;
   feedback?: FeedbackEntry;
-  onNavigate: (index: number) => void;
+  variant?: "mobile" | "panel";
+  onNavigate: (index: number) => boolean | void;
   onFinish: () => void;
 }
 
 export default function ExamSidebar({
-  currentQuestion,
   currentQuestionIndex,
   totalQuestions,
   questionStates,
   flaggedQuestionIndices = [],
-  submittedCount,
-  selectedOptionIds,
   isSubmitted,
   isSubmitting,
   isFinishing,
@@ -46,79 +40,39 @@ export default function ExamSidebar({
   allQuestionsSubmitted,
   finishError,
   feedback,
+  variant = "panel",
   onNavigate,
   onFinish,
 }: ExamSidebarProps) {
-  const isShortAnswer =
-    currentQuestion.question_type === "short_answer";
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const disclosurePanelId = useId();
+  const mobileTriggerRef = useRef<HTMLButtonElement>(null);
 
-  const isMultiple =
-    currentQuestion.allows_multiple_answers;
+  const isLastQuestion = currentQuestionIndex >= totalQuestions - 1;
+  const navigationDisabled = isSubmitting || isFinishing;
 
-  const isLastQuestion =
-    currentQuestionIndex >= totalQuestions - 1;
+  function closeMobileNavigation() {
+    // Return focus before removing the selected tile. ExamHeader moves focus
+    // to the new question heading when the active question actually changes.
+    mobileTriggerRef.current?.focus({ preventScroll: true });
+    setMobileOpen(false);
+  }
 
-  const selectedLetters = currentQuestion.options
-    .filter((option) => selectedOptionIds.includes(option.id))
-    .map((option) => letterForPosition(option.position))
-    .join(", ");
-
-  return (
-    <aside
-      aria-labelledby="attempt-progress-heading"
-      className="min-w-0 rounded-md border border-[#cbd0d3] bg-white p-5 sm:p-6"
-    >
-      <h2
-        id="attempt-progress-heading"
-        className="text-base font-bold"
-      >
-        Attempt progress
-      </h2>
-
-      <div className="mt-4 space-y-3 text-sm text-[#56616a]">
-        <p>
-          Question {currentQuestionIndex + 1} / {totalQuestions}
-        </p>
-
-        <p>
-          Submitted answers: {submittedCount} / {totalQuestions}
-        </p>
-
-        <p>
-          {isSubmitted
-            ? isShortAnswer
-              ? "Submitted: short answer"
-              : `Submitted answer${isMultiple ? "s" : ""}: ${selectedLetters || "recorded"}`
-            : "Current question not yet submitted"}
-        </p>
-      </div>
-
-      <div className="hidden lg:block">
-        <div className="my-5 border-t border-[#e2e5e7]" />
-
-        <QuestionNavigator
-          totalQuestions={totalQuestions}
-          currentQuestionIndex={currentQuestionIndex}
-          questionStates={questionStates}
-          flaggedQuestionIndices={flaggedQuestionIndices}
-          disabled={isSubmitting || isFinishing}
-          onNavigate={onNavigate}
-        />
-      </div>
-
-      <div className="my-5 border-t border-[#e2e5e7]" />
+  const finishSection = (
+    <>
+      <div className="my-5 border-t border-brand-border" />
 
       {isLastQuestion && allQuestionsSubmitted ? (
         <Button
           type="button"
           onClick={onFinish}
           disabled={isFinishing || isSubmitting || isSavingFlag}
-          className="h-10 rounded-md bg-[#343a3e] px-5 text-sm text-white hover:bg-[#1e2427] disabled:opacity-50"
+          className="min-h-11 w-full cursor-pointer rounded-xl bg-brand-primary px-5 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-brand-primary-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isFinishing ? "Finishing exam..." : "Finish Exam"}
         </Button>
       ) : (
-        <p className="text-sm text-[#687178]">
+        <p className="text-xs leading-5 text-brand-text/70">
           {allQuestionsSubmitted
             ? `All answers submitted. Go to question ${totalQuestions} to finish the exam.`
             : "Submit all questions to enable Finish Exam."}
@@ -126,20 +80,107 @@ export default function ExamSidebar({
       )}
 
       {finishError && (
-        <p role="alert" className="mt-3 text-sm text-red-700">
+        <p role="alert" className="mt-3 text-xs text-red-700">
           {finishError}
         </p>
       )}
 
       {isSubmitted && (
-        <p className="mt-4 text-xs leading-5 text-[#687178]">
+        <p className="mt-3 text-xs leading-5 text-brand-text/70">
           {typeof feedback?.is_correct === "boolean"
             ? feedback.is_correct
               ? "✓ Correct · Answer locked for this attempt."
               : "× Incorrect · Answer locked for this attempt."
-            : "✓ Answer saved · Locked for this attempt."}
+            : "Answer saved · Locked for this attempt."}
         </p>
       )}
+    </>
+  );
+
+  if (variant === "mobile") {
+    return (
+      <div className="md:hidden">
+        <div className="overflow-hidden rounded-2xl border border-brand-border bg-white text-brand-text shadow-xs">
+          <button
+            ref={mobileTriggerRef}
+            type="button"
+            aria-expanded={mobileOpen}
+            aria-controls={disclosurePanelId}
+            disabled={totalQuestions === 0}
+            onClick={() => setMobileOpen((open) => !open)}
+            onKeyDown={(event) => {
+              if (mobileOpen && event.key === "Escape") {
+                event.preventDefault();
+                closeMobileNavigation();
+              }
+            }}
+            className="flex min-h-12 w-full cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left text-sm font-bold text-brand-text transition-colors hover:bg-brand-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span>
+              Question navigation ·{" "}
+              <span className="font-medium text-brand-text/70">
+                {currentQuestionIndex + 1} of {totalQuestions}
+              </span>
+            </span>
+
+            <ChevronDown
+              aria-hidden="true"
+              className={`size-4 shrink-0 text-brand-primary transition-transform duration-200 ${
+                mobileOpen ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+
+          <section
+            id={disclosurePanelId}
+            aria-label="Mobile question navigation"
+            hidden={!mobileOpen}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                closeMobileNavigation();
+              }
+            }}
+            className="border-t border-brand-border px-5 py-5"
+          >
+            {mobileOpen && (
+              <>
+                <QuestionNavigator
+                  totalQuestions={totalQuestions}
+                  currentQuestionIndex={currentQuestionIndex}
+                  questionStates={questionStates}
+                  flaggedQuestionIndices={flaggedQuestionIndices}
+                  disabled={navigationDisabled}
+                  showHeader={false}
+                  onNavigate={(index) => {
+                    if (!navigationDisabled && onNavigate(index) !== false) {
+                      closeMobileNavigation();
+                    }
+                  }}
+                />
+                {finishSection}
+              </>
+            )}
+          </section>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <aside
+      aria-label="Question navigation sidebar"
+      className="hidden min-w-0 rounded-2xl border border-brand-border bg-white p-7 text-brand-text shadow-xs md:block xl:w-85"
+    >
+      <QuestionNavigator
+        totalQuestions={totalQuestions}
+        currentQuestionIndex={currentQuestionIndex}
+        questionStates={questionStates}
+        flaggedQuestionIndices={flaggedQuestionIndices}
+        disabled={navigationDisabled}
+        onNavigate={onNavigate}
+      />
+      {finishSection}
     </aside>
   );
 }

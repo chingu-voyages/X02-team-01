@@ -1,10 +1,12 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 interface PageHeaderProps {
   title: ReactNode;
   subtitle?: ReactNode;
   status?: string;
   stepLabel?: string;
+  action?: ReactNode;
+  headingRef?: Ref<HTMLHeadingElement>;
 }
 
 export default function PageHeader({
@@ -12,28 +14,40 @@ export default function PageHeader({
   subtitle,
   status,
   stepLabel,
+  action,
+  headingRef,
 }: PageHeaderProps) {
   return (
-    <header className="my-6 border-b border-brand-border pb-4">
-      {stepLabel && (
-        <p className="text-xs font-bold uppercase tracking-widest text-brand-text/60">
-          {stepLabel}
-        </p>
-      )}
-      <h1 className="flex flex-wrap items-baseline text-xl font-bold tracking-tight text-brand-text sm:text-2xl">
-        <span>{title}</span>
-        {status && (
-          <span
-            aria-hidden="true"
-            className="ml-2 font-normal text-brand-text/60"
-          >
-            · {status}
-          </span>
+    <header className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div>
+        {stepLabel && (
+          <p className="mb-1.5 text-xs font-bold uppercase tracking-widest text-brand-primary">
+            {stepLabel}
+          </p>
         )}
-      </h1>
-      {subtitle && (
-        <p className="mt-1 text-xs text-brand-text/70 sm:text-sm">{subtitle}</p>
-      )}
+
+        <h1
+          ref={headingRef}
+          tabIndex={headingRef ? -1 : undefined}
+          className="flex flex-wrap items-baseline text-2xl font-bold tracking-tight text-brand-text outline-none md:text-3xl"
+        >
+          <span>{title}</span>
+          {status && (
+            <span
+              aria-hidden="true"
+              className="ml-2 font-normal text-brand-text/60"
+            >
+              · {status}
+            </span>
+          )}
+        </h1>
+
+        {subtitle && (
+          <p className="mt-1.5 text-sm text-brand-text/70">{subtitle}</p>
+        )}
+      </div>
+
+      {action && <div className="shrink-0">{action}</div>}
     </header>
   );
 }

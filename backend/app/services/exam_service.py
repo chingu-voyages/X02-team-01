@@ -100,7 +100,7 @@ class CategoryUnavailableError(ValueError):
 
 
 class AttemptInProgressError(Exception):
-    """A learner may hold only one in-progress attempt per certification."""
+    """A learner already has an active attempt in the requested exam scope."""
 
     def __init__(
         self,
@@ -152,6 +152,7 @@ class ExamService:
         certification_id: UUID,
         question_count: int,
         category_id: UUID | None = None,
+        practice_exam_id: UUID | None = None,
     ) -> CreatedExam:
         """Create and persist one randomized exam."""
 
@@ -174,13 +175,18 @@ class ExamService:
             )
 
         try:
-            if (
-                self._session.get(
-                    User,
-                    learner_id,
+            # JHEP-203: serialize published-exam starts for the same learner
+            # through the duplicate lookup and commit. PostgreSQL FOR NO KEY
+            # UPDATE permits foreign-key checks while preventing competing
+            # start requests from both observing an empty attempt scope.
+            if practice_exam_id is not None:
+                learner = self._session.get(
+                    User, learner_id, with_for_update={"key_share": True}
                 )
-                is None
-            ):
+            else:
+                learner = self._session.get(User, learner_id)
+
+            if learner is None:
                 raise LearnerNotFoundError("Learner not found")
 
             certification = self._session.get(
@@ -214,15 +220,21 @@ class ExamService:
                 if not category.is_published:
                     raise CategoryUnavailableError("Category is not available")
 
-            existing_active = self._session.exec(
-                select(ExamAttempt)
-                .where(
-                    ExamAttempt.user_id == learner_id,
-                    ExamAttempt.certification_id == certification_id,
-                    ExamAttempt.status == "in_progress",
+            # A published exam owns its attempt scope, even when multiple
+            # exams share the same certification, category, and length.
+            # Preserve the old certification scope ONLY for unlinked internal
+            # attempts. Historical NULL IDs never block a published exam.
+            active_statement = select(ExamAttempt).where(
+                ExamAttempt.user_id == learner_id,
+                ExamAttempt.practice_exam_id == practice_exam_id,
+                ExamAttempt.status == "in_progress",
+            )
+            if practice_exam_id is None:
+                active_statement = active_statement.where(
+                    ExamAttempt.certification_id == certification_id
                 )
-                .limit(1)
-            ).first()
+
+            existing_active = self._session.exec(active_statement.limit(1)).first()
 
             if existing_active is not None:
                 raise AttemptInProgressError(existing_active.id)
@@ -262,6 +274,7 @@ class ExamService:
             attempt = ExamAttempt(
                 user_id=learner_id,
                 certification_id=(certification_id),
+                practice_exam_id=practice_exam_id,
                 question_count=question_count,
                 passing_threshold_pct=(threshold_pct),
                 feedback_mode=feedback_mode,
