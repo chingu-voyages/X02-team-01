@@ -156,19 +156,19 @@ export default function AdminUsersPage() {
     }
   };
 
-  const confirmPermissions = async () => {
-    if (!pendingPermissions || !token) return;
+  const confirmPermissions = async (
+    user: AdminUserItem,
+    permissions: { grade_short_answers: boolean; grade_essays: boolean },
+  ) => {
+    if (!token) return;
 
     setPermissionInFlight(true);
     setPermissionError(null);
     try {
       const result = await updateGradingPermissions(
         token,
-        pendingPermissions.user.id,
-        {
-          grade_short_answers: pendingPermissions.user.grade_short_answers,
-          grade_essays: pendingPermissions.user.grade_essays,
-        },
+        user.id,
+        permissions,
       );
       setPendingPermissions(null);
       setSuccessNote(
@@ -283,14 +283,7 @@ export default function AdminUsersPage() {
           }}
           onSave={(permissions) => {
             if (!pendingPermissions) return;
-            setPendingPermissions({
-              user: {
-                ...pendingPermissions.user,
-                grade_short_answers: permissions.grade_short_answers,
-                grade_essays: permissions.grade_essays,
-              },
-            });
-            void confirmPermissions();
+            void confirmPermissions(pendingPermissions.user, permissions);
           }}
         />
       )}

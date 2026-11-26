@@ -1365,3 +1365,41 @@ Admin author: pending/draft --publish directly--> unchanged (JHEP-159's path)
 - **AC7**: the review outcome, actor, timestamp and reason live on the
   question version (`review_status`, `reviewed_by_id`, `reviewed_at`,
   `review_note`) and are visible on the question detail.
+
+---
+
+# 17. Manual grading of written responses — CURRENT (JHEP-122)
+
+Written submissions stay `ungraded` after exam submission until an authorized
+human records a final grade. All routes below require a contributor or
+administrator JWT and re-check JHEP-192 grading permissions per response type
+on every request (`view`, `history` and `grade` are equally gated).
+
+| Route | Behaviour |
+|---|---|
+| `GET /api/v1/auth/grading-permissions` | Learner-safe mirror of the caller's `{short_answer, essay}` flags (all roles) |
+| `GET /api/v1/admin/grading/permissions` | Reviewer's own effective flags |
+| `GET /api/v1/admin/grading/pending?response_type=short_answer|essay` | Submitted written responses with no final grade, filtered to permitted types; `{items, count}` |
+| `GET /api/v1/admin/grading/responses/{attempt_id}/{question_version_id}` | Saved response, pinned question/rubric ceiling, expected answer, current grade, history, labelled provisional AI context |
+| `GET /api/v1/admin/grading/responses/{attempt_id}/{question_version_id}/history` | Dedicated history view: `{items, count}` |
+| `POST /api/v1/admin/grading/responses/{attempt_id}/{question_version_id}/grade` | Final grade/revision; body `{score: int >= 0, feedback?: string <= 5000}` |
+
+`score` must be a whole number within the pinned rubric's `max_points`;
+out-of-range values return `422 {detail:{code:"INVALID_SCORE"}}`.
+Permission denials return `403 {detail:{code:"GRADING_PERMISSION_DENIED"}}`;
+missing responses return `404 RESPONSE_NOT_FOUND`, and responses that are not
+submitted written answers return `409 RESPONSE_NOT_GRADABLE`.
+
+Each accepted action writes one `manual_grade_history` row with actor id/role,
+action (`graded`/`revised`), score, rubric ceiling, feedback and timestamp.
+Only the latest grade counts; a revision atomically updates the grade row,
+attempt result, saved response state and history. `provisional_ai_feedback` is
+always labelled `Provisional AI feedback — context only, not a final grade`.
+
+`GET /api/v1/exams/{attempt_id}/results` now also returns
+`pending_manual_grading_count` and a `questions[]` breakdown with
+`status` = `graded` / `pending_manual_grading` / `unavailable`, per-question
+score, rubric ceiling and human feedback. While any submitted written answer
+awaits grading, `grading_complete` is `false` and `passed` is `null`; the UI
+must not present a provisional score as a final pass/fail result. Unavailable
+or ungraded responses are never auto-failed.

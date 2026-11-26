@@ -117,3 +117,19 @@ ruff format --check .
 pytest -q          # grading matrix: tests/test_grading_service.py,
                    # orchestration: tests/test_grading_orchestration.py
 ```
+
+## ✍️ Manual review of written responses (JHEP-122)
+
+- Submitted short answers and essays stay `ungraded` until an authorized
+  human submits a final score. Reviewers are gated per response type by
+  JHEP-192 on view, history and grade actions.
+- Reviewer API: `GET /admin/grading/pending`, `GET /admin/grading/responses/{attempt}/{version}`,
+  `GET .../history`, `POST .../grade`; the caller's flags are available at
+  `GET /admin/grading/permissions` and `/auth/grading-permissions`.
+- Scores must be whole numbers within the pinned rubric ceiling. Every
+  grade/revision is preserved in `manual_grade_history` with actor, role and
+  timestamp; only the latest grade affects the attempt result.
+- Provisional AI output is labelled context only and is never a final grade.
+- Results expose `grading_complete` and per-question statuses. While any
+  submitted written answer awaits review, `passed` is `null` and the UI shows
+  a pending-review state instead of a failed result.

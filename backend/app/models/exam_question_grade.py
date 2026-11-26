@@ -1,12 +1,22 @@
-"""Per-question scoring of a submitted exam attempt (JHEP-35).
+"""Per-question scoring of a submitted exam attempt (JHEP-35/JHEP-122).
 
-Rows are immutable evidence of a single grading run; duplicates are
-impossible by the (attempt_id, question_version_id) unique constraint.
+One row exists per pinned question version; duplicates are impossible by
+the (attempt_id, question_version_id) unique constraint. Auto grades are
+written once, while a manual grade updates the existing ungraded row in
+place and keeps every action in manual_grade_history.
 """
 
+from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, ForeignKeyConstraint, UniqueConstraint, text
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKeyConstraint,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlmodel import Field, SQLModel
 
 
@@ -26,8 +36,16 @@ class ExamQuestionGrade(SQLModel, table=True):
         ),
         CheckConstraint(
             "outcome IN "
-            "('correct', 'incorrect', 'unanswered', 'ungraded', 'ungradable')",
+            "('correct', 'incorrect', 'unanswered', 'ungraded', 'ungradable', 'manually_graded')",
             name="ck_exam_question_grades_outcome",
+        ),
+        # JHEP-122: manually graded rows carry a nonnegative score <= the
+        # rubric maximum and the grader identity (AC5).
+        CheckConstraint(
+            "outcome != 'manually_graded' OR "
+            "(graded_by_id IS NOT NULL AND max_points IS NOT NULL AND "
+            "points_earned >= 0 AND points_earned <= max_points)",
+            name="ck_exam_question_grades_manual_grading",
         ),
         CheckConstraint(
             "points_earned >= 0",
@@ -57,4 +75,32 @@ class ExamQuestionGrade(SQLModel, table=True):
         default=0,
         nullable=False,
         sa_column_kwargs={"server_default": text("0")},
+    )
+
+    # JHEP-122: manual grading (short answers / essays). NULL for the
+    # auto-grading outcomes.
+    graded_by_id: UUID | None = Field(
+        default=None,
+        foreign_key="users.id",
+        nullable=True,
+    )
+    grader_role: str | None = Field(
+        default=None,
+        max_length=20,
+        nullable=True,
+    )
+    max_points: int | None = Field(
+        default=None,
+        nullable=True,
+        sa_column_kwargs={"server_default": text("1")},
+    )
+    feedback: str | None = Field(
+        default=None,
+        sa_type=Text,
+        nullable=True,
+    )
+    graded_at: datetime | None = Field(
+        default=None,
+        nullable=True,
+        sa_column_kwargs={"server_default": func.now()},
     )

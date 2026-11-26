@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     categories,
     exams,
     learner_practice_exams,
+    manual_grading,
     question_import_actions,
     question_imports,
     questions,
@@ -48,6 +49,12 @@ api_router.include_router(
     admin.router,
     prefix="/admin",
     tags=["admin"],
+)
+
+api_router.include_router(
+    manual_grading.router,
+    prefix="/admin",
+    tags=["admin", "grading"],
 )
 
 api_router.include_router(

@@ -10,6 +10,7 @@ interface ResultSummaryCardProps {
   totalQuestions: number;
   isPassed: boolean | null;
   passingScorePercent: number | null;
+  hasManualGrading?: boolean;
 }
 
 export default function ResultSummaryCard({
@@ -19,6 +20,7 @@ export default function ResultSummaryCard({
   totalQuestions,
   isPassed,
   passingScorePercent,
+  hasManualGrading = false,
 }: ResultSummaryCardProps) {
   const hasScore = scorePercent !== null && isPassed !== null;
   const formattedScore =
@@ -31,7 +33,11 @@ export default function ResultSummaryCard({
       : "Fail";
 
   const missingCorrectCount =
-    !isPassed && passingScorePercent !== null && totalQuestions > 0
+    !isPassed &&
+    !hasManualGrading &&
+    passingScorePercent !== null &&
+    totalQuestions > 0 &&
+    totalQuestions === correctCount + incorrectCount
       ? Math.max(
           1,
           Math.ceil((passingScorePercent / 100) * totalQuestions) - correctCount,

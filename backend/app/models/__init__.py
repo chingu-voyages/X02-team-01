@@ -7,6 +7,7 @@ from .exam_attempt_question import ExamAttemptQuestion as ExamAttemptQuestion
 from .exam_question_grade import ExamQuestionGrade as ExamQuestionGrade
 from .exam_response import ExamResponse as ExamResponse
 from .exam_result import ExamResult as ExamResult
+from .manual_grade_history import ManualGradeHistory as ManualGradeHistory
 from .mfa import MfaLoginChallenge as MfaLoginChallenge
 from .mfa import MfaRecoveryCode as MfaRecoveryCode
 from .password_reset_token import PasswordResetToken as PasswordResetToken
