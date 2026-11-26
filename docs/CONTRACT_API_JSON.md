@@ -1403,3 +1403,59 @@ score, rubric ceiling and human feedback. While any submitted written answer
 awaits grading, `grading_complete` is `false` and `passed` is `null`; the UI
 must not present a provisional score as a final pass/fail result. Unavailable
 or ungraded responses are never auto-failed.
+
+---
+
+# 18. Model answers & grading rubrics for written questions — CURRENT (JHEP-121)
+
+Authorized administrators and contributors author a **model answer** (Markdown
+in `expected_answer`) and a **scoring rubric** for `short_answer` and `essay`
+question versions. The rubric is an ordered list of criteria
+(`rubric_criteria`: name ≤ 200 chars, positive integer points) stored per
+**question version**, so every learner attempt is graded against the pinned
+version's rubric — later edits create a new version and never retroactively
+change existing grades (AC4).
+
+**Authoring payload** (create/edit draft + published revision):
+
+```json
+{
+  "question_type": "short_answer | essay",
+  "expected_answer": "Markdown model answer",
+  "rubric": [{ "name": "Identifies both concepts", "points": 2 }],
+  "max_points": 2,
+  "criteria_markdown": "Optional longer Markdown criteria (essays)"
+}
+```
+
+Validation (AC2 — actionable 422s, never silent erasure):
+
+- ≥ 1 criterion, at most 20; names non-empty and unique (case-insensitive)
+- points are positive integers; `max_points`, when provided, **must equal the
+  sum of the criterion points** (otherwise it defaults to the sum)
+- `multiple_choice` rejects `rubric`/`criteria_markdown`/`max_points`
+- `essay` drafts require an explicit rubric; `short_answer` drafts without one
+  derive the permitted one-criterion default (`"Correct response"`, 1 point)
+- editing a written draft without a new `rubric` keeps the previously authored
+  criteria (AC6)
+
+**Contract consumers:**
+
+- `GET /api/v1/admin/questions/{id}` — detail returns `expected_answer`,
+  `max_points`, `criteria_markdown` and `rubric[{position, name, points}]`
+  (management routes only)
+- `GET /api/v1/admin/grading/responses/{attempt}/{version}` (JHEP-122) —
+  returns the **pinned** version's rubric so reviewers score per criterion
+- JHEP-182/JHEP-194 (optional AI grading) read the same stored
+  machine-readable criteria; `criteria_markdown` is always the original
+  authoring text
+
+**Markdown safety (AC3):** the backend stores raw Markdown only; rendering is
+the frontend's `react-markdown` preview, which escapes raw HTML and scripts by
+default. Learner-facing contracts never expose the model answer, rubric or
+criteria (AC5) — the learner delivery schema has no such fields, and essay
+questions are excluded from learner delivery until JHEP-120 lands.
+
+**Backward compatibility:** existing versions with a `text_answer_keys` row
+but no `rubric_criteria` rows keep grading against `key.max_points` (fallback
+1) — JHEP-122's `0 ≤ score ≤ max_points` contract is unchanged.

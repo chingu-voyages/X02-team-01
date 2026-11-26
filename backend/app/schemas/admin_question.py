@@ -33,6 +33,35 @@ class AdminAnswerOptionInput(BaseModel):
         return normalized
 
 
+class RubricCriterionInput(BaseModel):
+    """One scoring criterion of a written question's rubric (JHEP-121)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+
+    points: int = Field(
+        ge=1,
+        le=1000,
+    )
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(
+        cls,
+        value: str,
+    ) -> str:
+        normalized = value.strip()
+
+        if not normalized:
+            raise ValueError("criterion name must not be blank")
+
+        return normalized
+
+
 class _QuestionDraftContent(BaseModel):
     """Fields shared by create and edit payloads."""
 
@@ -43,6 +72,7 @@ class _QuestionDraftContent(BaseModel):
     question_type: Literal[
         "multiple_choice",
         "short_answer",
+        "essay",
     ]
 
     allows_multiple_answers: bool = False
@@ -51,6 +81,24 @@ class _QuestionDraftContent(BaseModel):
     options: list[AdminAnswerOptionInput] = Field(default_factory=list)
 
     expected_answer: str | None = None
+
+    # JHEP-121: the model answer rides in expected_answer; the scoring
+    # rubric is an ordered criterion list. `max_points` is the consistent
+    # total: when provided it must equal the sum of the criterion points,
+    # otherwise it defaults to the sum. Omitting `rubric` on a short_answer
+    # draft derives the permitted one-criterion default ("Correct
+    # response", 1 point) so existing behaviour is preserved.
+    rubric: list[RubricCriterionInput] | None = None
+
+    max_points: int | None = Field(
+        default=None,
+        ge=1,
+        le=5000,
+    )
+
+    # Original Markdown authoring text for the scoring criteria (essay
+    # rubrics in particular). Raw Markdown — never rendered unsanitized.
+    criteria_markdown: str | None = None
 
     @field_validator("question_text")
     @classmethod
@@ -91,6 +139,38 @@ class _QuestionDraftContent(BaseModel):
 
         return normalized or None
 
+    @field_validator("criteria_markdown")
+    @classmethod
+    def normalize_criteria_markdown(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        if value is None:
+            return None
+
+        normalized = value.strip()
+
+        return normalized or None
+
+    @field_validator("rubric")
+    @classmethod
+    def validate_rubric_criteria(
+        cls,
+        value: list[RubricCriterionInput] | None,
+    ) -> list[RubricCriterionInput] | None:
+        if value is None:
+            return None
+
+        if len(value) > 20:
+            raise ValueError("a rubric may define at most 20 criteria")
+
+        names = [criterion.name.lower() for criterion in value]
+
+        if len(names) != len(set(names)):
+            raise ValueError("rubric criterion names must be unique")
+
+        return value
+
     @model_validator(mode="after")
     def validate_answer_configuration(
         self,
@@ -100,6 +180,17 @@ class _QuestionDraftContent(BaseModel):
                 raise ValueError(
                     "multiple_choice questions cannot define expected_answer"
                 )
+
+            if self.rubric is not None:
+                raise ValueError("multiple_choice questions cannot define a rubric")
+
+            if self.criteria_markdown is not None:
+                raise ValueError(
+                    "multiple_choice questions cannot define criteria_markdown"
+                )
+
+            if self.max_points is not None:
+                raise ValueError("multiple_choice questions cannot define max_points")
 
             if len(self.options) < 2:
                 raise ValueError(
@@ -121,13 +212,19 @@ class _QuestionDraftContent(BaseModel):
             return self
 
         if self.allows_multiple_answers:
-            raise ValueError("short_answer questions cannot allow multiple answers")
+            raise ValueError("written questions cannot allow multiple answers")
 
         if self.options:
-            raise ValueError("short_answer questions cannot define answer options")
+            raise ValueError("written questions cannot define answer options")
 
         if self.expected_answer is None:
-            raise ValueError("short_answer questions require expected_answer")
+            raise ValueError(f"{self.question_type} questions require expected_answer")
+
+        if self.question_type == "essay" and self.rubric is None:
+            raise ValueError("essay questions require a rubric")
+
+        if self.rubric is not None and len(self.rubric) < 1:
+            raise ValueError("a rubric requires at least one criterion")
 
         return self
 
@@ -217,6 +314,7 @@ class QuestionBankItem(BaseModel):
     question_type: Literal[
         "multiple_choice",
         "short_answer",
+        "essay",
     ]
 
     review_status: Literal[
@@ -257,6 +355,14 @@ class AdminAnswerOptionOut(BaseModel):
     position: int
     option_text: str
     is_correct: bool
+
+
+class RubricCriterionOut(BaseModel):
+    """Rubric criterion visible only in management/grading routes."""
+
+    position: int
+    name: str
+    points: int
 
 
 class AdminQuestionImageOut(BaseModel):
@@ -300,6 +406,7 @@ class QuestionBankDetail(BaseModel):
     question_type: Literal[
         "multiple_choice",
         "short_answer",
+        "essay",
     ]
 
     allows_multiple_answers: bool
@@ -332,5 +439,11 @@ class QuestionBankDetail(BaseModel):
     options: list[AdminAnswerOptionOut] = Field(default_factory=list)
 
     expected_answer: str | None = None
+
+    max_points: int | None = None
+
+    criteria_markdown: str | None = None
+
+    rubric: list[RubricCriterionOut] = Field(default_factory=list)
 
     images: list[AdminQuestionImageOut] = Field(default_factory=list)

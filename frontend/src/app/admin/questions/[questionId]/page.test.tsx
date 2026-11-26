@@ -131,6 +131,9 @@ const rejectedQuestion = {
   ],
   expected_answer:
     null,
+  max_points: null,
+  criteria_markdown: null,
+  rubric: [],
   images: [],
 };
 

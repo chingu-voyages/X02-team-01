@@ -46,6 +46,7 @@ from app.schemas.admin_question import (
     QuestionDraftCreated,
     QuestionDraftEdit,
     QuestionRejectionRequest,
+    RubricCriterionOut,
 )
 from app.schemas.admin_user import (
     AdminUserOut,
@@ -323,6 +324,16 @@ def _question_detail_response(
             for option in detail.options
         ],
         expected_answer=detail.expected_answer,
+        max_points=detail.max_points,
+        criteria_markdown=detail.criteria_markdown,
+        rubric=[
+            RubricCriterionOut(
+                position=criterion.position,
+                name=criterion.name,
+                points=criterion.points,
+            )
+            for criterion in detail.rubric
+        ],
         images=[
             AdminQuestionImageOut(
                 id=image.id,

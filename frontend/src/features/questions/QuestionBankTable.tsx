@@ -31,7 +31,14 @@ export function shortQuestionId(id: string): string {
 }
 
 function questionTypeLabel(questionType: AdminQuestionType): string {
-  return questionType === "multiple_choice" ? "MCQ" : "Short";
+  switch (questionType) {
+    case "multiple_choice":
+      return "MCQ";
+    case "essay":
+      return "Essay";
+    default:
+      return "Short";
+  }
 }
 
 function formatDate(value: string): string {

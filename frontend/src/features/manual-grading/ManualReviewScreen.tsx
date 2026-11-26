@@ -190,6 +190,29 @@ export default function ManualReviewScreen({
             <p className="mt-2 text-sm leading-6 text-brand-text/80">
               {detail.expected_answer ?? "No expected answer is configured."}
             </p>
+
+            {detail.rubric.length > 0 && (
+              <div className="mt-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-brand-text/60">
+                  Scoring criteria
+                </h3>
+                <ul className="mt-2 space-y-1.5">
+                  {detail.rubric.map((criterion) => (
+                    <li
+                      key={criterion.position}
+                      className="flex items-center justify-between gap-3 rounded-md border border-brand-border bg-white px-3 py-2 text-sm text-brand-text"
+                    >
+                      <span>
+                        {criterion.position}. {criterion.name}
+                      </span>
+                      <span className="shrink-0 rounded bg-brand-secondary/40 px-2 py-0.5 text-xs font-medium">
+                        +{criterion.points}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
 

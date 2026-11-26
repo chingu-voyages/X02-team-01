@@ -20,5 +20,6 @@ from .question_import_batch import QuestionImportBatch as QuestionImportBatch
 from .question_import_row import QuestionImportRow as QuestionImportRow
 from .question_version import QuestionVersion as QuestionVersion
 from .role_change_audit import RoleChangeAudit as RoleChangeAudit
+from .rubric_criterion import RubricCriterion as RubricCriterion
 from .text_answer_key import TextAnswerKey as TextAnswerKey
 from .user import User as User

@@ -13,6 +13,7 @@ from app.models.category import Category
 from app.models.certification import Certification
 from app.models.question import Question
 from app.models.question_version import QuestionVersion
+from app.models.rubric_criterion import RubricCriterion
 from app.models.text_answer_key import TextAnswerKey
 from app.models.user import User
 from app.schemas.admin_question import QuestionDraftCreate
@@ -46,6 +47,7 @@ def engine():
             QuestionVersion.__table__,
             AnswerOption.__table__,
             TextAnswerKey.__table__,
+            RubricCriterion.__table__,
         ],
     )
 

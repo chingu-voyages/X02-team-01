@@ -73,6 +73,14 @@ class ProvisionalFeedbackOut(BaseModel):
     content: str | None
 
 
+class RubricCriterionOut(BaseModel):
+    """One rubric criterion of the pinned version (JHEP-121 AC7)."""
+
+    position: int
+    name: str
+    points: int
+
+
 class ResponseDetailOut(BaseModel):
     """Review detail: saved response, pinned version, rubric, and history."""
 
@@ -83,6 +91,8 @@ class ResponseDetailOut(BaseModel):
     learner_response: str
     expected_answer: str | None
     max_points: int
+    criteria_markdown: str | None
+    rubric: list[RubricCriterionOut]
     current_grade: CurrentGradeOut | None
     history: list[GradeHistoryOut]
     provisional_ai_feedback: ProvisionalFeedbackOut

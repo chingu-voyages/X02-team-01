@@ -1255,17 +1255,50 @@ function userIdFromToken(
           )}
 
 
-          {question.question_type ===
-            "short_answer" && (
+          {question.question_type !==
+            "multiple_choice" && (
             <div className="mt-6">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide">
-                Expected Answer
+                Model answer &amp; scoring rubric
               </p>
 
               <div className="rounded-md border border-[#d4d7da] bg-[#f6f6f6] p-4 text-sm leading-6">
                 {question.expected_answer ??
                   "No expected answer stored."}
               </div>
+
+              {(question.rubric?.length ??
+                0) > 0 && (
+                <ul className="mt-3 space-y-1.5">
+                  {(question.rubric ?? []).map(
+                    (criterion) => (
+                      <li
+                        key={
+                          criterion.position
+                        }
+                        className="flex items-center justify-between gap-3 rounded-md border border-[#d4d7da] bg-white px-3 py-2 text-sm"
+                      >
+                        <span>
+                          {
+                            criterion.position
+                          }
+                          .{" "}
+                          {
+                            criterion.name
+                          }
+                        </span>
+
+                        <span className="shrink-0 rounded bg-[#eef0f2] px-2 py-0.5 text-xs font-medium">
+                          +
+                          {
+                            criterion.points
+                          }
+                        </span>
+                      </li>
+                    ),
+                  )}
+                </ul>
+              )}
             </div>
           )}
 

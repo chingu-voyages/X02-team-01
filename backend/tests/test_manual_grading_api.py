@@ -34,6 +34,7 @@ from app.models import (
     PracticeExam,
     Question,
     QuestionVersion,
+    RubricCriterion,
     TextAnswerKey,
     User,
 )
@@ -97,6 +98,7 @@ class GradingHarness:
                 Question.__table__,
                 QuestionVersion.__table__,
                 TextAnswerKey.__table__,
+                RubricCriterion.__table__,
                 ExamAttempt.__table__,
                 ExamAttemptQuestion.__table__,
                 ExamResponse.__table__,

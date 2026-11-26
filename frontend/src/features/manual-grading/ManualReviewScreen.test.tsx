@@ -35,6 +35,10 @@ const detail: WrittenResponseDetail = {
   learner_response: "They differ in scope.",
   expected_answer: "One is narrower.",
   max_points: 2,
+  criteria_markdown: null,
+  rubric: [
+    { position: 1, name: "Accuracy", points: 2 },
+  ],
   current_grade: null,
   history: [],
   provisional_ai_feedback: {
