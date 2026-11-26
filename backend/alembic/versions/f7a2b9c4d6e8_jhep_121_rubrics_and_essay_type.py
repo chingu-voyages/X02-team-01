@@ -42,15 +42,11 @@ def upgrade() -> None:
         sa.Column("position", sa.Integer(), nullable=False),
         sa.Column("name", sa.String(length=200), nullable=False),
         sa.Column("points", sa.Integer(), nullable=False),
-        sa.CheckConstraint(
-            "position > 0", name="ck_rubric_criteria_positive_position"
-        ),
+        sa.CheckConstraint("position > 0", name="ck_rubric_criteria_positive_position"),
         sa.CheckConstraint(
             "length(trim(name)) > 0", name="ck_rubric_criteria_nonempty_name"
         ),
-        sa.CheckConstraint(
-            "points > 0", name="ck_rubric_criteria_positive_points"
-        ),
+        sa.CheckConstraint("points > 0", name="ck_rubric_criteria_positive_points"),
         sa.UniqueConstraint(
             "question_version_id",
             "position",
