@@ -105,8 +105,7 @@ ITEMS = (
         "Atomicity, Consistency, Isolation, Durability — all-or-nothing "
         "execution with valid state, concurrency safety and persistence.",
         2,
-        "Atomicity, Consistency, Isolation and Durability guarantees for "
-        "transactions.",
+        "Atomicity, Consistency, Isolation and Durability guarantees for transactions.",
     ),
     DemoItem(
         5,
@@ -114,8 +113,7 @@ ITEMS = (
         "A short lifetime limits the damage window if the token is "
         "stolen; refresh tokens renew access safely.",
         1,
-        "So a stolen token stops working quickly and the risk window is "
-        "small.",
+        "So a stolen token stops working quickly and the risk window is small.",
     ),
 )
 
@@ -160,7 +158,9 @@ def seed() -> dict[str, int]:
         category_id = demo_id(f"{CERT_SLUG}/category")
         ensure_row(
             session,
-            Category(id=category_id, certification_id=cert_id, name="Written Responses"),
+            Category(
+                id=category_id, certification_id=cert_id, name="Written Responses"
+            ),
             ("certification_id", "name"),
         )
         inserted["category"] += 1
