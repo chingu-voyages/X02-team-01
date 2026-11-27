@@ -1,1342 +1,259 @@
 "use client";
 
 import Link from "next/link";
-import {
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-import {
-  ImageIcon,
-  MoreHorizontal,
-  Search,
-} from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { AlertCircle, ChevronDown, Loader2, Search, SlidersHorizontal } from "lucide-react";
 
 import PageHeader from "@/components/layouts/PageHeader";
 import { useDemoSession } from "@/features/auth/AuthProvider";
-import {
-  getAdminCategories,
-  getAdminCertifications,
-} from "@/lib/admin-catalog-api";
-import {
-  getManagedQuestions,
-} from "@/lib/admin-question-api";
+import QuestionBankResults from "@/features/questions/QuestionBankResults";
+import { getAdminCategories, getAdminCertifications } from "@/lib/admin-catalog-api";
+import { getManagedQuestions } from "@/lib/admin-question-api";
 import { ApiError } from "@/lib/api-client";
-
-import type {
-  AdminCategory,
-  AdminCertification,
-} from "@/types/admin-catalog-api.types";
-
+import type { AdminCategory, AdminCertification } from "@/types/admin-catalog-api.types";
 import type {
   AdminDifficulty,
-  AdminPublicationStatus,
-  AdminQuestionBankItem,
+  AdminQuestionBankListResponse,
   AdminQuestionBankQuery,
   AdminQuestionType,
-  AdminReviewStatus,
 } from "@/types/admin-question-api.types";
 
-type LoadStatus =
-  | "loading"
-  | "ready"
-  | "error"
-  | "forbidden";
-
-type WorkflowFilter =
-  | "all"
-  | "pending"
-  | "submitted"
-  | "in_review"
-  | "approved_draft"
-  | "rejected"
-  | "published"
-  | "retired";
-
-type MediaFilter =
-  | "all"
-  | "with_image"
-  | "without_image";
+type WorkflowFilter = "all" | "pending" | "submitted" | "in_review" | "approved_draft" | "rejected" | "published" | "retired";
+type MediaFilter = "all" | "with_image" | "without_image";
+type Filters = {
+  certification: string;
+  category: string;
+  questionType: "all" | AdminQuestionType;
+  difficulty: "all" | AdminDifficulty;
+  workflow: WorkflowFilter;
+  media: MediaFilter;
+};
+type RequestState<T> = {
+  token: string;
+  key: string;
+} & ({ status: "ready"; data: T } | { status: "error" | "forbidden"; message: string });
+type Catalog = { certifications: AdminCertification[]; categories: AdminCategory[] };
+type Option = { value: string; label: string };
 
 const pageSize = 50;
+const emptyFilters: Filters = {
+  certification: "all", category: "all", questionType: "all",
+  difficulty: "all", workflow: "all", media: "all",
+};
+const secondaryButton = "inline-flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-md border border-brand-border bg-white px-4 py-2 text-center text-sm font-semibold text-brand-text hover:bg-brand-surface focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 
-function formatStatus(
-  publicationStatus: AdminPublicationStatus,
-  reviewStatus: AdminReviewStatus,
-) {
-  if (
-    publicationStatus ===
-    "retired"
-  ) {
-    return "Retired";
+function workflowQuery(workflow: WorkflowFilter): Pick<AdminQuestionBankQuery, "review_status" | "publication_status"> {
+  switch (workflow) {
+    case "pending": case "submitted": case "in_review": case "rejected":
+      return { review_status: workflow };
+    case "approved_draft": return { review_status: "approved", publication_status: "draft" };
+    case "published": return { publication_status: "active" };
+    case "retired": return { publication_status: "retired" };
+    default: return {};
   }
-
-  if (publicationStatus === "inactive") {
-    return "Rejected";
-  }
-
-  if (
-    publicationStatus ===
-    "active"
-  ) {
-    return "Published";
-  }
-
-  if (
-    reviewStatus ===
-    "rejected"
-  ) {
-    return "Rejected";
-  }
-
-  if (reviewStatus === "submitted") {
-    return "Submitted";
-  }
-
-  if (reviewStatus === "in_review") {
-    return "In Review";
-  }
-
-  if (
-    reviewStatus ===
-    "approved"
-  ) {
-    return "Approved Draft";
-  }
-
-  return "Pending Review";
 }
 
-function questionTypeLabel(
-  questionType: AdminQuestionType,
-) {
-  return questionType ===
-    "multiple_choice"
-    ? "MCQ"
-    : "Short";
+// Presentation only: the server authorizes every question operation.
+function userIdFromToken(token: string | null): string | null {
+  try {
+    const encoded = token?.split(".")[1];
+    if (!encoded) return null;
+    const base64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="))) as { sub?: unknown };
+    return typeof payload.sub === "string" ? payload.sub : null;
+  } catch {
+    return null;
+  }
 }
 
-function difficultyLabel(
-  difficulty: AdminDifficulty,
-) {
+function SelectFilter({ label, value, options, onChange, disabled = false }: {
+  label: string; value: string; options: Option[]; onChange: (value: string) => void; disabled?: boolean;
+}) {
   return (
-    difficulty
-      .charAt(0)
-      .toUpperCase() +
-    difficulty.slice(1)
+    <label className="block min-w-0 space-y-1">
+      <span className="block text-xs font-semibold text-brand-text/80">{label}</span>
+      <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}
+        className="min-h-11 w-full min-w-0 cursor-pointer rounded-md border border-brand-border bg-white px-3 py-2 text-base text-brand-text focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm">
+        {!options.some((option) => option.value === value) && <option value={value}>Selected value (unavailable)</option>}
+        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </label>
   );
-}
-
-function shortQuestionId(
-  id: string,
-) {
-  return `Q-${id
-    .slice(0, 8)
-    .toUpperCase()}`;
-}
-
-function formatDate(
-  value: string,
-) {
-  const date =
-    new Date(value);
-
-  if (
-    Number.isNaN(
-      date.getTime(),
-    )
-  ) {
-    return "—";
-  }
-
-  return new Intl.DateTimeFormat(
-    "en-US",
-    {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    },
-  ).format(date);
-}
-
-function statusClasses(
-  status: string,
-) {
-  if (
-    status ===
-    "Published"
-  ) {
-    return (
-      "bg-brand-accent-tint " +
-      "text-brand-text"
-    );
-  }
-
-  if (
-    status ===
-      "Retired" ||
-    status ===
-      "Rejected"
-  ) {
-    return (
-      "bg-brand-secondary/50 " +
-      "text-brand-text"
-    );
-  }
-
-  return (
-    "bg-brand-surface " +
-    "text-brand-text"
-  );
-}
-
-function workflowQuery(
-  workflow: WorkflowFilter,
-): Pick<
-  AdminQuestionBankQuery,
-  | "review_status"
-  | "publication_status"
-> {
-  if (workflow === "submitted" || workflow === "in_review") {
-    return { review_status: workflow };
-  }
-
-  if (
-    workflow ===
-    "pending"
-  ) {
-    return {
-      review_status:
-        "pending",
-    };
-  }
-
-  if (
-    workflow ===
-    "approved_draft"
-  ) {
-    return {
-      review_status:
-        "approved",
-      publication_status:
-        "draft",
-    };
-  }
-
-  if (
-    workflow ===
-    "rejected"
-  ) {
-    return {
-      review_status:
-        "rejected",
-    };
-  }
-
-  if (
-    workflow ===
-    "published"
-  ) {
-    return {
-      publication_status:
-        "active",
-    };
-  }
-
-  if (
-    workflow ===
-    "retired"
-  ) {
-    return {
-      publication_status:
-        "retired",
-    };
-  }
-
-  return {};
 }
 
 export default function AdminQuestionsPage() {
-  const {
-    token,
-    ready,
-    handleError,
-  } =
-    useDemoSession();
-
-  const [
-    questions,
-    setQuestions,
-  ] = useState<
-    AdminQuestionBankItem[]
-  >([]);
-
-  const [
-    certifications,
-    setCertifications,
-  ] = useState<
-    AdminCertification[]
-  >([]);
-
-  const [
-    categories,
-    setCategories,
-  ] = useState<
-    AdminCategory[]
-  >([]);
-
-  const [
-    loadStatus,
-    setLoadStatus,
-  ] =
-    useState<LoadStatus>(
-      "loading",
-    );
-
-  const [
-    loadError,
-    setLoadError,
-  ] = useState("");
-
-  const [
-    reloadKey,
-    setReloadKey,
-  ] = useState(0);
-
-  const [
-    searchInput,
-    setSearchInput,
-  ] = useState("");
-
-  const [
-    search,
-    setSearch,
-  ] = useState("");
-
-  const [
-    certificationFilter,
-    setCertificationFilter,
-  ] = useState("all");
-
-  const [
-    categoryFilter,
-    setCategoryFilter,
-  ] = useState("all");
-
-  const [
-    questionType,
-    setQuestionType,
-  ] = useState("all");
-
-  const [
-    difficulty,
-    setDifficulty,
-  ] = useState("all");
-
-  const [
-    workflow,
-    setWorkflow,
-  ] =
-    useState<WorkflowFilter>(
-      "all",
-    );
-
-  const [
-    mediaFilter,
-    setMediaFilter,
-  ] =
-    useState<MediaFilter>(
-      "all",
-    );
-
-  const [
-    page,
-    setPage,
-  ] = useState(1);
-
-  const [
-    totalCount,
-    setTotalCount,
-  ] = useState(0);
+  const { token, role, ready, handleError } = useDemoSession();
+  const [filters, setFilters] = useState<Filters>(emptyFilters);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [catalogReloadKey, setCatalogReloadKey] = useState(0);
+  const [bankState, setBankState] = useState<RequestState<AdminQuestionBankListResponse> | null>(null);
+  const [catalogState, setCatalogState] = useState<RequestState<Catalog> | null>(null);
+  const filtersId = useId();
+  const resultsId = useId();
+  const resultsHeadingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
-    const timeout =
-      window.setTimeout(
-        () => {
-          setSearch(
-            searchInput.trim(),
-          );
-          setPage(1);
-        },
-        300,
-      );
+    const next = searchInput.trim();
+    if (next === search) return;
+    const timeout = window.setTimeout(() => {
+      setSearch(next);
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [searchInput, search]);
 
-    return () => {
-      window.clearTimeout(
-        timeout,
-      );
-    };
-  }, [searchInput]);
-
+  const catalogKey = String(catalogReloadKey);
+  const catalog = catalogState?.token === token && catalogState.key === catalogKey ? catalogState : null;
   useEffect(() => {
-    if (
-      !ready ||
-      !token
-    ) {
-      return;
-    }
-
+    if (!ready || !token) return;
     let cancelled = false;
+    Promise.all([getAdminCertifications(token), getAdminCategories(token)])
+      .then(([certifications, categories]) => {
+        if (!cancelled) setCatalogState({ token, key: catalogKey, status: "ready", data: { certifications, categories } });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        if (error instanceof ApiError && error.status === 401) {
+          handleError(error);
+          return;
+        }
+        setCatalogState({ token, key: catalogKey, status: "error", message: "Catalog filters could not be loaded. You can still search and use the other filters." });
+      });
+    return () => { cancelled = true; };
+  }, [ready, token, catalogKey, handleError]);
 
-    Promise.all([
-      getAdminCertifications(
-        token,
-      ),
-      getAdminCategories(
-        token,
-      ),
-    ])
-      .then(
-        ([
-          certificationItems,
-          categoryItems,
-        ]) => {
-          if (cancelled) {
-            return;
-          }
-
-          setCertifications(
-            certificationItems,
-          );
-          setCategories(
-            categoryItems,
-          );
-        },
-      )
-      .catch(
-        (
-          error: unknown,
-        ) => {
-          if (cancelled) {
-            return;
-          }
-
-          if (
-            error instanceof
-              ApiError &&
-            error.status ===
-              401
-          ) {
-            handleError(
-              error,
-            );
-          }
-        },
-      );
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    ready,
-    token,
-    handleError,
-  ]);
+  const query = useMemo<AdminQuestionBankQuery>(() => ({
+    page, page_size: pageSize, ...workflowQuery(filters.workflow),
+    ...(search ? { search } : {}),
+    ...(filters.certification !== "all" ? { certification_id: filters.certification } : {}),
+    ...(filters.category !== "all" ? { category_id: filters.category } : {}),
+    ...(filters.questionType !== "all" ? { question_type: filters.questionType } : {}),
+    ...(filters.difficulty !== "all" ? { difficulty: filters.difficulty } : {}),
+    ...(filters.media !== "all" ? { has_image: filters.media === "with_image" } : {}),
+  }), [page, search, filters]);
+  const requestKey = JSON.stringify([reloadKey, query]);
+  const bank = bankState?.token === token && bankState.key === requestKey ? bankState : null;
 
   useEffect(() => {
-    if (
-      !ready ||
-      !token
-    ) {
-      return;
-    }
-
+    if (!ready || !token) return;
     let cancelled = false;
+    getManagedQuestions(token, query)
+      .then((response) => {
+        if (cancelled) return;
+        const lastPage = Math.max(1, Math.ceil(response.count / pageSize));
+        if (page > lastPage) {
+          setPage(lastPage);
+          return;
+        }
+        setBankState({ token, key: requestKey, status: "ready", data: response });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        if (error instanceof ApiError && error.status === 401) {
+          handleError(error);
+          return;
+        }
+        if (error instanceof ApiError && error.status === 403) {
+          setBankState({ token, key: requestKey, status: "forbidden", message: "Your account does not have permission to manage the question bank." });
+          return;
+        }
+        setBankState({ token, key: requestKey, status: "error", message: "Unable to load questions. Check your connection and try again. Your search and filters have been kept." });
+      });
+    return () => { cancelled = true; };
+  }, [ready, token, requestKey, query, page, handleError]);
 
-    const query: AdminQuestionBankQuery =
-      {
-        page,
-        page_size:
-          pageSize,
-        ...workflowQuery(
-          workflow,
-        ),
-      };
+  const catalogData = catalog?.status === "ready" ? catalog.data : null;
+  const visibleCategories = useMemo(() => (catalogData?.categories ?? [])
+    .filter((category) => filters.certification === "all" || category.certification_id === filters.certification)
+    .sort((left, right) => left.name.localeCompare(right.name)), [catalogData, filters.certification]);
+  const activeFilters = Object.values(filters).filter((value) => value !== "all").length;
+  const hasFilters = activeFilters > 0 || searchInput.trim() !== "" || search !== "";
+  const searchPending = searchInput.trim() !== search;
+  const forbidden = bank?.status === "forbidden" || role === "learner";
+  const canManage = !forbidden && (role === "administrator" || role === "contributor");
 
-    if (search) {
-      query.search =
-        search;
-    }
-
-    if (
-      certificationFilter !==
-      "all"
-    ) {
-      query.certification_id =
-        certificationFilter;
-    }
-
-    if (
-      categoryFilter !==
-      "all"
-    ) {
-      query.category_id =
-        categoryFilter;
-    }
-
-    if (
-      questionType !==
-      "all"
-    ) {
-      query.question_type =
-        questionType as AdminQuestionType;
-    }
-
-    if (
-      difficulty !==
-      "all"
-    ) {
-      query.difficulty =
-        difficulty as AdminDifficulty;
-    }
-
-    if (
-      mediaFilter ===
-      "with_image"
-    ) {
-      query.has_image =
-        true;
-    }
-
-    if (
-      mediaFilter ===
-      "without_image"
-    ) {
-      query.has_image =
-        false;
-    }
-
-    getManagedQuestions(
-      token,
-      query,
-    )
-      .then(
-        (response) => {
-          if (cancelled) {
-            return;
-          }
-
-          const pageCount =
-            Math.max(
-              1,
-              Math.ceil(
-                response.count /
-                  pageSize,
-              ),
-            );
-
-          if (
-            page >
-            pageCount
-          ) {
-            setPage(
-              pageCount,
-            );
-            return;
-          }
-
-          setQuestions(
-            response.items,
-          );
-          setTotalCount(
-            response.count,
-          );
-          setLoadError("");
-          setLoadStatus(
-            "ready",
-          );
-        },
-      )
-      .catch(
-        (
-          error: unknown,
-        ) => {
-          if (cancelled) {
-            return;
-          }
-
-          if (
-            error instanceof
-              ApiError &&
-            error.status ===
-              401
-          ) {
-            handleError(
-              error,
-            );
-            return;
-          }
-
-          if (
-            error instanceof
-              ApiError &&
-            error.status ===
-              403
-          ) {
-            setLoadStatus(
-              "forbidden",
-            );
-            return;
-          }
-
-          setLoadError(
-            error instanceof
-              Error
-              ? error.message
-              : "Unable to load questions.",
-          );
-          setLoadStatus(
-            "error",
-          );
-        },
-      );
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    ready,
-    token,
-    reloadKey,
-    handleError,
-    search,
-    certificationFilter,
-    categoryFilter,
-    questionType,
-    difficulty,
-    workflow,
-    mediaFilter,
-    page,
-  ]);
-
-  const visibleCategories =
-    useMemo(
-      () =>
-        categories
-          .filter(
-            (category) =>
-              certificationFilter ===
-                "all" ||
-              category.certification_id ===
-                certificationFilter,
-          )
-          .sort(
-            (
-              left,
-              right,
-            ) =>
-              left.name.localeCompare(
-                right.name,
-              ),
-          ),
-      [
-        categories,
-        certificationFilter,
-      ],
-    );
-
-  const pageCount =
-    Math.max(
-      1,
-      Math.ceil(
-        totalCount /
-          pageSize,
-      ),
-    );
-
-  const startItem =
-    totalCount === 0
-      ? 0
-      : (page - 1) *
-          pageSize +
-        1;
-
-  const endItem =
-    Math.min(
-      page * pageSize,
-      totalCount,
-    );
-
-  function retryLoading() {
-    setLoadError("");
-    setLoadStatus(
-      "loading",
-    );
-    setReloadKey(
-      (value) =>
-        value + 1,
-    );
-  }
-
-  function updateCertification(
-    value: string,
-  ) {
-    setCertificationFilter(
-      value,
-    );
-    setCategoryFilter(
-      "all",
-    );
-    setPage(1);
-  }
-
-  function updateCategory(
-    value: string,
-  ) {
-    setCategoryFilter(
-      value,
-    );
-    setPage(1);
-  }
-
-  function updateQuestionType(
-    value: string,
-  ) {
-    setQuestionType(
-      value,
-    );
-    setPage(1);
-  }
-
-  function updateDifficulty(
-    value: string,
-  ) {
-    setDifficulty(
-      value,
-    );
-    setPage(1);
-  }
-
-  function updateWorkflow(
-    value: string,
-  ) {
-    setWorkflow(
-      value as WorkflowFilter,
-    );
-    setPage(1);
-  }
-
-  function updateMedia(
-    value: string,
-  ) {
-    setMediaFilter(
-      value as MediaFilter,
-    );
+  function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
+    setFilters((previous) => ({ ...previous, [key]: value, ...(key === "certification" ? { category: "all" } : {}) }));
     setPage(1);
   }
 
   function clearFilters() {
     setSearchInput("");
     setSearch("");
-    setCertificationFilter(
-      "all",
-    );
-    setCategoryFilter(
-      "all",
-    );
-    setQuestionType(
-      "all",
-    );
-    setDifficulty(
-      "all",
-    );
-    setWorkflow(
-      "all",
-    );
-    setMediaFilter(
-      "all",
-    );
+    setFilters(emptyFilters);
     setPage(1);
   }
 
-  if (
-    !ready ||
-    !token
-  ) {
-    return (
-      <p role="status">
-        Checking session...
-      </p>
-    );
+  function changePage(nextPage: number) {
+    setPage(nextPage);
+    resultsHeadingRef.current?.focus();
   }
 
+  if (!ready || !token) return <p role="status">Checking session...</p>;
+
   return (
-    <section>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <PageHeader
-          stepLabel="JHEP-23 / Question Bank"
-          title="Question Bank"
-          subtitle="Search, filter and manage practice questions across the bank."
-        />
-
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Link
-            href="/admin/questions/import"
-            className="inline-flex min-h-11 items-center justify-center rounded-md border border-brand-border bg-white px-5 text-sm font-semibold text-brand-text hover:bg-brand-surface focus-visible:outline-2 focus-visible:outline-offset-2"
-          >
-            Import Questions
-          </Link>
-
-          <Link
-            href="/admin/questions/new"
-            className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand-accent px-6 text-sm font-semibold text-brand-text hover:bg-brand-accent-tint focus-visible:outline-2 focus-visible:outline-offset-2"
-          >
-            + Create Question
-          </Link>
+    <section className="@container/bank min-w-0 space-y-5 wrap-anywhere">
+      <div className="flex min-w-0 flex-col gap-4 @min-[740px]/bank:flex-row @min-[740px]/bank:items-start @min-[740px]/bank:justify-between">
+        <div className="min-w-0">
+          <PageHeader stepLabel="Content management" title="Question Bank" subtitle="Search, filter and manage practice questions across the bank." />
         </div>
+        {canManage && <div className="flex min-w-0 flex-col gap-2 @min-[430px]/bank:flex-row @min-[740px]/bank:shrink-0">
+          <Link href="/admin/questions/import" className={secondaryButton}>Import Questions</Link>
+          <Link href="/admin/questions/new" className="inline-flex min-h-11 min-w-0 items-center justify-center rounded-md bg-brand-accent px-4 py-2 text-center text-sm font-semibold text-brand-text hover:bg-brand-accent-tint focus-visible:outline-2 focus-visible:outline-offset-2">+ Create Question</Link>
+        </div>}
       </div>
 
-      {loadStatus ===
-        "forbidden" && (
-        <div
-          role="alert"
-          className="rounded-md border border-brand-border bg-brand-surface p-6"
-        >
-          <h2 className="font-semibold">
-            Access denied
-          </h2>
-          <p className="mt-2 text-sm text-brand-text/70">
-            Your account does not
-            have permission to
-            manage the question
-            bank.
-          </p>
-        </div>
-      )}
-
-      {loadStatus ===
-        "error" && (
-        <div
-          role="alert"
-          className="rounded-md border border-brand-border bg-white p-6"
-        >
-          <p className="text-sm text-red-700">
-            {loadError}
-          </p>
-          <button
-            type="button"
-            onClick={
-              retryLoading
-            }
-            className="mt-4 rounded-md bg-brand-accent px-4 py-2 text-sm font-medium text-brand-text"
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {loadStatus ===
-        "loading" && (
-        <div
-          role="status"
-          className="rounded-md border border-brand-border bg-white p-8 text-sm text-brand-text/70"
-        >
-          Loading question
-          bank...
-        </div>
-      )}
-
-      {loadStatus ===
-        "ready" && (
-        <>
-          <div className="mb-4 rounded-md border border-brand-border bg-white p-4">
-            <div className="grid gap-3 lg:grid-cols-3 xl:grid-cols-4">
-              <label className="relative lg:col-span-2">
-                <span className="sr-only">
-                  Search questions
-                </span>
-                <Search
-                  aria-hidden="true"
-                  className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-brand-text/60"
-                />
-                <input
-                  type="search"
-                  value={
-                    searchInput
-                  }
-                  onChange={(
-                    event,
-                  ) =>
-                    setSearchInput(
-                      event
-                        .target
-                        .value,
-                    )
-                  }
-                  placeholder="Search question text, certification, category or full ID"
-                  className="h-11 w-full rounded-md border border-brand-border bg-white pl-9 pr-3 text-sm outline-none focus:border-brand-accent"
-                />
-              </label>
-
-              <select
-                aria-label="Certification"
-                value={
-                  certificationFilter
-                }
-                onChange={(
-                  event,
-                ) =>
-                  updateCertification(
-                    event
-                      .target
-                      .value,
-                  )
-                }
-                className="h-11 rounded-md border border-brand-border bg-white px-3 text-sm"
-              >
-                <option value="all">
-                  All Certifications
-                </option>
-                {certifications.map(
-                  (
-                    certification,
-                  ) => (
-                    <option
-                      key={
-                        certification.id
-                      }
-                      value={
-                        certification.id
-                      }
-                    >
-                      {
-                        certification.name
-                      }
-                    </option>
-                  ),
-                )}
-              </select>
-
-              <select
-                aria-label="Category"
-                value={
-                  categoryFilter
-                }
-                onChange={(
-                  event,
-                ) =>
-                  updateCategory(
-                    event
-                      .target
-                      .value,
-                  )
-                }
-                className="h-11 rounded-md border border-brand-border bg-white px-3 text-sm"
-              >
-                <option value="all">
-                  All Categories
-                </option>
-                {visibleCategories.map(
-                  (
-                    category,
-                  ) => (
-                    <option
-                      key={
-                        category.id
-                      }
-                      value={
-                        category.id
-                      }
-                    >
-                      {
-                        category.name
-                      }
-                    </option>
-                  ),
-                )}
-              </select>
-
-              <select
-                aria-label="Question type"
-                value={
-                  questionType
-                }
-                onChange={(
-                  event,
-                ) =>
-                  updateQuestionType(
-                    event
-                      .target
-                      .value,
-                  )
-                }
-                className="h-11 rounded-md border border-brand-border bg-white px-3 text-sm"
-              >
-                <option value="all">
-                  All Types
-                </option>
-                <option value="multiple_choice">
-                  Multiple Choice
-                </option>
-                <option value="short_answer">
-                  Short Answer
-                </option>
-              </select>
-
-              <select
-                aria-label="Difficulty"
-                value={
-                  difficulty
-                }
-                onChange={(
-                  event,
-                ) =>
-                  updateDifficulty(
-                    event
-                      .target
-                      .value,
-                  )
-                }
-                className="h-11 rounded-md border border-brand-border bg-white px-3 text-sm"
-              >
-                <option value="all">
-                  All Difficulties
-                </option>
-                <option value="easy">
-                  Easy
-                </option>
-                <option value="medium">
-                  Medium
-                </option>
-                <option value="hard">
-                  Hard
-                </option>
-              </select>
-
-              <select
-                aria-label="Workflow status"
-                value={
-                  workflow
-                }
-                onChange={(
-                  event,
-                ) =>
-                  updateWorkflow(
-                    event
-                      .target
-                      .value,
-                  )
-                }
-                className="h-11 rounded-md border border-brand-border bg-white px-3 text-sm"
-              >
-                <option value="all">
-                  All Workflow States
-                </option>
-                <option value="pending">
-                  Pending Review
-                </option>
-                <option value="submitted">
-                  Submitted
-                </option>
-                <option value="in_review">
-                  In Review
-                </option>
-                <option value="approved_draft">
-                  Approved Draft
-                </option>
-                <option value="rejected">
-                  Rejected
-                </option>
-                <option value="published">
-                  Published
-                </option>
-                <option value="retired">
-                  Retired
-                </option>
-              </select>
-
-              <select
-                aria-label="Media"
-                value={
-                  mediaFilter
-                }
-                onChange={(
-                  event,
-                ) =>
-                  updateMedia(
-                    event
-                      .target
-                      .value,
-                  )
-                }
-                className="h-11 rounded-md border border-brand-border bg-white px-3 text-sm"
-              >
-                <option value="all">
-                  All Media
-                </option>
-                <option value="with_image">
-                  With Image
-                </option>
-                <option value="without_image">
-                  Without Image
-                </option>
-              </select>
-            </div>
-
-            <div className="mt-3 flex items-center justify-between gap-4">
-              <p className="text-xs text-brand-text/60">
-                Filters run on the
-                server so the bank
-                stays fast as it
-                grows.
-              </p>
-
-              <button
-                type="button"
-                onClick={
-                  clearFilters
-                }
-                className="text-sm font-medium text-brand-text/80 underline-offset-4 hover:underline"
-              >
-                Clear filters
-              </button>
-            </div>
+      {forbidden ? <div role="alert" className="rounded-md border border-brand-border bg-brand-surface p-5">
+        <h2 className="font-semibold">Access denied</h2>
+        <p className="mt-2 text-sm text-brand-text/80">Your account does not have permission to manage the question bank.</p>
+      </div> : <>
+        <section aria-label="Question Bank filters" className="min-w-0 space-y-3 rounded-md border border-brand-border bg-white p-3 sm:p-4">
+          <label className="relative block min-w-0">
+            <span className="sr-only">Search questions</span>
+            <Search aria-hidden="true" className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-brand-text/60" />
+            <input type="search" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search question text, certification, category or full ID"
+              className="min-h-11 w-full min-w-0 rounded-md border border-brand-border bg-white py-2 pl-9 pr-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-brand-accent sm:text-sm" />
+          </label>
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <button type="button" className={`${secondaryButton} @min-[640px]/bank:hidden`} aria-expanded={filtersOpen} aria-controls={filtersId} onClick={() => setFiltersOpen((open) => !open)}>
+              <SlidersHorizontal aria-hidden="true" className="size-4 shrink-0" /> Filters{activeFilters > 0 ? ` (${activeFilters} active)` : ""}
+              <ChevronDown aria-hidden="true" className={`size-4 shrink-0 ${filtersOpen ? "rotate-180" : ""}`} />
+            </button>
+            <p className="hidden text-sm font-medium text-brand-text/80 @min-[640px]/bank:block">Filters{activeFilters ? ` (${activeFilters} active)` : ""}</p>
+            <button type="button" disabled={!hasFilters} onClick={clearFilters} className={secondaryButton}>Clear filters</button>
           </div>
-
-          <div className="overflow-hidden rounded-md border border-brand-border bg-white">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1040px] border-collapse text-left text-sm">
-                <thead className="bg-brand-surface text-xs font-semibold uppercase tracking-wide text-brand-text/70">
-                  <tr>
-                    <th className="px-3 py-4">
-                      ID
-                    </th>
-                    <th className="px-3 py-4">
-                      Question Preview
-                    </th>
-                    <th className="px-3 py-4">
-                      Certification
-                    </th>
-                    <th className="px-3 py-4">
-                      Category
-                    </th>
-                    <th className="px-3 py-4">
-                      Type
-                    </th>
-                    <th className="px-3 py-4">
-                      Difficulty
-                    </th>
-                    <th className="px-3 py-4">
-                      Status
-                    </th>
-                    <th className="px-3 py-4">
-                      Media
-                    </th>
-                    <th className="px-3 py-4">
-                      Updated
-                    </th>
-                    <th className="px-3 py-4 text-center">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {questions.map(
-                    (
-                      question,
-                    ) => {
-                      const displayStatus =
-                        formatStatus(
-                          question.publication_status,
-                          question.review_status,
-                        );
-
-                      return (
-                        <tr
-                          key={
-                            question.question_id
-                          }
-                          className="border-t border-brand-border"
-                        >
-                          <td
-                            className="whitespace-nowrap px-3 py-4 font-medium"
-                            title={
-                              question.question_id
-                            }
-                          >
-                            {shortQuestionId(
-                              question.question_id,
-                            )}
-                          </td>
-
-                          <td className="max-w-[300px] px-3 py-4">
-                            <span className="block truncate">
-                              {
-                                question.question_preview
-                              }
-                            </span>
-                          </td>
-
-                          <td className="max-w-[180px] px-3 py-4">
-                            {
-                              question.certification_name
-                            }
-                          </td>
-
-                          <td className="max-w-[180px] px-3 py-4">
-                            {question.category_name ??
-                              "Uncategorized"}
-                          </td>
-
-                          <td className="whitespace-nowrap px-3 py-4">
-                            {questionTypeLabel(
-                              question.question_type,
-                            )}
-                          </td>
-
-                          <td className="whitespace-nowrap px-3 py-4">
-                            {difficultyLabel(
-                              question.difficulty,
-                            )}
-                          </td>
-
-                          <td className="px-3 py-4">
-                            <span
-                              className={`inline-flex min-w-24 justify-center rounded-full px-3 py-1.5 text-xs font-medium ${statusClasses(
-                                displayStatus,
-                              )}`}
-                            >
-                              {
-                                displayStatus
-                              }
-                            </span>
-                          </td>
-
-                          <td className="px-3 py-4 text-brand-text/70">
-                            {question.has_image ? (
-                              <span className="inline-flex items-center gap-1.5">
-                                <ImageIcon
-                                  aria-hidden="true"
-                                  className="size-4"
-                                />
-                                Image
-                              </span>
-                            ) : (
-                              "—"
-                            )}
-                          </td>
-
-                          <td className="whitespace-nowrap px-3 py-4">
-                            {formatDate(
-                              question.last_updated,
-                            )}
-                          </td>
-
-                          <td className="px-3 py-4 text-center">
-                            <Link
-                              href={`/admin/questions/${encodeURIComponent(
-                                question.question_id,
-                              )}`}
-                              aria-label={`View ${shortQuestionId(
-                                question.question_id,
-                              )}`}
-                              className="inline-flex size-8 items-center justify-center rounded-md hover:bg-brand-surface"
-                            >
-                              <MoreHorizontal
-                                aria-hidden="true"
-                                className="size-5"
-                              />
-                            </Link>
-                          </td>
-                        </tr>
-                      );
-                    },
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {questions.length ===
-              0 && (
-              <div className="border-t border-brand-border p-10 text-center text-sm text-brand-text/70">
-                No questions match
-                the current
-                filters.
-              </div>
-            )}
+          {catalog?.status === "error" && <div role="alert" className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+            <p>{catalog.message}</p>
+            <button type="button" className={secondaryButton} onClick={() => setCatalogReloadKey((value) => value + 1)}>Retry catalog filters</button>
+          </div>}
+          <div id={filtersId} className={`${filtersOpen ? "grid" : "hidden @min-[640px]/bank:grid"} min-w-0 grid-cols-1 gap-3 @min-[440px]/bank:grid-cols-2 @min-[760px]/bank:grid-cols-3`}>
+            <SelectFilter label="Certification" value={filters.certification} disabled={!catalogData}
+              options={[{ value: "all", label: "All Certifications" }, ...(catalogData?.certifications ?? []).map((item) => ({ value: item.id, label: item.name }))]}
+              onChange={(value) => updateFilter("certification", value)} />
+            <SelectFilter label="Category" value={filters.category} disabled={!catalogData}
+              options={[{ value: "all", label: "All Categories" }, ...visibleCategories.map((item) => ({ value: item.id, label: item.name }))]}
+              onChange={(value) => updateFilter("category", value)} />
+            <SelectFilter label="Question type" value={filters.questionType} options={[{ value: "all", label: "All Types" }, { value: "multiple_choice", label: "Multiple Choice" }, { value: "short_answer", label: "Short Answer" }]} onChange={(value) => updateFilter("questionType", value as Filters["questionType"])} />
+            <SelectFilter label="Difficulty" value={filters.difficulty} options={[{ value: "all", label: "All Difficulties" }, { value: "easy", label: "Easy" }, { value: "medium", label: "Medium" }, { value: "hard", label: "Hard" }]} onChange={(value) => updateFilter("difficulty", value as Filters["difficulty"])} />
+            <SelectFilter label="Workflow status" value={filters.workflow} options={[{ value: "all", label: "All Workflow States" }, { value: "pending", label: "Draft (not submitted)" }, { value: "submitted", label: "Submitted" }, { value: "in_review", label: "In Review" }, { value: "approved_draft", label: "Approved Draft" }, { value: "rejected", label: "Rejected" }, { value: "published", label: "Published" }, { value: "retired", label: "Retired" }]} onChange={(value) => updateFilter("workflow", value as WorkflowFilter)} />
+            <SelectFilter label="Media" value={filters.media} options={[{ value: "all", label: "All Media" }, { value: "with_image", label: "With Image" }, { value: "without_image", label: "Without Image" }]} onChange={(value) => updateFilter("media", value as MediaFilter)} />
+            {!catalog && <p role="status" className="text-xs text-brand-text/70">Loading certification and category options...</p>}
           </div>
-
-          <div className="mt-5 flex flex-col gap-3 text-sm text-brand-text/80 sm:flex-row sm:items-center sm:justify-between">
-            <p>
-              Showing{" "}
-              {startItem}–
-              {endItem} of{" "}
-              {totalCount}{" "}
-              questions
-            </p>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                aria-label="Previous page"
-                onClick={() =>
-                  setPage(
-                    (
-                      value,
-                    ) =>
-                      Math.max(
-                        1,
-                        value -
-                          1,
-                      ),
-                  )
-                }
-                disabled={
-                  page === 1
-                }
-                className="rounded px-2 py-1 disabled:opacity-40"
-              >
-                ‹
-              </button>
-
-              <span className="min-w-16 text-center">
-                {page} /{" "}
-                {pageCount}
-              </span>
-
-              <button
-                type="button"
-                aria-label="Next page"
-                onClick={() =>
-                  setPage(
-                    (
-                      value,
-                    ) =>
-                      Math.min(
-                        pageCount,
-                        value +
-                          1,
-                      ),
-                  )
-                }
-                disabled={
-                  page ===
-                  pageCount
-                }
-                className="rounded px-2 py-1 disabled:opacity-40"
-              >
-                ›
-              </button>
-
-              <span className="ml-2">
-                {pageSize} /
-                page
-              </span>
-            </div>
-          </div>
-        </>
-      )}
+        </section>
+        <section aria-labelledby={resultsId} className="min-w-0 space-y-3">
+          <h2 id={resultsId} ref={resultsHeadingRef} tabIndex={-1} className="scroll-mt-24 text-lg font-semibold focus-visible:outline-2 focus-visible:outline-offset-2">Questions</h2>
+          {!bank || searchPending ? <div role="status" className="flex min-w-0 items-center gap-3 rounded-md border border-brand-border bg-white p-5 text-sm text-brand-text/80">
+            <Loader2 aria-hidden="true" className="size-5 shrink-0 animate-spin" /> {bankState?.token === token ? "Updating questions..." : "Loading question bank..."}
+          </div> : bank.status === "error" ? <div role="alert" className="space-y-3 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+            <div className="flex items-start gap-2"><AlertCircle aria-hidden="true" className="mt-0.5 size-5 shrink-0" /><p>{bank.message}</p></div>
+            <button type="button" className={secondaryButton} onClick={() => setReloadKey((value) => value + 1)}>Retry</button>
+          </div> : bank.status === "ready" && <QuestionBankResults items={bank.data.items} totalCount={bank.data.count} page={page} pageSize={pageSize} onPageChange={changePage} role={role} userId={userIdFromToken(token)} hasFilters={hasFilters} onClearFilters={clearFilters} />}
+        </section>
+      </>}
     </section>
   );
 }

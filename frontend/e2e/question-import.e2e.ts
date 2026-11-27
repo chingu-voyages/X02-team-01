@@ -683,7 +683,7 @@ test.describe.serial(
 
           await expect(
             row.getByText(
-              "Pending Review",
+              "Draft",
               {
                 exact:
                   true,
