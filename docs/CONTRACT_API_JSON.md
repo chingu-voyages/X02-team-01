@@ -1,5 +1,8 @@
 # JHEP — Current API Contract and Mock JSON Responses
 
+<!-- JHEP-207 checkpoint 6F -->
+> **Security update (JHEP-207):** Authentication, session revocation, MFA enrollment and Users & Access reviewed against commit `a727cd045112` (27 November 2026). See [Administrator security and onboarding](administrator-security.md). Earlier non-security sections retain their stated baselines. Local regression evidence does not certify a deployed environment.
+
 <!-- JHEP-207 checkpoint 4D -->
 > **Stabilization update (JHEP-207):** Exam deletion, question review and import catalog-confirmation sections checked against commit `0aa545138100` (27 November 2026). Earlier sections retain their original baselines. See the exam and import specifications for verification scope.
 
@@ -53,6 +56,13 @@ Role failure:
   "detail": "Insufficient permissions"
 }
 ```
+
+A normal Bearer token is required for protected learner content and
+administrative routes. Both resolve the current database account and
+compare the token issue time against `sessions_invalid_before`. Confirmed
+MFA accounts also require MFA proof. Restricted enrollment and pending
+challenge tokens are not full access tokens. Stateless logout is the
+exception: it checks a normal JWT but does not globally revoke it.
 
 ## 1.2 Roles
 
@@ -163,9 +173,9 @@ Bulk-imported questions begin as `pending / draft`, so they are not learner-visi
 | POST | `/api/v1/auth/logout` | CURRENT | Bearer |
 | POST | `/api/v1/auth/forgot-password` | CURRENT | No |
 | POST | `/api/v1/auth/reset-password` | CURRENT | No |
-| GET | `/api/v1/auth/mfa/status` | CURRENT (JHEP-109) | Bearer |
-| POST | `/api/v1/auth/mfa/enroll/setup` | CURRENT (JHEP-109) | Bearer |
-| POST | `/api/v1/auth/mfa/enroll/verify` | CURRENT (JHEP-109) | Bearer |
+| GET | `/api/v1/auth/mfa/status` | CURRENT (JHEP-109) | Full or enrollment token |
+| POST | `/api/v1/auth/mfa/enroll/setup` | CURRENT (JHEP-109) | Full or enrollment token |
+| POST | `/api/v1/auth/mfa/enroll/verify` | CURRENT (JHEP-109) | Full or enrollment token |
 | POST | `/api/v1/auth/mfa/verify` | CURRENT (JHEP-109) | Challenge token |
 
 
@@ -252,6 +262,9 @@ Bulk-imported questions begin as `pending / draft`, so they are not learner-visi
 |---|---|---|---|
 | GET | `/api/v1/admin/users?q=&limit=&offset=` | CURRENT | Admin |
 | PATCH | `/api/v1/admin/users/{user_id}/role` | CURRENT | Admin |
+| PATCH | `/api/v1/admin/users/{user_id}/grading-permissions` | CURRENT (JHEP-192) | Admin |
+| GET | `/api/v1/admin/users/{user_id}/administrator-promotion` | CURRENT (JHEP-207) | Admin |
+| POST | `/api/v1/admin/users/{user_id}/administrator-promotion` | CURRENT (JHEP-207) | Admin + recent MFA sign-in |
 
 ## 2.7 Operational
 
@@ -348,10 +361,11 @@ Current frontend destinations:
 ```text
 learner       -> /categories
 contributor   -> /admin/questions
-administrator -> /admin/questions
+administrator (enrollment required) -> /account/security
+administrator (full MFA session)    -> /admin/questions
 ```
 
-Logout is stateless: the client discards the JWT.
+Logout is stateless: the client discards the JWT. It does not revoke a copied token on the server. Password reset, confirmed MFA enrollment, and administrator promotion do revoke older sessions through the account cutoff. See §3.9–3.10.
 
 ## 3.3 Password reset — CURRENT (JHEP-124)
 
@@ -369,7 +383,8 @@ A successful reset:
   verified against the stored Argon2id hash (422 `PASSWORD_UNCHANGED`;
   no plaintext comparison). A historical password-history check (the
   last N hashes) is a documented follow-up;
-- invalidates access tokens issued before the reset timestamp;
+- invalidates access tokens and pending MFA challenges issued before the reset timestamp across protected learner and administrator routes;
+- preserves confirmed MFA enrollment and recovery codes;
 - does not change role/ownership.
 
 ---
@@ -377,10 +392,41 @@ A successful reset:
 
 ## 3.9 Multi-factor authentication — enrollment — CURRENT (JHEP-109)
 
-**Role policy (PO-confirmed):** Administrators MUST enroll; Contributors
-MAY; Learners are not offered enrollment. The feature is dormant by
-default — accounts without a confirmed enrollment get a byte-identical
-sign-in response.
+**Role policy:** Administrators MUST enroll before normal access;
+Contributors MAY enroll; Learners are not offered new enrollment.
+Once confirmed, MFA remains required at sign-in even after a role change.
+
+A password-verified but unenrolled Administrator receives the following
+login response (example):
+
+```json
+{
+  "access_token": "<15-minute enrollment-only token>",
+  "token_type": "bearer",
+  "learner": {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "email": "admin@example.com",
+    "fullName": "Example Administrator",
+    "role": "administrator",
+    "is_verified": true,
+    "status": "verified",
+    "created_at": "2026-11-27T10:00:00Z"
+  },
+  "mfa_required": false,
+  "mfa_enrollment_required": true,
+  "challenge_id": null,
+  "mfa_expires_in_seconds": 900
+}
+```
+
+This JWT has `mfa: enrollment` and authorizes only the three MFA
+status/setup/confirmation endpoints. Administrative requests return
+403 `MFA_ENROLLMENT_REQUIRED` (under `detail`); learner content requests
+reject the restricted scope with 401. Legacy full tokens for unenrolled
+Administrators are also refused. The browser routes to Account Security.
+After confirmation, the token is invalidated and the user must sign in
+again; it is never upgraded into a full session. Ordinary unenrolled
+Learners and Contributors receive a normal full token.
 
 ### GET `/api/v1/auth/mfa/status`
 
@@ -397,7 +443,7 @@ prompt:
 ```
 
 `configured: false` means the deployment lacks `MFA_ENCRYPTION_KEY`.
-MFA is disabled and the rest of the application continues to run normally.
+Startup is allowed without the key, but setup returns 503 and administrative onboarding/promotion cannot proceed normally. Existing MFA accounts still require MFA. Restore the correct key rather than replacing it.
 
 ### POST `/api/v1/auth/mfa/enroll/setup`
 
@@ -413,12 +459,12 @@ with `MFA_ENCRYPTION_KEY`, which is optional at application startup.
 ```
 
 The frontend renders `otpauth_uri` as a QR code for an authenticator app.
-Calling setup again invalidates the prior unconfirmed secret.
+Calling setup again invalidates the prior unconfirmed secret. Confirmed enrollment cannot be replaced via setup or confirmation; these operations return 409 `MFA_ALREADY_ENROLLED` for an already enrolled authenticated account.
 
 ### POST `/api/v1/auth/mfa/enroll/verify`
 
 Confirms enrollment with a live six-digit code and issues recovery codes.
-Recovery codes are shown once and stored only as SHA-256 digests.
+Request body: `{"code":"123456"}` (example). Recovery codes are shown once and stored only as SHA-256 digests. Successful confirmation invalidates prior sessions; the UI requires acknowledgement and a fresh login.
 
 ```json
 {
@@ -430,6 +476,7 @@ Recovery codes are shown once and stored only as SHA-256 digests.
 | Status | Code | When |
 |---|---|---|
 | 400 | `INVALID_MFA_CODE` | the code does not match |
+| 422 | `VALIDATION_ERROR` | required code missing |
 | 403 | `MFA_NOT_AVAILABLE` | the role is outside the enrollment policy |
 | 409 | `MFA_NOT_ENROLLED` / `MFA_ALREADY_ENROLLED` | setup was not started / enrollment was already confirmed |
 | 503 | `MFA_NOT_CONFIGURED` | the deployment lacks `MFA_ENCRYPTION_KEY` |
@@ -445,6 +492,7 @@ does not establish the final session. `POST /api/v1/auth/login` returns:
   "token_type": "bearer",
   "learner": { "...": "..." },
   "mfa_required": true,
+  "mfa_enrollment_required": false,
   "challenge_id": "<challenge uuid>",
   "mfa_expires_in_seconds": 300
 }
@@ -473,20 +521,23 @@ Recovery-code request:
 }
 ```
 
-Success returns the real authenticated session. Protected learner,
-Contributor, and Administrator behavior unlocks only after the second factor.
+Success returns a full `AuthTokenOut` session with both MFA flags false and null challenge metadata. The full token carries the original password-authentication time (`iat`) and `mfa_verified_at`. Its configured lifetime defaults to 12 hours for all roles; the separate administrator-promotion freshness window is five minutes. Protected content is available according to the current role only after the required factor verification.
 
 | Status | Code | When |
 |---|---|---|
 | 400 | `INVALID_MFA_CODE` | wrong, repeated, or expired code |
-| 403 | `MFA_CHALLENGE_LOCKED` | five failed attempts; a new login is required |
+| 403 | `MFA_CHALLENGE_LOCKED` | configured failure limit reached (default five); new login required |
+| 409 | `MFA_NOT_AVAILABLE` | enrollment or MFA configuration unavailable |
+| 422 | `VALIDATION_ERROR` | required code missing |
 | 401 | `INVALID_MFA_CHALLENGE` | missing or expired challenge token |
 
 Behavioral guarantees:
 
-- Challenge tokens carry an `mfa: pending` claim and are rejected by
-  `get_current_user` on every protected route.
+- Challenge tokens carry `mfa: pending` and are rejected by both learner and administrative content guards.
+- Challenges and recovery codes are consumed once; code attempts are counted per sign-in challenge.
 - Password reset never bypasses MFA; the next sign-in still challenges.
+- Password reset, successful MFA enrollment and administrator promotion advance the account session cutoff; older full sessions are rejected on subsequent protected requests. Older pending challenges cannot complete.
+- MFA reset/replacement and recovery-code regeneration are not self-service features.
 - Failed or abandoned challenges expire after `MFA_CHALLENGE_MINUTES`,
   which defaults to five minutes.
 - Enrollment is offered through `/account/security`, with a forced prompt
@@ -678,7 +729,8 @@ Can:
 - bulk import questions and explicitly confirm missing catalog records;
 - approve/publish eligible completed import batches;
 - view all question-import history, including uploader identity;
-- manage Learner/Contributor access.
+- manage Learner/Contributor access and Contributor grading permissions;
+- promote eligible Contributors through the separate recent-MFA Administrator promotion API.
 
 Bulk import never bypasses Administrator-only review/publication.
 
@@ -1402,30 +1454,178 @@ a missing batch returns `404`. General Question Bank multi-selection is separate
 
 # 11. Admin Users & Access — CURRENT
 
+All endpoints in this section require a full Administrator session. The
+frontend is `/admin/users`; the operational onboarding sequence is in
+[administrator-security.md](administrator-security.md).
+
+## 11.1 Search accounts
+
 **GET** `/api/v1/admin/users`
 
-Administrator only.
+Supports `q` (email/name search), `limit` (default 50), and `offset`
+(default 0). Results are ordered by email. The UI supports pagination.
 
-Supports `q`, `limit`, and `offset`.
+```json
+{
+  "items": [{
+    "id": "11111111-1111-4111-8111-111111111111",
+    "email": "candidate@example.com",
+    "fullName": "Example Candidate",
+    "role": "contributor",
+    "is_verified": true,
+    "grade_short_answers": true,
+    "grade_essays": false,
+    "created_at": "2026-11-27T10:00:00Z"
+  }],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+Password hashes, encrypted TOTP secrets and recovery codes are not returned.
+Promotion eligibility is fetched separately for the selected account.
+
+## 11.2 Ordinary role changes (JHEP-125)
 
 **PATCH** `/api/v1/admin/users/{user_id}/role`
 
-Administrator only.
+Request: `{"role":"contributor"}` or `{"role":"learner"}` only.
+An actual change preserves identity, content and history and records a
+role-change audit atomically. The current database role determines access
+on the next protected request. A no-op does not create an audit row.
+An existing browser session may still display its earlier role until
+the user signs in again. This endpoint cannot grant or remove Administrator
+access; self role changes are refused.
 
-Accepted target roles:
+## 11.3 Written-response grading permissions (JHEP-192)
 
-```text
-learner
-contributor
+**PATCH** `/api/v1/admin/users/{user_id}/grading-permissions`
+
+Contributor targets only. The independent optional boolean fields
+`grade_short_answers` and `grade_essays` can be changed separately;
+omitted or null fields keep their existing values.
+
+Example: `{"grade_short_answers":true,"grade_essays":false}`.
+A successful response includes `user` (the updated account) and `changes`
+(audit metadata for changed flags: `permission`, `action`,
+`previous_value`, `new_value`). Permission changes take effect on the next
+protected request; existing grades are not rewritten. Administrators have
+inherent grading permissions. A nonexistent target returns 404
+`USER_NOT_FOUND`; a non-Contributor target returns 409 `NOT_A_CONTRIBUTOR`.
+
+## 11.4 Administrator promotion eligibility (JHEP-207)
+
+**GET** `/api/v1/admin/users/{user_id}/administrator-promotion`
+
+Read-only. The actor must be a verified Administrator with a password and
+usable MFA enrollment. The target must be an existing Contributor, with
+verified email, a password and usable confirmed MFA. Self-promotion is
+forbidden. A preview is not an authorization or reserved plan; the server
+rechecks both accounts on the write request.
+
+```json
+{
+  "target": {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "email": "candidate@example.com",
+    "fullName": "Example Candidate",
+    "role": "contributor",
+    "is_verified": true,
+    "grade_short_answers": true,
+    "grade_essays": false,
+    "created_at": "2026-11-27T10:00:00Z"
+  },
+  "mfa_enrolled": true,
+  "eligible": true,
+  "issues": [],
+  "recent_authentication": true,
+  "authentication_max_age_seconds": 300
+}
 ```
 
-Role changes:
+`eligible` describes target eligibility. `recent_authentication` is
+independent: the actor's password and MFA timestamps must each be within
+300 seconds, and the token must have been issued for an Administrator.
+An eligible target can still require the actor to sign in again.
+`issues` contains objects with `code` and `message`. Enrollment alone is
+not proof that a stored secret is usable.
 
-- take effect on the next protected request;
-- preserve authored content/history;
-- write a role-change audit record.
+## 11.5 Explicit Administrator promotion (JHEP-207)
 
-Administrator provisioning is separately governed and not exposed through this role-change endpoint.
+**POST** `/api/v1/admin/users/{user_id}/administrator-promotion`
+
+```json
+{
+  "confirmation_email": "candidate@example.com",
+  "confirm": true,
+  "reason": "Approved administrator onboarding"
+}
+```
+
+The email is trimmed and compared case-insensitively to the selected
+account; it must be 1–255 characters. `confirm` must be a JSON boolean
+and must be true. The trimmed reason is required, 1–1,000 characters.
+Extra fields are forbidden. Do not send passwords or MFA codes to this
+endpoint; reauthentication is a new ordinary password-plus-MFA login.
+
+Successful response (200):
+
+```json
+{
+  "user": {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "email": "candidate@example.com",
+    "fullName": "Example Candidate",
+    "role": "administrator",
+    "is_verified": true,
+    "grade_short_answers": true,
+    "grade_essays": false,
+    "created_at": "2026-11-27T10:00:00Z"
+  },
+  "audit_id": "22222222-2222-4222-8222-222222222222",
+  "action": "promoted",
+  "role_before": "contributor",
+  "role_after": "administrator",
+  "changed_at": "2026-11-27T16:00:00Z",
+  "previous_privileged_sessions_revoked": true
+}
+```
+
+The service locks actor and target account rows in consistent order and
+revalidates authorization and eligibility. Role, session cutoff and audit
+record commit together; an audit-write failure rolls back the promotion.
+The audit records the actor, target, before/after roles, reason and time.
+Despite the historical response field name, the cutoff is also checked by
+learner content routes. Prior MFA challenges cannot mint a new session.
+The recipient must complete a fresh password-plus-MFA login. Administrator
+demotion, initial production bootstrap and administrator-managed passwords
+are outside this API.
+
+Promotion-specific failures use `{"detail":{"code":"...","message":"..."}}`:
+
+| HTTP | Code | Meaning |
+|---|---|---|
+| 401 | `ADMIN_PROMOTION_SESSION_INVALID` | Invalid or revoked actor session |
+| 403 | `ADMIN_PROMOTION_FORBIDDEN` | Actor is not an Administrator |
+| 403 | `ADMIN_PROMOTION_ACTOR_NOT_READY` | Actor lacks verified account/password/enrollment |
+| 403 | `ADMIN_PROMOTION_REAUTH_REQUIRED` | Fresh password and MFA sign-in needed |
+| 404 | `USER_NOT_FOUND` | Selected target not found |
+| 409 | `ADMIN_PROMOTION_SELF` | Self-promotion refused |
+| 409 | `ADMIN_PROMOTION_CONTRIBUTOR_REQUIRED` | Target is not a Contributor, including duplicate promotion |
+| 409 | `ADMIN_PROMOTION_EMAIL_UNVERIFIED` | Target must verify email |
+| 409 | `ADMIN_PROMOTION_PASSWORD_REQUIRED` | Target must have a password |
+| 409 | `ADMIN_PROMOTION_MFA_REQUIRED` | Target must enroll |
+| 409 | `ADMIN_PROMOTION_TARGET_MFA_UNAVAILABLE` | Target's MFA enrollment unusable |
+| 409 | `ADMIN_PROMOTION_EMAIL_MISMATCH` | Confirmation email differs |
+| 422 | `ADMIN_PROMOTION_CONFIRMATION_REQUIRED` | Explicit confirmation is false |
+| 503 | `ADMIN_PROMOTION_MFA_UNAVAILABLE` | Actor/deployment MFA unusable |
+
+The common auth dependency may return 401 or 403 before the promotion
+service runs (including `MFA_ENROLLMENT_REQUIRED`). Schema validation
+errors return 422 with FastAPI validation details, not necessarily a coded
+promotion error. On an uncertain outcome refresh the account and preview;
+do not blindly repeat the write.
 
 ---
 
@@ -1480,7 +1680,8 @@ After login:
 ```text
 learner       -> /categories
 contributor   -> /admin/questions
-administrator -> /admin/questions
+administrator (enrollment required) -> /account/security
+administrator (full MFA session)    -> /admin/questions
 ```
 
 Contributor Question Bank includes:
@@ -1508,7 +1709,11 @@ Frontend visibility does not replace backend authorization.
 | Verification token lifetime | 24 hours |
 | Verification resend interval | 60 seconds |
 | Password-reset token lifetime | 1 hour default |
-| Learner session token | default 12 hours |
+| Full sign-in session token | default 12 hours (`LEARNER_ACCESS_TOKEN_HOURS`, all roles) |
+| Administrator enrollment-only token | 15 minutes |
+| MFA sign-in challenge | default 5 minutes; default 5 failed attempts |
+| Administrator promotion authentication window | 300 seconds (password and MFA) |
+| Administrator promotion reason | 1–1,000 characters after trimming |
 | Question formats | `multiple_choice`, `short_answer` |
 | Difficulty | `easy`, `medium`, `hard` |
 | Review states | `pending`, `submitted`, `in_review`, `approved`, `rejected` |
@@ -1552,7 +1757,10 @@ Current behavior is defined primarily by:
 
 ```text
 backend/app/api/v1/router.py
+backend/app/api/deps.py
+backend/app/core/security.py
 backend/app/api/v1/endpoints/auth.py
+backend/app/api/v1/endpoints/admin_promotion.py
 backend/app/api/v1/endpoints/categories.py
 backend/app/api/v1/endpoints/questions.py
 backend/app/api/v1/endpoints/exams.py
@@ -1564,6 +1772,14 @@ backend/app/api/v1/endpoints/question_import_actions.py
 backend/app/api/v1/endpoints/question_import_catalog.py
 
 backend/app/schemas/auth.py
+backend/app/schemas/admin_user.py
+backend/app/schemas/admin_promotion.py
+backend/app/models/user.py
+backend/app/models/role_change_audit.py
+backend/app/services/mfa_service.py
+backend/app/services/admin_user_service.py
+backend/app/services/admin_promotion_service.py
+backend/app/services/password_reset_service.py
 backend/app/schemas/category.py
 backend/app/schemas/question.py
 backend/app/schemas/exam.py
