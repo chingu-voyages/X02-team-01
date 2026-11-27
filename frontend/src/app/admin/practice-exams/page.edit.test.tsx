@@ -94,7 +94,10 @@ beforeEach(() => {
   vi.mocked(getAdminCategories).mockResolvedValue([category, secondCategory]);
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 async function openEditor(exam: AdminPracticeExam = draft) {
   list.mockResolvedValue([exam]);
@@ -167,7 +170,12 @@ describe("JHEP-107 exam configuration editing", () => {
     const { user, fields } = await openEditor();
     fireEvent.change(fields.getByLabelText("Question count (1–100)"), { target: { value: invalid } });
     await user.click(fields.getByRole("button", { name: "Save changes" }));
-    expect(fields.getByRole("alert").textContent).toBe("Enter a whole-number question count from 1 to 100.");
+    expect(fields.getByRole("alert").textContent).toContain("Check the highlighted fields");
+    const field = fields.getByLabelText("Question count (1–100)");
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+    expect(field.getAttribute("aria-describedby")).toContain("exam-count-error");
+    expect(fields.getByText("Enter a whole-number question count from 1 to 100.")).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(field));
     expect(update).not.toHaveBeenCalled();
   });
 
@@ -187,6 +195,32 @@ describe("JHEP-107 exam configuration editing", () => {
     await user.type(count, "2");
     await user.click(fields.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(update).toHaveBeenCalledWith("admin-token", draft.id, expect.objectContaining({ question_count: 2 })));
+  });
+
+  it("shows the last checked eligible pool and explains a count above it", async () => {
+    const { user, fields } = await openEditor();
+    const count = fields.getByLabelText("Question count (1–100)");
+    expect(fields.getByText("5 eligible published questions")).toBeTruthy();
+    fireEvent.change(count, { target: { value: "6" } });
+    expect(fields.getByText(/You can save this configuration, but publishing requires/)).toBeTruthy();
+    expect(fields.getByRole("button", { name: "Save changes" })).toHaveProperty("disabled", false);
+    await user.selectOptions(fields.getByLabelText("Certification"), secondCertification.id);
+    expect(fields.queryByText("5 eligible published questions")).toBeNull();
+    expect(fields.getByText("Question availability will be checked after you save.")).toBeTruthy();
+  });
+
+  it("returns keyboard focus to the edit button after cancellation", async () => {
+    const { user, fields } = await openEditor();
+    await user.click(fields.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Edit exam" })));
+  });
+
+  it("focuses the updated exam details after a successful save", async () => {
+    update.mockResolvedValue(draft);
+    const { user, fields } = await openEditor();
+    await user.click(fields.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: draft.name })));
+    expect(screen.getByText(/Changes saved for/)).toBeTruthy();
   });
 
   it("locks name and scope when editing a previously unpublished exam", async () => {
@@ -236,6 +270,106 @@ describe("JHEP-107 exam configuration editing", () => {
     expect(count).toHaveProperty("value", "4");
     expect(screen.queryByText(/Changes saved for/)).toBeNull();
     expect(screen.getByRole("button", { name: "Manage Science practice" }).textContent).toContain("2 questions");
+  });
+
+  it("shows separate inline errors and focuses the first invalid field", async () => {
+    const { user, fields } = await openEditor();
+    const name = fields.getByLabelText("Exam name");
+    const certificationField = fields.getByLabelText("Certification");
+    const categoryField = fields.getByLabelText("Category");
+    await user.clear(name);
+    await user.selectOptions(certificationField, "");
+    fireEvent.change(fields.getByLabelText("Question count (1–100)"), { target: { value: "0" } });
+    await user.click(fields.getByRole("button", { name: "Save changes" }));
+    expect(fields.getByRole("alert").textContent).toContain("Check the highlighted fields");
+    expect(name.getAttribute("aria-invalid")).toBe("true");
+    expect(certificationField.getAttribute("aria-invalid")).toBe("true");
+    expect(categoryField.getAttribute("aria-invalid")).toBe("true");
+    expect(fields.getByText("Enter an exam name (1–255 characters).")).toBeTruthy();
+    expect(fields.getByText("Select a certification.")).toBeTruthy();
+    expect(fields.getByText("Select a category in the chosen certification.")).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(name));
+    expect(update).not.toHaveBeenCalled();
+    await user.type(name, "Valid name");
+    expect(name.getAttribute("aria-invalid")).toBeNull();
+    expect(certificationField.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("places a duplicate-name conflict beside the name field", async () => {
+    update.mockRejectedValue(new ApiError(409, "Exam name already exists in category", "Exam name already exists in category"));
+    const { user, fields } = await openEditor();
+    const name = fields.getByLabelText("Exam name");
+    await user.clear(name);
+    await user.type(name, "Duplicate exam");
+    await user.click(fields.getByRole("button", { name: "Save changes" }));
+    expect(await fields.findByText(/An exam with this name already exists/)).toBeTruthy();
+    expect(name.getAttribute("aria-invalid")).toBe("true");
+    expect(name).toHaveProperty("value", "Duplicate exam");
+    await waitFor(() => expect(document.activeElement).toBe(name));
+  });
+
+  it("maps server validation details to the relevant count field", async () => {
+    update.mockRejectedValue(new ApiError(422, "API request failed (422)", [
+      { loc: ["body", "question_count"], msg: "Input should be less than or equal to 100" },
+    ]));
+    const { user, fields } = await openEditor();
+    const count = fields.getByLabelText("Question count (1–100)");
+    await user.click(fields.getByRole("button", { name: "Save changes" }));
+    expect(await fields.findByText("Enter a whole-number question count from 1 to 100.")).toBeTruthy();
+    expect(count.getAttribute("aria-invalid")).toBe("true");
+    expect(count).toHaveProperty("value", "2");
+    await waitFor(() => expect(document.activeElement).toBe(count));
+  });
+
+  it("explains a network error without discarding entered values", async () => {
+    update.mockRejectedValue(new TypeError("Failed to fetch"));
+    const { user, fields } = await openEditor();
+    const count = fields.getByLabelText("Question count (1–100)");
+    fireEvent.change(count, { target: { value: "4" } });
+    await user.click(fields.getByRole("button", { name: "Save changes" }));
+    const notice = await fields.findByRole("alert");
+    expect(notice.textContent).toContain("Check your connection and try again.");
+    expect(notice.textContent).toContain("Your entries are still here.");
+    expect(count).toHaveProperty("value", "4");
+    await waitFor(() => expect(document.activeElement).toBe(notice.parentElement));
+    expect(fields.getByRole("button", { name: "Save changes" })).toHaveProperty("disabled", false);
+  });
+
+  it("switches mobile list and detail panels while preserving search", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    const user = userEvent.setup();
+    render(<AdminPracticeExamsPage />);
+    const exam = await screen.findByRole("button", { name: "Manage Science practice" });
+    const listHeading = screen.getByRole("heading", { name: "All practice exams" });
+    const detailHeading = screen.getByRole("heading", { name: draft.name });
+    const listPanel = listHeading.closest("section");
+    const detailsPanel = detailHeading.closest("section");
+    expect(listPanel?.classList.contains("hidden")).toBe(false);
+    expect(detailsPanel?.classList.contains("hidden")).toBe(true);
+    await user.type(screen.getByLabelText("Search practice exams"), "Science");
+    await user.click(exam);
+    expect(listPanel?.classList.contains("hidden")).toBe(true);
+    expect(detailsPanel?.classList.contains("hidden")).toBe(false);
+    await waitFor(() => expect(document.activeElement).toBe(detailHeading));
+    await user.click(screen.getByRole("button", { name: "Back to exam list" }));
+    expect(listPanel?.classList.contains("hidden")).toBe(false);
+    expect(detailsPanel?.classList.contains("hidden")).toBe(true);
+    expect(screen.getByLabelText("Search practice exams")).toHaveProperty("value", "Science");
+    await waitFor(() => expect(document.activeElement).toBe(listHeading));
+  });
+
+  it("keeps the mobile detail view available after saving an edit", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    update.mockResolvedValue(draft);
+    const user = userEvent.setup();
+    render(<AdminPracticeExamsPage />);
+    await user.click(await screen.findByRole("button", { name: "Manage Science practice" }));
+    await user.click(screen.getByRole("button", { name: "Edit exam" }));
+    const fields = within(screen.getByRole("form", { name: "Edit practice exam" }));
+    await user.click(fields.getByRole("button", { name: "Save changes" }));
+    const message = await screen.findByText(/Changes saved for/);
+    expect(message.closest("section")?.classList.contains("hidden")).toBe(false);
+    expect(screen.queryByRole("form", { name: "Edit practice exam" })).toBeNull();
   });
 
   it("routes an expired save session to the shared session handler", async () => {
