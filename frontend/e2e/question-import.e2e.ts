@@ -766,7 +766,7 @@ test.describe.serial(
 
         await expect(
           page.getByText(
-            "PENDING REVIEW — awaiting Administrator review.",
+            "Draft — save your changes, then submit for administrator review.",
             {
               exact:
                 true,
