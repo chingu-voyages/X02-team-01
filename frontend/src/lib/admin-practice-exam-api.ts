@@ -2,6 +2,7 @@ import { apiRequest } from "@/lib/api-client";
 
 import type {
   AdminPracticeExam,
+  AdminPracticeExamConfigurationUpdateRequest,
   AdminPracticeExamCreateRequest,
   AdminPracticeExamListResponse,
   PracticeExamNotReadyDetail,
@@ -40,6 +41,19 @@ export function createAdminPracticeExam(
     "/admin/practice-exams",
     token,
     { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+/** Update an existing draft, or the count of an unpublished exam. */
+export function updateAdminPracticeExam(
+  token: string,
+  examId: string,
+  payload: AdminPracticeExamConfigurationUpdateRequest,
+): Promise<AdminPracticeExam> {
+  return apiRequest<AdminPracticeExam>(
+    `/admin/practice-exams/${encodeURIComponent(examId)}`,
+    token,
+    { method: "PUT", body: JSON.stringify(payload) },
   );
 }
 

@@ -28,6 +28,7 @@ import {
   getAdminPracticeExams,
   practiceExamNotReadyDetail,
   setAdminPracticeExamPublication,
+  updateAdminPracticeExam,
 } from "@/lib/admin-practice-exam-api";
 
 import type {
@@ -170,19 +171,31 @@ export default function AdminPracticeExamsPage() {
   const [actionError, setActionError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  const [showCreate, setShowCreate] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editingExam, setEditingExam] = useState<AdminPracticeExam | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const countInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
   const [certificationId, setCertificationId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [questionCount, setQuestionCount] = useState("10");
-  const [createError, setCreateError] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const [pending, setPending] = useState<{
     examId: string;
     action: PublicationAction;
   } | null>(null);
   const [changing, setChanging] = useState(false);
+  const actionBusy = saving || refreshing || changing || pending !== null;
+  const controlsLocked = showForm || actionBusy;
+  const countOnly = editingExam?.status === "unpublished";
+
+  useEffect(() => {
+    if (showForm) {
+      (countOnly ? countInputRef : nameInputRef).current?.focus();
+    }
+  }, [showForm, countOnly]);
 
   useEffect(() => {
     if (!ready || !token || role !== "administrator") return;
@@ -257,7 +270,7 @@ export default function AdminPracticeExamsPage() {
   }
 
   async function refreshList() {
-    if (!token || refreshing) return;
+    if (!token || controlsLocked) return;
     setRefreshing(true);
     setActionError("");
     try {
@@ -282,7 +295,7 @@ export default function AdminPracticeExamsPage() {
   }
 
   async function refreshReadiness() {
-    if (!token || !selectedExam || refreshing) return;
+    if (!token || !selectedExam || controlsLocked) return;
     setRefreshing(true);
     setActionError("");
     setSuccessMessage("");
@@ -300,56 +313,94 @@ export default function AdminPracticeExamsPage() {
     }
   }
 
-  async function createExam(event: FormEvent<HTMLFormElement>) {
+  function closeForm() {
+    setShowForm(false);
+    setEditingExam(null);
+    setName("");
+    setCertificationId(certifications[0]?.id ?? "");
+    setCategoryId("");
+    setQuestionCount("10");
+    setFormError("");
+  }
+
+  function openEdit(exam: AdminPracticeExam) {
+    if (controlsLocked || exam.status === "published") return;
+    setEditingExam(exam);
+    setName(exam.name);
+    setCertificationId(exam.certification_id);
+    setCategoryId(exam.category_id);
+    setQuestionCount(exam.question_count === null ? "" : String(exam.question_count));
+    setFormError("");
+    setActionError("");
+    setSuccessMessage("");
+    setShowForm(true);
+  }
+
+  async function saveExam(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!token || creating) return;
+    if (!token || role !== "administrator" || !showForm || actionBusy) return;
     const count = Number(questionCount);
-    const normalizedName = name.trim();
+    const normalizedName = countOnly && editingExam ? editingExam.name : name.trim();
+    const certId = countOnly && editingExam ? editingExam.certification_id : certificationId;
+    const catId = countOnly && editingExam ? editingExam.category_id : categoryId;
     if (
-      !normalizedName ||
-      !certificationId ||
-      !categoryId ||
-      !matchingCategories.some((item) => item.id === categoryId) ||
+      !/^\d+$/.test(questionCount) ||
       !Number.isInteger(count) ||
       count < 1 ||
       count > 100
     ) {
-      setCreateError("Enter a name, certification, category, and a whole-number count from 1 to 100.");
+      setFormError("Enter a whole-number question count from 1 to 100.");
+      countInputRef.current?.focus();
+      return;
+    }
+    if (
+      !normalizedName ||
+      normalizedName.length > 255 ||
+      !certId ||
+      !catId ||
+      (!countOnly && !matchingCategories.some((item) => item.id === catId))
+    ) {
+      setFormError("Enter a valid name, certification, and category.");
       return;
     }
 
-    setCreating(true);
-    setCreateError("");
+    setSaving(true);
+    setFormError("");
     setActionError("");
     setSuccessMessage("");
+    const payload = {
+      name: normalizedName,
+      certification_id: certId,
+      category_id: catId,
+      question_count: count,
+    };
     try {
-      const created = await createAdminPracticeExam(token, {
-        name: normalizedName,
-        certification_id: certificationId,
-        category_id: categoryId,
-        question_count: count,
-      });
-      upsertExam(created);
-      setSelectedId(created.id);
+      const saved = editingExam
+        ? await updateAdminPracticeExam(token, editingExam.id, payload)
+        : await createAdminPracticeExam(token, payload);
+      upsertExam(saved);
+      setSelectedId(saved.id);
       setStatusFilter("all");
       setSearch("");
-      setShowCreate(false);
-      setName("");
-      setQuestionCount("10");
-      setSuccessMessage(`“${created.name}” was created as a Draft. Review readiness before publishing.`);
+      closeForm();
+      setSuccessMessage(
+        editingExam
+          ? `Changes saved for “${saved.name}”. Review readiness before publishing.`
+          : `“${saved.name}” was created as a Draft. Review readiness before publishing.`,
+      );
     } catch (error: unknown) {
       if (error instanceof ApiError && error.status === 401) {
         handleError(error);
         return;
       }
-      setCreateError(errorMessage(error, "Unable to create the practice exam."));
+      setFormError(errorMessage(error, editingExam ? "Unable to save practice exam changes." : "Unable to create the practice exam."));
     } finally {
-      setCreating(false);
+      setSaving(false);
     }
   }
 
   async function confirmPublication() {
-    if (!token || changing || !pending || !pendingExam) return;
+    if (!token || changing || saving || refreshing || showForm || !pending || !pendingExam) return;
     setChanging(true);
     setActionError("");
     setSuccessMessage("");
@@ -426,17 +477,23 @@ export default function AdminPracticeExamsPage() {
     <section className="space-y-6 text-[#292d30]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PageHeader
-          stepLabel="JHEP-126 / Exam publishing"
+          stepLabel="JHEP-107 / JHEP-126"
           title="Practice exams"
           subtitle="Configure exam availability. Only published exams can be started by learners."
         />
         <button
           type="button"
           onClick={() => {
-            setShowCreate((open) => !open);
-            setCreateError("");
+            if (showForm) closeForm();
+            else {
+              setFormError("");
+              setActionError("");
+              setSuccessMessage("");
+              setShowForm(true);
+            }
           }}
-          aria-expanded={showCreate}
+          disabled={actionBusy || editingExam !== null}
+          aria-expanded={showForm && !editingExam}
           aria-controls="create-practice-exam"
           className="inline-flex min-h-11 items-center gap-2 rounded-md bg-[#343a3e] px-4 py-2 text-sm font-semibold text-white hover:bg-[#22282c] focus-visible:outline-2 focus-visible:outline-offset-2"
         >
@@ -456,41 +513,53 @@ export default function AdminPracticeExamsPage() {
         </p>
       )}
 
-      {showCreate && (
+      {showForm && (
         <form
-          id="create-practice-exam"
-          onSubmit={createExam}
-          className="rounded-md border border-[#cfd2d5] bg-white p-5"
+          id={editingExam ? "edit-practice-exam" : "create-practice-exam"}
+          aria-labelledby="exam-form-heading"
+          aria-busy={saving}
+          noValidate
+          onSubmit={saveExam}
+          className="min-w-0 rounded-md border border-[#cfd2d5] bg-white p-4 sm:p-5"
         >
-          <h2 className="text-lg font-semibold">Create a practice exam</h2>
+          <h2 id="exam-form-heading" className="text-lg font-semibold">
+            {editingExam ? "Edit practice exam" : "Create a practice exam"}
+          </h2>
           <p className="mt-1 text-sm text-[#687178]">
-            Exams start as Draft. Publication requires valid configuration and enough published questions.
+            {countOnly
+              ? "Only the question count can be changed for an unpublished exam. Existing attempts retain their original questions and order."
+              : editingExam
+                ? "Update this draft configuration. Saving does not publish the exam."
+                : "Exams start as Draft. Publication requires valid configuration and enough published questions."}
           </p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <label htmlFor="exam-name" className="block text-sm font-semibold">Exam name</label>
               <input
                 id="exam-name"
+                ref={nameInputRef}
+                disabled={saving || countOnly}
                 type="text"
                 maxLength={255}
                 required
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Science practice"
-                className="mt-2 min-h-11 w-full rounded-md border border-[#cbd0d3] px-3 py-2 text-sm"
+                className="mt-2 min-h-11 w-full min-w-0 rounded-md border border-[#cbd0d3] px-3 py-2 text-sm disabled:opacity-50"
               />
             </div>
             <div>
               <label htmlFor="exam-certification" className="block text-sm font-semibold">Certification</label>
               <select
                 id="exam-certification"
+                disabled={saving || countOnly}
                 value={certificationId}
                 onChange={(event) => {
                   setCertificationId(event.target.value);
                   setCategoryId("");
                 }}
                 required
-                className="mt-2 min-h-11 w-full rounded-md border border-[#cbd0d3] bg-white px-3 py-2 text-sm"
+                className="mt-2 min-h-11 w-full min-w-0 rounded-md border border-[#cbd0d3] bg-white px-3 py-2 text-sm disabled:opacity-50"
               >
                 <option value="">Select a certification</option>
                 {certifications.map((certification) => (
@@ -505,8 +574,8 @@ export default function AdminPracticeExamsPage() {
                 value={categoryId}
                 onChange={(event) => setCategoryId(event.target.value)}
                 required
-                disabled={!certificationId || matchingCategories.length === 0}
-                className="mt-2 min-h-11 w-full rounded-md border border-[#cbd0d3] bg-white px-3 py-2 text-sm disabled:opacity-50"
+                disabled={saving || countOnly || !certificationId || matchingCategories.length === 0}
+                className="mt-2 min-h-11 w-full min-w-0 rounded-md border border-[#cbd0d3] bg-white px-3 py-2 text-sm disabled:opacity-50"
               >
                 <option value="">Select a category</option>
                 {matchingCategories.map((category) => (
@@ -521,6 +590,9 @@ export default function AdminPracticeExamsPage() {
               <label htmlFor="exam-question-count" className="block text-sm font-semibold">Question count (1–100)</label>
               <input
                 id="exam-question-count"
+                ref={countInputRef}
+                disabled={saving}
+                aria-describedby={formError ? "exam-count-help exam-form-error" : "exam-count-help"}
                 type="number"
                 min={1}
                 max={100}
@@ -528,29 +600,29 @@ export default function AdminPracticeExamsPage() {
                 required
                 value={questionCount}
                 onChange={(event) => setQuestionCount(event.target.value)}
-                className="mt-2 min-h-11 w-full rounded-md border border-[#cbd0d3] px-3 py-2 text-sm"
+                className="mt-2 min-h-11 w-full min-w-0 rounded-md border border-[#cbd0d3] px-3 py-2 text-sm disabled:opacity-50"
               />
-              <p className="mt-1 text-xs text-[#687178]">Count is fixed when created. Editing is tracked in JHEP-107.</p>
+              <p id="exam-count-help" className="mt-1 text-xs text-[#687178]">Enter a whole number from 1 to 100. Changes apply to future attempts only.</p>
             </div>
           </div>
-          {createError && (
-            <p role="alert" className="mt-4 text-sm text-red-700">{createError}</p>
+          {formError && (
+            <p id="exam-form-error" role="alert" className="mt-4 text-sm text-red-700">{formError}</p>
           )}
           <div className="mt-5 flex justify-end gap-2">
             <button
               type="button"
-              onClick={() => setShowCreate(false)}
-              disabled={creating}
+              onClick={closeForm}
+              disabled={saving}
               className="min-h-11 rounded-md border border-[#cbd0d3] px-4 py-2 text-sm font-semibold hover:bg-[#f2f3f4]"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={creating || certifications.length === 0 || matchingCategories.length === 0}
+              disabled={actionBusy || (!countOnly && (certifications.length === 0 || matchingCategories.length === 0))}
               className="min-h-11 rounded-md bg-[#343a3e] px-4 py-2 text-sm font-semibold text-white hover:bg-[#22282c] disabled:opacity-50"
             >
-              {creating ? "Creating..." : "Create draft"}
+              {saving ? (editingExam ? "Saving..." : "Creating...") : editingExam ? "Save changes" : "Create draft"}
             </button>
           </div>
         </form>
@@ -562,7 +634,7 @@ export default function AdminPracticeExamsPage() {
             <h2 id="exam-list-heading" className="text-lg font-semibold">All practice exams</h2>
             <button
               type="button"
-              disabled={refreshing}
+              disabled={controlsLocked}
               onClick={() => void refreshList()}
               aria-label="Refresh exam list"
               className="inline-flex min-h-11 items-center gap-1 rounded-md border border-[#cbd0d3] px-3 py-2 text-xs font-semibold hover:bg-[#f1f2f3] disabled:opacity-50"
@@ -573,6 +645,7 @@ export default function AdminPracticeExamsPage() {
           <label htmlFor="exam-search" className="sr-only">Search practice exams</label>
           <input
             id="exam-search"
+            disabled={controlsLocked}
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -584,6 +657,7 @@ export default function AdminPracticeExamsPage() {
               <button
                 key={filter}
                 type="button"
+                disabled={controlsLocked}
                 aria-pressed={statusFilter === filter}
                 onClick={() => setStatusFilter(filter)}
                 className={`rounded-md px-3 py-2 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 ${
@@ -611,6 +685,7 @@ export default function AdminPracticeExamsPage() {
                       setActionError("");
                       setSuccessMessage("");
                     }}
+                    disabled={controlsLocked}
                     aria-current={selectedExam?.id === exam.id ? "true" : undefined}
                     aria-label={`Manage ${exam.name}`}
                     className={`flex w-full items-center justify-between gap-3 rounded-md border p-4 text-left focus-visible:outline-2 focus-visible:outline-offset-2 ${
@@ -651,7 +726,22 @@ export default function AdminPracticeExamsPage() {
               </div>
 
               <div className="rounded-md border border-[#d9dde0] bg-[#f6f7f8] p-4">
-                <h3 className="mb-3 text-sm font-semibold">Configuration</h3>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold">Configuration</h3>
+                  {selectedExam.status !== "published" && (
+                    <button
+                      type="button"
+                      disabled={controlsLocked}
+                      onClick={() => openEdit(selectedExam)}
+                      className="min-h-11 rounded-md border border-[#cbd0d3] bg-white px-3 py-2 text-sm font-semibold hover:bg-[#f2f3f4] focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+                    >
+                      Edit exam
+                    </button>
+                  )}
+                </div>
+                {selectedExam.status === "published" && (
+                  <p className="mb-3 text-xs text-[#687178]">Unpublish the exam before editing its question count.</p>
+                )}
                 <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-3 text-sm">
                   <dt className="text-[#687178]">Certification</dt>
                   <dd className="text-right font-medium">{selectedExam.certification_name}</dd>
@@ -676,7 +766,7 @@ export default function AdminPracticeExamsPage() {
                   <h3 className="text-sm font-semibold">Publication readiness</h3>
                   <button
                     type="button"
-                    disabled={refreshing || changing}
+                    disabled={controlsLocked}
                     onClick={() => void refreshReadiness()}
                     className="text-xs font-semibold text-[#414b52] underline underline-offset-2 hover:text-black disabled:opacity-50"
                   >
@@ -707,7 +797,7 @@ export default function AdminPracticeExamsPage() {
                   <p className="text-xs text-[#687178]">This exam is visible and startable by learners while available.</p>
                   <button
                     type="button"
-                    disabled={changing}
+                    disabled={controlsLocked}
                     onClick={() => setPending({ examId: selectedExam.id, action: "unpublish" })}
                     className="min-h-11 w-full rounded-md bg-[#343a3e] px-4 py-3 text-sm font-semibold text-white hover:bg-[#22282c] disabled:opacity-50"
                   >
@@ -718,7 +808,7 @@ export default function AdminPracticeExamsPage() {
                 <div className="space-y-2">
                   <button
                     type="button"
-                    disabled={!selectedExam.readiness.ready || changing}
+                    disabled={!selectedExam.readiness.ready || controlsLocked}
                     onClick={() => setPending({ examId: selectedExam.id, action: "publish" })}
                     className="min-h-11 w-full rounded-md bg-[#343a3e] px-4 py-3 text-sm font-semibold text-white hover:bg-[#22282c] disabled:cursor-not-allowed disabled:opacity-45"
                   >

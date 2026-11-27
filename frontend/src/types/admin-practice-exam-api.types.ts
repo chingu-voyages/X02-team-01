@@ -1,4 +1,4 @@
-/** JHEP-126 admin exam publication contracts (the backend's AdminPracticeExamOut). */
+/** JHEP-107/126 admin exam configuration and publication contracts (the backend's AdminPracticeExamOut). */
 export type PracticeExamStatus = "draft" | "published" | "unpublished";
 
 export interface PracticeExamReadinessIssue {
@@ -30,13 +30,16 @@ export interface AdminPracticeExamListResponse {
   count: number;
 }
 
-/** Creating a draft supports its initial count. Later editing is JHEP-107. */
+/** Create a draft with its initial configured count. */
 export interface AdminPracticeExamCreateRequest {
   certification_id: string;
   category_id: string;
   name: string;
   question_count: number;
 }
+
+/** JHEP-107: full configuration replacement; a valid count is required. */
+export type AdminPracticeExamConfigurationUpdateRequest = AdminPracticeExamCreateRequest;
 
 export interface PracticeExamNotReadyDetail {
   code: "PRACTICE_EXAM_NOT_READY";
