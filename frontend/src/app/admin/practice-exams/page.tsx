@@ -14,6 +14,8 @@ import {
   ChevronRight,
   Plus,
   RefreshCw,
+  ShieldCheck,
+  Trash2,
 } from "lucide-react";
 
 import PageHeader from "@/components/layouts/PageHeader";
@@ -25,6 +27,7 @@ import {
 } from "@/lib/admin-catalog-api";
 import {
   createAdminPracticeExam,
+  deleteAdminPracticeExam,
   getAdminPracticeExam,
   getAdminPracticeExams,
   practiceExamNotReadyDetail,
@@ -43,10 +46,16 @@ import type {
 
 type LoadState = "loading" | "ready" | "error";
 type StatusFilter = "all" | PracticeExamStatus;
-type PublicationAction = "publish" | "unpublish";
+type ExamAction = "publish" | "unpublish" | "delete";
 type FieldKey = "name" | "certification" | "category" | "questionCount";
 type FieldErrors = Partial<Record<FieldKey, string>>;
-type ActionProblem = { area: "list" | "details"; title: string; message: string };
+type ActionProblem = {
+  area: "list" | "details" | "delete";
+  title: string;
+  message: string;
+  examId?: string;
+  refreshList?: boolean;
+};
 
 const fieldOrder: FieldKey[] = ["name", "certification", "category", "questionCount"];
 const fieldMessages: Record<FieldKey, string> = {
@@ -143,8 +152,8 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-/** A keyboard-accessible confirmation step before changing learner availability. */
-function PublicationConfirmation({
+/** Confirm publication changes or permanent deletion with keyboard support. */
+function ExamActionConfirmation({
   exam,
   action,
   busy,
@@ -152,7 +161,7 @@ function PublicationConfirmation({
   onConfirm,
 }: {
   exam: AdminPracticeExam;
-  action: PublicationAction;
+  action: ExamAction;
   busy: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -207,6 +216,7 @@ function PublicationConfirmation({
   }, [busy, onCancel]);
 
   const publishing = action === "publish";
+  const deleting = action === "delete";
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/50 p-3 sm:items-center sm:p-4">
       <div
@@ -219,14 +229,27 @@ function PublicationConfirmation({
         aria-describedby="exam-confirm-description"
         className="max-h-[calc(100dvh_-_2rem)] w-full min-w-0 max-w-md overflow-y-auto rounded-lg border border-[#cbd0d3] bg-white p-4 shadow-xl [overflow-wrap:anywhere] sm:p-6"
       >
-        <h2 id="exam-confirm-title" className="text-lg font-semibold text-[#292d30]">
-          {publishing ? "Publish practice exam?" : "Unpublish practice exam?"}
+        <h2 id="exam-confirm-title" className="flex items-center gap-2 text-lg font-semibold text-[#292d30]">
+          {deleting && <Trash2 aria-hidden="true" className="size-5 shrink-0 text-red-700" />}
+          {deleting ? "Delete practice exam?" : publishing ? "Publish practice exam?" : "Unpublish practice exam?"}
         </h2>
-        <p id="exam-confirm-description" className="mt-3 text-sm leading-6 text-[#606b72]">
-          {publishing
-            ? `Publish “${exam.name}” with ${exam.question_count ?? "the configured number of"} questions? Learners will be able to see and start it.`
-            : `Unpublish “${exam.name}”? New learner attempts will be blocked. Started attempts can finish and completed results remain available.`}
-        </p>
+        {deleting ? (
+          <div id="exam-confirm-description" className="mt-3 space-y-3 text-sm leading-6 text-[#606b72]">
+            <p>Permanently delete <strong className="text-[#292d30]">{exam.name}</strong>?</p>
+            <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2 rounded-md bg-[#f3f4f5] p-3">
+              <dt>Status</dt><dd className="text-right font-semibold">{statusLabel(exam.status)}</dd>
+              <dt>Question count</dt><dd className="text-right font-semibold">{exam.question_count ?? "Not configured"}</dd>
+            </dl>
+            <p>This removes only the exam configuration, not the questions, certification, or category. The server prevents deletion of exams with learner history.</p>
+            <p className="font-semibold text-red-800">This action cannot be undone.</p>
+          </div>
+        ) : (
+          <p id="exam-confirm-description" className="mt-3 text-sm leading-6 text-[#606b72]">
+            {publishing
+              ? `Publish “${exam.name}” with ${exam.question_count ?? "the configured number of"} questions? Learners will be able to see and start it.`
+              : `Unpublish “${exam.name}”? New learner attempts will be blocked. Started attempts can finish and completed results remain available.`}
+          </p>
+        )}
         <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
           <button
             type="button"
@@ -242,9 +265,9 @@ function PublicationConfirmation({
             ref={confirmRef}
             onClick={onConfirm}
             disabled={busy}
-            className="min-h-11 rounded-md bg-[#343a3e] px-4 py-2 text-sm font-semibold text-white hover:bg-[#202529] focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+            className={`min-h-11 rounded-md px-4 py-2 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50 ${deleting ? "bg-red-700 hover:bg-red-800" : "bg-[#343a3e] hover:bg-[#202529]"}`}
           >
-            {busy ? "Updating..." : publishing ? "Confirm publish" : "Confirm unpublish"}
+            {deleting ? (busy ? "Deleting..." : "Confirm delete") : busy ? "Updating..." : publishing ? "Confirm publish" : "Confirm unpublish"}
           </button>
         </div>
       </div>
@@ -292,9 +315,14 @@ export default function AdminPracticeExamsPage() {
 
   const [pending, setPending] = useState<{
     examId: string;
-    action: PublicationAction;
+    action: ExamAction;
   } | null>(null);
   const [changing, setChanging] = useState(false);
+  const [protectedExams, setProtectedExams] = useState<Record<string, boolean>>({});
+  const [deletionNotice, setDeletionNotice] = useState("");
+  const deleteRequestRef = useRef(false);
+  const deleteTriggerRef = useRef<HTMLButtonElement>(null);
+  const deletionFocusRef = useRef<"list" | "trigger" | null>(null);
   const actionBusy = saving || refreshing || changing || pending !== null;
   const controlsLocked = showForm || actionBusy;
   const countOnly = editingExam?.status === "unpublished";
@@ -418,6 +446,15 @@ export default function AdminPracticeExamsPage() {
     (certification) => certification.id === selectedExam?.certification_id,
   );
   const pendingExam = exams.find((exam) => exam.id === pending?.examId) ?? null;
+  const selectedExamProtected = selectedExam ? Boolean(protectedExams[selectedExam.id]) : false;
+
+  useEffect(() => {
+    if (actionBusy || !deletionFocusRef.current) return;
+    const destination = deletionFocusRef.current;
+    deletionFocusRef.current = null;
+    if (destination === "list") listHeadingRef.current?.focus();
+    else deleteTriggerRef.current?.focus();
+  }, [actionBusy]);
 
   useEffect(() => {
     if (showForm || !mobileFocusRef.current) return;
@@ -435,6 +472,7 @@ export default function AdminPracticeExamsPage() {
     setSelectedId(examId);
     setActionError(null);
     setSuccessMessage("");
+    setDeletionNotice("");
   }
 
   function backToList() {
@@ -477,6 +515,7 @@ export default function AdminPracticeExamsPage() {
     if (!token || controlsLocked) return;
     setRefreshing(true);
     setActionError(null);
+    setDeletionNotice("");
     try {
       const results = await getAdminPracticeExams(token);
       setExams(results);
@@ -497,6 +536,13 @@ export default function AdminPracticeExamsPage() {
     } finally {
       setRefreshing(false);
     }
+  }
+
+  function refreshAfterDeletionIssue() {
+    if (controlsLocked) return;
+    setMobilePanel("list");
+    mobileFocusRef.current = "list";
+    void refreshList();
   }
 
   async function refreshReadiness() {
@@ -534,6 +580,7 @@ export default function AdminPracticeExamsPage() {
     if (controlsLocked || exam.status === "published") return;
     returnFocusRef.current = trigger;
     setEditingExam(exam);
+    setDeletionNotice("");
     setName(exam.name);
     setCertificationId(exam.certification_id);
     setCategoryId(exam.category_id);
@@ -616,7 +663,7 @@ export default function AdminPracticeExamsPage() {
   }
 
   async function confirmPublication() {
-    if (!token || changing || saving || refreshing || showForm || !pending || !pendingExam) return;
+    if (!token || changing || saving || refreshing || showForm || !pending || !pendingExam || pending.action === "delete") return;
     setChanging(true);
     setActionError(null);
     setSuccessMessage("");
@@ -653,6 +700,74 @@ export default function AdminPracticeExamsPage() {
         setPending(null);
       }
     } finally {
+      setChanging(false);
+    }
+  }
+
+  function requestDeletion(exam: AdminPracticeExam) {
+    if (controlsLocked || role !== "administrator" || exam.status === "published" || protectedExams[exam.id]) return;
+    setActionError(null);
+    setSuccessMessage("");
+    setDeletionNotice("");
+    setPending({ examId: exam.id, action: "delete" });
+  }
+
+  function cancelAction() {
+    if (changing || deleteRequestRef.current) return;
+    if (pending?.action === "delete") deletionFocusRef.current = "trigger";
+    setPending(null);
+  }
+
+  async function confirmDeletion() {
+    if (!token || role !== "administrator" || changing || saving || refreshing || showForm || deleteRequestRef.current || pending?.action !== "delete" || !pendingExam) return;
+    if (pendingExam.status === "published" || protectedExams[pendingExam.id]) {
+      setPending(null);
+      return;
+    }
+    const target = pendingExam;
+    deleteRequestRef.current = true;
+    setChanging(true);
+    setActionError(null);
+    setSuccessMessage("");
+    setDeletionNotice("");
+    try {
+      await deleteAdminPracticeExam(token, target.id);
+      // Remove only the exact exam acknowledged by the server. Preserve filters.
+      setExams((current) => current.filter((exam) => exam.id !== target.id));
+      setSelectedId((current) => current === target.id ? null : current);
+      setMobilePanel("list");
+      setDeletionNotice(`“${target.name}” was deleted successfully.`);
+      deletionFocusRef.current = "list";
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 401) {
+        handleError(error);
+        return;
+      }
+      const detail = error instanceof ApiError ? error.detail : null;
+      const code = error instanceof ApiError && error.status === 409 && detail && typeof detail === "object" && "code" in detail
+        ? detail.code
+        : null;
+      let problem: ActionProblem;
+      if (code === "PRACTICE_EXAM_HAS_ATTEMPTS") {
+        setProtectedExams((current) => ({ ...current, [target.id]: true }));
+        problem = { area: "delete", examId: target.id, title: "Exam cannot be deleted", message: "This exam has learner attempts. Keep it unpublished to protect existing answers and results." };
+      } else if (code === "PRACTICE_EXAM_PUBLISHED") {
+        problem = { area: "delete", examId: target.id, title: "Exam is published", message: "Refresh the exam list, then unpublish this exam before deleting it.", refreshList: true };
+      } else if (code === "PRACTICE_EXAM_DELETE_CONFLICT") {
+        problem = { area: "delete", examId: target.id, title: "Exam cannot be deleted", message: "This exam is linked to other records. Refresh the exam list and keep it unpublished if it has learner history.", refreshList: true };
+      } else if (error instanceof ApiError && error.status === 404) {
+        problem = { area: "delete", examId: target.id, title: "Exam not found", message: "It may have already been removed. Refresh the exam list to see the current records.", refreshList: true };
+      } else if (error instanceof ApiError && error.status === 403) {
+        problem = { area: "delete", examId: target.id, title: "Access denied", message: "Administrator access is required to delete practice exams." };
+      } else {
+        // A lost response does not establish whether the server committed the delete.
+        problem = { area: "delete", examId: target.id, title: "Could not confirm deletion", message: "Check your connection and refresh the exam list before trying again. The current record has been kept in the list until its status can be verified.", refreshList: true };
+      }
+      setMobilePanel("details");
+      setActionError(problem);
+    } finally {
+      deleteRequestRef.current = false;
+      setPending(null);
       setChanging(false);
     }
   }
@@ -706,6 +821,7 @@ export default function AdminPracticeExamsPage() {
             clearFormFeedback();
             setActionError(null);
             setSuccessMessage("");
+            setDeletionNotice("");
             setShowForm(true);
           }}
           disabled={controlsLocked}
@@ -895,6 +1011,12 @@ export default function AdminPracticeExamsPage() {
               <RefreshCw className="size-3.5" aria-hidden="true" /> Refresh
             </button>
           </div>
+          {deletionNotice && (
+            <div role="status" className="mt-3 flex items-start gap-2 rounded-md border border-[#b8cbbd] bg-[#edf4ee] p-3 text-sm text-[#35583a]">
+              <CheckCircle2 aria-hidden="true" className="mt-0.5 size-5 shrink-0" />
+              <p className="min-w-0 [overflow-wrap:anywhere]">{deletionNotice}</p>
+            </div>
+          )}
           {actionError?.area === "list" && (
             <div ref={actionErrorRef} tabIndex={-1} className="mt-3 scroll-mt-24 outline-offset-2 focus-visible:outline-2">
               <ErrorNotice title={actionError.title} message={actionError.message} />
@@ -1097,6 +1219,43 @@ export default function AdminPracticeExamsPage() {
               <p className="text-xs leading-5 text-[#687178]">
                 Unpublishing blocks new attempts. Attempts already started can finish and previously completed results remain intact.
               </p>
+
+              <section aria-labelledby="exam-delete-heading" className="min-w-0 space-y-3 border-t border-[#d9dde0] pt-5">
+                <h3 id="exam-delete-heading" className="text-sm font-semibold text-[#292d30]">Delete practice exam</h3>
+                <p id="exam-delete-help" className="text-sm leading-5 text-[#687178]">
+                  {selectedExamProtected
+                    ? "Learner history is protected. Keep this exam unpublished instead of deleting it."
+                    : selectedExam.status === "published"
+                      ? "Unpublish this exam before deleting it."
+                      : "Permanently remove this exam configuration. Exams with existing learner attempts cannot be deleted."}
+                </p>
+                {selectedExamProtected && (
+                  <p className="flex items-start gap-2 rounded-md border border-[#d9dde0] bg-[#f6f7f8] p-3 text-sm font-medium text-[#414b52]">
+                    <ShieldCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                    <span>Protected learner history</span>
+                  </p>
+                )}
+                {actionError?.area === "delete" && actionError.examId === selectedExam.id && (
+                  <div ref={actionErrorRef} tabIndex={-1} className="space-y-2 scroll-mt-24 outline-offset-2 focus-visible:outline-2">
+                    <ErrorNotice title={actionError.title} message={actionError.message} />
+                    {actionError.refreshList && (
+                      <button type="button" disabled={controlsLocked} onClick={refreshAfterDeletionIssue} className="min-h-11 w-full rounded-md border border-[#cbd0d3] px-4 py-2 text-sm font-semibold text-[#414b52] hover:bg-[#f2f3f4] focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50 sm:w-auto">
+                        Refresh exams
+                      </button>
+                    )}
+                  </div>
+                )}
+                <button
+                  ref={deleteTriggerRef}
+                  type="button"
+                  aria-describedby="exam-delete-help"
+                  disabled={controlsLocked || selectedExam.status === "published" || selectedExamProtected || (actionError?.area === "delete" && actionError.examId === selectedExam.id && actionError.refreshList)}
+                  onClick={() => requestDeletion(selectedExam)}
+                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:border-red-700 hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                >
+                  <Trash2 className="size-4 shrink-0" aria-hidden="true" /> Delete exam
+                </button>
+              </section>
             </div>
           ) : (
             <div>
@@ -1108,12 +1267,12 @@ export default function AdminPracticeExamsPage() {
       </div>
 
       {pending && pendingExam && (
-        <PublicationConfirmation
+        <ExamActionConfirmation
           exam={pendingExam}
           action={pending.action}
           busy={changing}
-          onCancel={() => setPending(null)}
-          onConfirm={() => void confirmPublication()}
+          onCancel={cancelAction}
+          onConfirm={() => void (pending.action === "delete" ? confirmDeletion() : confirmPublication())}
         />
       )}
     </section>

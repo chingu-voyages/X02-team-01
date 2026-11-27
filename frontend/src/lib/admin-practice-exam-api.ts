@@ -70,6 +70,18 @@ export function setAdminPracticeExamPublication(
   );
 }
 
+/** Delete only after explicit administrator confirmation; no request body. */
+export function deleteAdminPracticeExam(
+  token: string,
+  examId: string,
+): Promise<void> {
+  return apiRequest<void>(
+    `/admin/practice-exams/${encodeURIComponent(examId)}`,
+    token,
+    { method: "DELETE" },
+  );
+}
+
 /** Narrow an ApiError.detail to the backend's coded 409 payload. */
 export function practiceExamNotReadyDetail(
   detail: unknown,
