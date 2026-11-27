@@ -201,15 +201,16 @@ describe("AdminUsersPage (JHEP-125 Users & Access)", () => {
     expect(mockHandleError).not.toHaveBeenCalled();
   });
 
-  it("redirects unauthenticated visits via the session hook", async () => {
+  it("shows access denied for forbidden visits without invoking the 401 handler", async () => {
     mockedGet.mockRejectedValue(
       new ApiError(403, "You do not have permission to perform this action."),
     );
 
     render(<AdminUsersPage />);
 
-    await waitFor(() => {
-      expect(mockHandleError).toHaveBeenCalled();
-    });
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "You do not have permission to perform this action.",
+    );
+    expect(mockHandleError).not.toHaveBeenCalled();
   });
 });

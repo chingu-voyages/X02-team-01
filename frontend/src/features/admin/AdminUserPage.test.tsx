@@ -13,6 +13,7 @@ import {
 
 vi.mock("@/features/auth/AuthProvider", () => ({
   useDemoSession: vi.fn(),
+  useAuth: () => ({ logout: vi.fn() }),
 }));
 
 vi.mock("@/lib/admin-users-api", () => ({
@@ -109,14 +110,14 @@ describe("AdminUsersPage", () => {
     expect(getAdminUsers).toHaveBeenCalledTimes(2);
   });
 
-  it("delegates 401 and 403 ApiErrors to handleError", async () => {
-    const forbiddenError = new ApiError(403, "Forbidden", null);
-    vi.mocked(getAdminUsers).mockRejectedValueOnce(forbiddenError);
+  it("delegates expired sessions to handleError", async () => {
+    const unauthorizedError = new ApiError(401, "Session expired", null);
+    vi.mocked(getAdminUsers).mockRejectedValueOnce(unauthorizedError);
 
     render(<AdminUsersPage />);
 
     await waitFor(() => {
-      expect(mockHandleError).toHaveBeenCalledWith(forbiddenError);
+      expect(mockHandleError).toHaveBeenCalledWith(unauthorizedError);
     });
   });
 
