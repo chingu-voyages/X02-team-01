@@ -13,9 +13,15 @@ import BrowseExamCard, { type ExamCardVariant } from "./BrowseExamCard";
 import ExamFilterBar from "./ExamFilterBar";
 import ExamSelectionStatus from "./ExamSelectionStatus";
 import PageHero from "./PageHero";
+import {
+  getExamAvailabilityIssue,
+  getExamStartIssue,
+  type ExamStartIssue,
+} from "./examAvailability";
 
 type LoadStatus = "loading" | "ready" | "error";
 type ResumeState = { token: string; attempts: Record<string, string> };
+type StartIssueState = { token: string; issues: Record<string, ExamStartIssue> };
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -50,7 +56,7 @@ export default function PracticeExamsScreen() {
   const [reloadKey, setReloadKey] = useState(0);
   const [certificationFilter, setCertificationFilter] = useState("all");
   const [startingExamId, setStartingExamId] = useState<string | null>(null);
-  const [startError, setStartError] = useState("");
+  const [startIssueState, setStartIssueState] = useState<StartIssueState | null>(null);
   const [resumeState, setResumeState] = useState<ResumeState | null>(null);
   const startingRef = useRef(false);
 
@@ -63,6 +69,12 @@ export default function PracticeExamsScreen() {
         if (cancelled) return;
 
         setExams(data);
+        // A refresh may remove the last exam for the selected certification.
+        setCertificationFilter((current) =>
+          current === "all" || data.some((exam) => exam.certification_id === current)
+            ? current
+            : "all",
+        );
         setLoadStatus("ready");
         setLoadError("");
       })
@@ -74,11 +86,7 @@ export default function PracticeExamsScreen() {
           return;
         }
 
-        setLoadError(
-          error instanceof Error
-            ? error.message
-            : "Unable to load practice exams.",
-        );
+        setLoadError("We could not load practice exams. Check your connection and try again.");
         setLoadStatus("error");
       });
 
@@ -97,30 +105,43 @@ export default function PracticeExamsScreen() {
   );
 
   const visibleExams = exams.filter(
-    (exam) =>
-      certificationFilter === "all" ||
-      exam.certification_id === certificationFilter,
+    (exam) => certificationFilter === "all" || exam.certification_id === certificationFilter,
   );
   const resumeAttempts: Record<string, string> =
     resumeState && resumeState.token === token ? resumeState.attempts : {};
+  const startIssues: Record<string, ExamStartIssue> =
+    startIssueState && startIssueState.token === token ? startIssueState.issues : {};
   const isStarting = startingExamId !== null;
+
+  function isAvailable(exam: PublishedPracticeExam) {
+    return Boolean(resumeAttempts[exam.id]) ||
+      (!getExamAvailabilityIssue(exam) && !startIssues[exam.id]?.requiresReload);
+  }
 
   function reloadExams() {
     if (startingRef.current) return;
     setLoadStatus("loading");
     setLoadError("");
-    setStartError("");
+    setStartIssueState(null);
     setResumeState(null);
     setReloadKey((value) => value + 1);
   }
 
   async function handleStartExam(exam: PublishedPracticeExam) {
-    if (!token || startingRef.current || resumeAttempts[exam.id]) return;
+    if (
+      !token || startingRef.current || resumeAttempts[exam.id] ||
+      !isAvailable(exam)
+    ) return;
 
     // Prevent multiple card actions before React has rendered disabled controls.
     startingRef.current = true;
     setStartingExamId(exam.id);
-    setStartError("");
+    setStartIssueState((previous) => {
+      if (previous?.token !== token) return null;
+      const issues = { ...previous.issues };
+      delete issues[exam.id];
+      return { token, issues };
+    });
 
     try {
       const attempt = await startPublishedPracticeExam(token, exam);
@@ -142,19 +163,17 @@ export default function PracticeExamsScreen() {
               [exam.id]: attemptId,
             },
           }));
-        } else {
-          setStartError(
-            "This practice exam is no longer available as shown. Reload the list and try again.",
-          );
+          return;
         }
-        return;
       }
 
-      setStartError(
-        error instanceof Error
-          ? error.message
-          : "Unable to start practice exam.",
-      );
+      setStartIssueState((previous) => ({
+        token,
+        issues: {
+          ...(previous && previous.token === token ? previous.issues : {}),
+          [exam.id]: getExamStartIssue(error),
+        },
+      }));
     } finally {
       startingRef.current = false;
       setStartingExamId(null);
@@ -177,27 +196,21 @@ export default function PracticeExamsScreen() {
   }
 
   return (
-    <section className="space-y-6">
+    <section className="min-w-0 space-y-4 sm:space-y-6">
       <PageHero
         eyebrow="Practice exams"
         title="Select a practice exam"
-        description="Choose a published practice exam. Questions are selected from the approved question bank each time you start."
+        description="Choose a published practice exam. Each card shows its question count, and questions are drawn from the approved bank."
       />
 
-      <fieldset disabled={isStarting} className="min-w-0">
+      <fieldset disabled={isStarting || loadStatus !== "ready"} className="min-w-0">
         <ExamFilterBar
           certifications={certifications}
           selectedCertificationId={certificationFilter}
           totalExamCount={exams.length}
-          visibleExamCount={visibleExams.length}
-          onSelectAll={() => {
-            setCertificationFilter("all");
-            setStartError("");
-          }}
-          onSelectCertification={(certificationId) => {
-            setCertificationFilter(certificationId);
-            setStartError("");
-          }}
+          visibleExamCount={visibleExams.filter(isAvailable).length}
+          onSelectAll={() => setCertificationFilter("all")}
+          onSelectCertification={setCertificationFilter}
         />
       </fieldset>
 
@@ -206,7 +219,6 @@ export default function PracticeExamsScreen() {
         loadError={loadError}
         totalExamCount={exams.length}
         visibleExamCount={visibleExams.length}
-        startError={startError}
         onRetryLoad={reloadExams}
       />
 
@@ -214,7 +226,7 @@ export default function PracticeExamsScreen() {
         <section
           aria-label="Available practice exams"
           aria-busy={isStarting}
-          className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3"
+          className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3 sm:gap-6"
         >
           {visibleExams.map((exam, index) => (
             <BrowseExamCard
@@ -224,6 +236,8 @@ export default function PracticeExamsScreen() {
               iconIndex={index}
               isStarting={startingExamId === exam.id}
               disabled={isStarting}
+              startIssue={startIssues[exam.id]}
+              onReload={reloadExams}
               onStartExam={handleStartExam}
               onContinueExam={
                 resumeAttempts[exam.id] ? () => continueExam(exam.id) : undefined
