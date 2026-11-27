@@ -1,6 +1,8 @@
 # Randomized Practice Exam Generation and Configuration
 
-> **Features:** JHEP-29 (generation), JHEP-126 (publication), JHEP-203 (attempt isolation), JHEP-107 (configuration)
+<!-- JHEP-207 checkpoint 4D -->
+
+> **Features:** JHEP-29 (generation), JHEP-126 (publication), JHEP-203 (attempt isolation), JHEP-107 (configuration), JHEP-207 (safe deletion and UX stabilization)
 > **Stack:** FastAPI · SQLModel · PostgreSQL · Alembic · Next.js
 > **Scope:** Administrator-controlled exam configuration, learner discovery and generation, and preservation of existing attempts.
 
@@ -25,6 +27,10 @@ A valid configuration can be saved even when the bank contains too few eligible 
 The configuration form requires a whole number between 1 and 100. The deployment's `MAX_EXAM_QUESTIONS` setting may impose a lower publication/start limit. The backend permits creating an incomplete draft with a null/omitted count, but a configuration update requires a valid, non-null integer. A draft without a count cannot publish.
 
 On narrow screens, the exam list and selected details are separate views. The form presents field-level errors, retains user input on failed saves, and reports successful saves and current readiness. Cancel does not persist changes. A question-availability hint is based on the last checked category; if the category changes, the server rechecks availability when saving. The desktop layout retains a two-panel workspace.
+
+### Safe deletion
+
+An Administrator may delete only a draft or unpublished configuration with no linked learner attempts. The Manage Exams details view separates Delete exam from editing/publication, requires confirmation, and reports conflicts inline. If learner history exists, leave the exam unpublished instead. No questions, answers, results or catalog parents are removed.
 
 ## Request flow
 
@@ -62,6 +68,7 @@ All endpoints below use the `/api/v1` prefix. Authenticate with `Authorization: 
 | GET | `/admin/practice-exams/{exam_id}` | 200 | Read configuration and fresh readiness |
 | PUT | `/admin/practice-exams/{exam_id}` | 200 | Replace editable configuration |
 | PATCH | `/admin/practice-exams/{exam_id}/publication` | 200 | Publish or unpublish |
+| DELETE | `/admin/practice-exams/{exam_id}` | 204 | Delete an unused draft/unpublished exam |
 
 `PUT` is a full configuration update, not a partial patch. Use the existing exam ID; do not create a new exam to change its count. It does not accept a publication status or learner identity. Preserve the name, certification and category when editing an unpublished exam.
 
@@ -113,6 +120,31 @@ List responses have the shape `{ "items": [ ... ], "count": 1 }`. Publication ac
 | 422 | Invalid or missing configuration fields, including invalid counts |
 
 Publication readiness checks certification and category publication, passing threshold, configured count and eligible question supply. A readiness rejection uses `detail.code = "PRACTICE_EXAM_NOT_READY"`, a message and the server's current readiness snapshot. Configuration conflicts use a string detail. Validation errors use FastAPI's validation detail array.
+
+### Administrator deletion
+
+**DELETE** `/api/v1/admin/practice-exams/{exam_id}` — Administrator only; no request body.
+
+Only an unused `draft` or `unpublished` exam may be deleted. The server locks the
+exam, checks for any linked learner attempt (including submitted attempts), and
+deletes only the configuration. Questions, certifications and categories are not
+deleted. The foreign key also prevents removing a configuration referenced by an attempt.
+
+Successful deletion returns `204 No Content` with no JSON response body.
+A missing exam returns `404`; authentication and authorization failures return `401`/`403`.
+A conflict returns `409` with `detail.code` and `detail.message`:
+
+| Code | Recovery |
+|---|---|
+| `PRACTICE_EXAM_PUBLISHED` | Unpublish before attempting deletion. |
+| `PRACTICE_EXAM_HAS_ATTEMPTS` | Keep the exam unpublished; preserve learner history. |
+| `PRACTICE_EXAM_DELETE_CONFLICT` | Refresh the list; other linked records prevent deletion. |
+
+In the Manage Exams UI, deletion is a separate destructive action with explicit
+confirmation. The record remains in the list until the server confirms success.
+Protected records cannot be force-deleted through this workflow. Unpublishing blocks
+new starts without erasing existing attempts or results. Historical attempts with a
+null `practice_exam_id` are not inferred to belong to a particular configuration.
 
 ### Learner catalog
 
@@ -193,13 +225,14 @@ Only the attempt owner can retrieve the assigned question versions and saved res
 - `exam_attempt_questions`: exact parent question, version and position; per-attempt review flag. Uniqueness constraints prevent duplicate question and position assignments.
 - `exam_responses`, `exam_question_grades`, `exam_results`: saved answers and grading records scoped to the attempt.
 
-Existing attempts are not reselected when the catalog changes. Admin configuration updates and publication use the same PostgreSQL row lock; published starts use a shared row lock, held through attempt creation. A unique active-attempt index plus the service's per-learner locking/lookup prevents duplicate active attempts for the same published exam. Historical attempts with a null `practice_exam_id` are not inferred from a category. There is no new migration for JHEP-107.
+Existing attempts are not reselected when the catalog changes. Admin configuration updates, publication and deletion use the same PostgreSQL exam row lock; published starts use a shared row lock, held through attempt creation. A unique active-attempt index plus the service's per-learner locking/lookup prevents duplicate active attempts for the same published exam. Historical attempts with a null `practice_exam_id` are not inferred from a category. There is no new migration for JHEP-107.
 
 The eligible-question repository is shared by publication readiness, the learner catalog and randomized selection. It evaluates the matching certification/category, approved active unflagged versions and valid question-type/answer-option configuration. The current PostgreSQL selection uses randomized ordering; reassess performance if the bank becomes substantially larger.
 
 ## Security and integrity
 
-- Enforce backend administrator authorization for all configuration and publication routes.
+- Enforce backend administrator authorization for all configuration, publication and deletion routes.
+- Protect both active and completed attempts from deletion of their linked configuration.
 - Verify JWT identity and attempt ownership; absent and foreign attempts return the same not-found response.
 - Do not accept a learner-selected length or implicitly start a different exam.
 - Do not disclose answer keys in newly created or in-progress exam payloads before the applicable feedback policy permits disclosure.
@@ -227,6 +260,7 @@ python -m pytest -q
 python -m ruff check .
 python -m ruff format --check .
 RUN_DB_INTEGRATION=1 python -m pytest tests/test_exam_configuration_isolation.py -v
+python -m pytest tests/test_admin_practice_exam_deletion.py -v
 ```
 
 From `frontend/`:
@@ -236,7 +270,7 @@ npm test -- --run
 npm run lint
 npx tsc --noEmit
 npm run build
-npx playwright test e2e/exam-publication.e2e.ts --project=chromium --workers=1
+npx playwright test e2e/exam-publication.e2e.ts e2e/exam-deletion.e2e.ts --project=chromium --workers=1
 ```
 
 The publication E2E uses the existing local-only `scripts.seed_exam_publication_e2e --confirm-local` fixture. It seeds two eligible questions plus unique accounts and enrollment data, leaving the browser to create and publish the exam. It requires a disposable local PostgreSQL database, backend `.venv`, and configured local MFA. The existing Playwright configuration starts or reuses FastAPI at port 8010 and Next.js at port 3030. It also runs local demo seeders in global setup. Seeded E2E records remain in the local database; never target a remote or production database. Do not commit test credentials, MFA secrets, `.env` files, generated reports or traces.
@@ -250,8 +284,12 @@ The publication E2E uses the existing local-only `scripts.seed_exam_publication_
 - Stale learner cards cannot start the wrong count; refresh never automatically starts an exam.
 - Use the same learner to complete a one-question attempt after changing the configured length to two, then retake and verify two questions; previous results remain unchanged.
 
+- Cancel a deletion; delete an unused draft; verify linked learner attempts block deletion and that the mobile list and focus recover correctly.
+
 The final approved Innovator desktop/mobile frames and PO acceptance are separate from technical verification. Do not mark design approval or browser tests complete until the evidence is available.
 
 ## Change tracking
+
+JHEP-207 adds protected deletion and clears stale learner resume hints when returning to the catalog. A local Chromium run on 27 November 2026 reported all three publication/configuration/deletion scenarios passing. Other browser/device checks and PO acceptance remain separate.
 
 JHEP-29 established exam generation and pinned attempts. JHEP-32/34/35 added saved responses, navigation, submission and grading. JHEP-57 added question media. JHEP-126 established configured publication and learner discovery. JHEP-203 scoped active attempts to the selected published exam. JHEP-107 adds configuration updates and validation, improved learner count/error presentation, and regression coverage across the full journey. See [grading](grading.md) for scoring details and [the API contract](CONTRACT_API_JSON.md) for other endpoints.

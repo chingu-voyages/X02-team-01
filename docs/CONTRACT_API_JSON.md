@@ -1,5 +1,8 @@
 # JHEP — Current API Contract and Mock JSON Responses
 
+<!-- JHEP-207 checkpoint 4D -->
+> **Stabilization update (JHEP-207):** Exam deletion, question review and import catalog-confirmation sections checked against commit `0aa545138100` (27 November 2026). Earlier sections retain their original baselines. See the exam and import specifications for verification scope.
+
 <!-- JHEP-107 exam contract update -->
 > **Exam configuration update (JHEP-126/203/107):** The practice-exam route inventory and exam lifecycle sections below describe administrator-controlled publication, fixed counts and attempt isolation. See [exam-generation.md](exam-generation.md) for detailed configuration examples, error handling and verification. Other sections retain their existing baseline. This update is source-verified, not a claim of completed acceptance testing.
 
@@ -192,6 +195,7 @@ Bulk-imported questions begin as `pending / draft`, so they are not learner-visi
 | GET | `/api/v1/admin/practice-exams/{exam_id}` | CURRENT | Administrator |
 | PUT | `/api/v1/admin/practice-exams/{exam_id}` | CURRENT (JHEP-107) | Administrator |
 | PATCH | `/api/v1/admin/practice-exams/{exam_id}/publication` | CURRENT | Administrator |
+| DELETE | `/api/v1/admin/practice-exams/{exam_id}` | CURRENT (JHEP-207) | Administrator |
 
 ## 2.3 Admin — certifications and categories
 
@@ -215,10 +219,10 @@ Bulk-imported questions begin as `pending / draft`, so they are not learner-visi
 | POST | `/api/v1/admin/questions/{question_id}/images` | CURRENT | Contributor/Admin* |
 | PATCH | `/api/v1/admin/questions/{question_id}/images/{image_id}` | CURRENT | Contributor/Admin* |
 | DELETE | `/api/v1/admin/questions/{question_id}/images/{image_id}` | CURRENT | Contributor/Admin* |
-| POST | `/api/v1/admin/questions/{question_id}/publish` | CURRENT |
-| POST | `/api/v1/admin/questions/{question_id}/submit` | CURRENT (JHEP-119) | Bearer (the owning contributor) |
+| POST | `/api/v1/admin/questions/{question_id}/publish` | CURRENT | Admin |
+| POST | `/api/v1/admin/questions/{question_id}/submit` | CURRENT (JHEP-119) | Contributor (own draft) / Admin API* |
 | POST | `/api/v1/admin/questions/{question_id}/start-review` | CURRENT (JHEP-119) | Bearer + administrator |
-| POST | `/api/v1/admin/questions/{question_id}/request-changes` | CURRENT (JHEP-119) | Bearer + administrator | Admin |
+| POST | `/api/v1/admin/questions/{question_id}/request-changes` | CURRENT (JHEP-119) | Admin |
 | POST | `/api/v1/admin/questions/{question_id}/reject` | CURRENT | Admin |
 | POST | `/api/v1/admin/questions/{question_id}/retire` | CURRENT | Admin |
 
@@ -235,7 +239,10 @@ Bulk-imported questions begin as `pending / draft`, so they are not learner-visi
 | POST | `/api/v1/admin/question-imports/{batch_id}/assets` | CURRENT | Contributor/Admin* |
 | POST | `/api/v1/admin/question-imports/{batch_id}/cancel` | CURRENT (JHEP-189) | Contributor/Admin* |
 | POST | `/api/v1/admin/question-imports/{batch_id}/revalidate` | CURRENT (JHEP-189) | Contributor/Admin* |
+| GET | `/api/v1/admin/question-imports/{batch_id}/catalog-plan` | CURRENT (JHEP-207) | Contributor/Admin* |
+| POST | `/api/v1/admin/question-imports/{batch_id}/catalog-confirm` | CURRENT (JHEP-207) | Admin |
 | POST | `/api/v1/admin/question-imports/{batch_id}/commit` | CURRENT | Contributor/Admin* |
+| POST | `/api/v1/admin/question-imports/{batch_id}/publish` | CURRENT | Admin |
 
 \* Contributors can access only their own import batches. Administrators can access contributor batches.
 
@@ -605,6 +612,31 @@ retain their original count, pinned questions, responses and results.
 See [exam-generation.md](exam-generation.md#api-contract) for complete illustrative responses,
 security and persistence behavior, and the verification matrix.
 
+## 6.5 Safe exam deletion (JHEP-207)
+
+**DELETE** `/api/v1/admin/practice-exams/{exam_id}` — Administrator only; no request body.
+
+Only an unused `draft` or `unpublished` exam may be deleted. The server locks the
+exam, checks for any linked learner attempt (including submitted attempts), and
+deletes only the configuration. Questions, certifications and categories are not
+deleted. The foreign key also prevents removing a configuration referenced by an attempt.
+
+Successful deletion returns `204 No Content` with no JSON response body.
+A missing exam returns `404`; authentication and authorization failures return `401`/`403`.
+A conflict returns `409` with `detail.code` and `detail.message`:
+
+| Code | Recovery |
+|---|---|
+| `PRACTICE_EXAM_PUBLISHED` | Unpublish before attempting deletion. |
+| `PRACTICE_EXAM_HAS_ATTEMPTS` | Keep the exam unpublished; preserve learner history. |
+| `PRACTICE_EXAM_DELETE_CONFLICT` | Refresh the list; other linked records prevent deletion. |
+
+In the Manage Exams UI, deletion is a separate destructive action with explicit
+confirmation. The record remains in the list until the server confirms success.
+Protected records cannot be force-deleted through this workflow. Unpublishing blocks
+new starts without erasing existing attempts or results. Historical attempts with a
+null `practice_exam_id` are not inferred to belong to a particular configuration.
+
 ---
 
 # 7. Admin content-management roles
@@ -619,12 +651,14 @@ Can:
 - view/edit owned permitted questions;
 - upload/replace/remove images on owned editable questions;
 - search/filter/page through owned Question Bank records;
-- upload/validate/review/confirm bulk question imports;
+- upload, validate and explicitly commit bulk question imports;
+- preview missing catalog records in their own staged batch;
+- submit their own pending drafts for review;
 - view/reopen only their own import history.
 
 Cannot:
 
-- create certifications/categories;
+- create certifications/categories, including import catalog confirmation;
 - publish/unpublish catalog content;
 - approve/publish questions;
 - reject questions;
@@ -641,7 +675,8 @@ Can:
 - upload/replace/remove question images;
 - approve/publish/reject/retire questions;
 - create revisions of active questions;
-- bulk import questions;
+- bulk import questions and explicitly confirm missing catalog records;
+- approve/publish eligible completed import batches;
 - view all question-import history, including uploader identity;
 - manage Learner/Contributor access.
 
@@ -689,15 +724,20 @@ pending / draft
 approved / active
 ```
 
-Rejection:
+Contributor review and administrator decisions:
 
 ```text
-pending / draft
-        ↓
-rejected / draft
+pending / draft → submitted / draft → in_review / draft
+                                      ├─ Approve & Publish → approved / active
+                                      ├─ Request Changes → pending / draft
+                                      └─ Reject → rejected / inactive
 ```
 
-Editing a rejected draft returns it to `pending / draft`.
+Returned drafts may be edited and resubmitted. Rejected/inactive records are
+retained and cannot be edited back into the active bank. The backend also
+permits rejecting a submitted question directly; the current UI guides the
+administrator through Start Review first. Administrator direct publication of
+a pending draft remains supported.
 
 Administrator editing an active question creates a new version:
 
@@ -730,8 +770,9 @@ Supported query parameters:
 | `category_id` | filter category |
 | `difficulty` | `easy`, `medium`, `hard` |
 | `question_type` | `multiple_choice`, `short_answer` |
-| `review_status` | `pending`, `approved`, `rejected` |
-| `publication_status` | `draft`, `active`, `retired` |
+| `review_status` | `pending`, `submitted`, `in_review`, `approved`, `rejected` |
+| `publication_status` | `draft`, `active`, `inactive`, `retired` |
+| `author_email` | filter author email within actor scope |
 | `has_image` | `true` / `false` |
 | `page` | 1-based page, minimum 1 |
 | `page_size` | optional, 1–100 |
@@ -750,11 +791,11 @@ PATCH /api/v1/admin/questions/{question_id}
 
 Single-question create and edit use the same question validation rules reused by bulk import.
 
-For authorized question-detail responses, `review_note` contains the
-Administrator's latest rejection feedback when the current draft is rejected.
-An owning Contributor can read that feedback so they know what to revise.
-Editing/resubmitting the rejected draft clears `review_note` and returns the
-question to `pending / draft`.
+Authorized detail responses include `review_status`, `publication_status` and
+`review_note`. Request Changes returns the question to a pending draft with
+feedback; editing that draft clears the previous feedback. Rejection instead
+retains an inactive, read-only record and its reason. Editing active content
+is an Administrator-only revision operation, not an in-place overwrite.
 
 ## 9.4 Images — CURRENT
 
@@ -778,13 +819,21 @@ The response never exposes `storage_key`.
 
 ## 9.5 Review/publication
 
-```http
-POST /api/v1/admin/questions/{question_id}/publish
-POST /api/v1/admin/questions/{question_id}/reject
-POST /api/v1/admin/questions/{question_id}/retire
-```
+| Action (`POST /api/v1/admin/questions/{question_id}/...`) | Allowed source | Role |
+|---|---|---|
+| `submit` | pending / draft | Owning Contributor; API also permits Admin |
+| `start-review` | submitted | Admin |
+| `request-changes` | in_review | Admin |
+| `publish` | pending / draft or in_review / draft | Admin |
+| `reject` | submitted or in_review | Admin |
+| `retire` | existing retirement lifecycle | Admin |
 
-All are Administrator-only.
+Request Changes and Reject accept `{ "review_note": "Reason" }`; the reason is
+required. Retirement uses `{ "confirm": true }`. The role-specific question
+detail UI does not offer Submit for Review to Administrators, and exposes
+Request Changes/Reject after Start Review. The API retains its existing broader
+Administrator submit and direct reject capabilities. Invalid sequential state
+transitions return `409`. Do not interpret UI visibility as an API permission change.
 
 ---
 
@@ -877,7 +926,7 @@ Example ready response:
 }
 ```
 
-A structurally valid workbook can return `201` with `status = invalid` when row-level issues exist. No Question rows are created at this stage.
+A structurally valid workbook can return `201` with `status = invalid` when row-level issues exist. No Question or catalog records are created at this stage.
 
 Identical same-user re-upload returns the existing batch rather than creating another batch. If that batch was cancelled, the same workbook reactivates the batch and runs validation again so the user is not trapped in a cancelled record.
 
@@ -1037,6 +1086,8 @@ Cancellation:
 
 Repeated cancellation is idempotent.
 
+Catalog records created by an earlier explicit catalog confirmation are not removed by cancelling or replacing an import.
+
 Example:
 
 ```json
@@ -1080,6 +1131,135 @@ the Contributor keeps the staged workbook open.
 
 The response is the refreshed batch summary. The batch becomes `ready`
 only when no blocking row errors remain.
+
+## 10.8A Preview and confirm missing catalog records — CURRENT (JHEP-207)
+
+Catalog creation is a separate, explicit operation. Upload, ordinary validation,
+preview, image upload, revalidation and question commit do not create certifications
+or categories automatically. Unknown required references block the question import.
+
+### GET `/api/v1/admin/question-imports/{batch_id}/catalog-plan`
+
+Read-only; Administrator or owning Contributor. Only active validated `invalid` or
+`ready` batches are eligible for this endpoint. The server derives the proposed
+additions from the stored workbook, not from editable client-provided rows.
+
+Example response (`200`):
+
+```json
+{
+  "batch_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "plan_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "missing_certifications": [
+    { "code": "CS-100", "row_numbers": [2, 3] }
+  ],
+  "missing_categories": [
+    { "certification_code": "CS-100", "name": "Algorithms", "row_numbers": [2] },
+    { "certification_code": "CS-100", "name": "Data Structures", "row_numbers": [3] }
+  ],
+  "blocking_issues": [],
+  "can_confirm": true
+}
+```
+
+Each blocking issue contains `row_number`, `field` and `message`. Certification
+codes match exactly; new codes must be uppercase. A case mismatch with an existing
+certification must be corrected rather than creating another certification. Category
+names match case-insensitively within the same certification; repeated references
+are grouped with their workbook row numbers. Ambiguous/invalid references require
+correction, not automatic guessing. `can_confirm` is false for Contributors, for an
+empty plan, or when catalog-reference issues block resolution. It is not equivalent to
+the batch's `can_import`: other question/image/duplicate errors may remain.
+
+### POST `/api/v1/admin/question-imports/{batch_id}/catalog-confirm`
+
+Administrator only. Example JSON request for the above plan:
+
+```json
+{
+  "plan_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "confirm": true,
+  "certifications": [
+    {
+      "code": "CS-100",
+      "name": "Computer Science",
+      "passing_threshold_pct": 70,
+      "feedback_mode": "deferred"
+    }
+  ]
+}
+```
+
+`plan_id` is the 64-character lowercase hexadecimal value returned by the preview;
+clients must echo the current value rather than generate it. `confirm` must be a
+JSON boolean and must be true to create records. Supply one configuration per
+proposed new certification and no others; for a category-only plan use `[]`.
+Certification name is required (1–255 characters after validation), code 1–50,
+threshold a strict integer 0–100, feedback mode `immediate` or `deferred` (default
+`deferred`). No category list, publication flags, or modified question rows are
+accepted in the confirmation body. The server derives category creation from its plan.
+
+The server locks the batch, coordinates category creation with existing parent-row
+locks, recomputes the plan, rejects stale confirmation, and creates the confirmed
+records as unpublished. Creation and batch revalidation share one transaction;
+unexpected persistence/revalidation failures roll it back. A normal invalid
+revalidation result is not a transaction failure: confirmed catalog records may be
+created while question/image errors still block importing.
+
+Example successful response (`200`; batch summary shown in full):
+
+```json
+{
+  "batch": {
+    "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "original_filename": "questions.xlsx",
+    "template_version": "2.0",
+    "status": "ready",
+    "total_rows": 2,
+    "valid_rows": 2,
+    "error_rows": 0,
+    "warning_rows": 2,
+    "imported_rows": 0,
+    "can_import": true,
+    "created_at": "2026-11-27T08:00:00Z",
+    "validated_at": "2026-11-27T08:02:00Z",
+    "imported_at": null
+  },
+  "created_certification_ids": ["11111111-1111-4111-8111-111111111111"],
+  "created_category_ids": [
+    "22222222-2222-4222-8222-222222222222",
+    "33333333-3333-4333-8333-333333333333"
+  ]
+}
+```
+
+For an invalid batch after confirmation, use the returned summary and reload rows;
+`can_import` remains false. The administrator may resolve other issues and revalidate.
+A successful confirmation does **not** commit questions or publish catalog content.
+Confirmed catalog records persist even if the user subsequently cancels or replaces
+the import. Closing the preview or declining confirmation creates nothing.
+
+| HTTP status | Meaning |
+|---|---|
+| 401 | Authentication required/invalid session |
+| 403 | Insufficient role for preview or confirmation |
+| 404 | Batch absent or outside the actor's scope |
+| 409 | Plan/state/configuration conflict; see codes below |
+| 422 | Invalid confirmation request, including invalid field types |
+
+Conflict detail has the form `{ "code": "IMPORT_CATALOG_PLAN_CHANGED", "message": "..." }`.
+
+| Conflict code | Recovery |
+|---|---|
+| `IMPORT_CATALOG_CONFIRMATION_REQUIRED` | Explicitly acknowledge the reviewed additions. |
+| `IMPORT_CATALOG_PLAN_CHANGED` | Fetch a new plan and require fresh confirmation. |
+| `IMPORT_CATALOG_NOT_AVAILABLE` | Reopen/revalidate an active batch or correct its references. |
+| `IMPORT_CATALOG_CONFIGURATION_MISMATCH` | Provide exactly the required new certification configurations. |
+
+If a confirmation response is lost, refresh the plan and batch before retrying;
+unlike question commit, replaying a previously consumed creation plan is not an
+idempotent success receipt. A failed preview refresh after successful creation
+does not undo catalog records. Revalidate before committing questions.
 
 ## 10.9 Confirm atomic import
 
@@ -1192,11 +1372,31 @@ The UI supports:
 - reopen/continue/review behavior;
 - grouped repeated validation errors;
 - explicit revalidation after catalog/database changes;
+- read-only missing-catalog preview and Administrator-only confirmation with field validation;
+- stacked responsive validation rows on smaller screens, with grouped and row-level errors;
 - confirmed cancellation with temporary-asset cleanup;
 - corrected-workbook replacement without leaving the page;
 - read-only cancelled audit records.
 
 The frontend does not expose an "import valid rows anyway" action.
+
+## 10.12 Publish an imported batch — CURRENT
+
+**POST** `/api/v1/admin/question-imports/{batch_id}/publish` — Administrator only,
+separate from catalog confirmation and question commit; no request body.
+
+Requires an `imported` batch with complete question/version provenance. Every
+imported version must still be the latest version, either `pending / draft`
+or `approved / active`. All versions are checked before publication; a conflict
+prevents partial changes. The response contains `batch`, `requested_count`,
+`published_count`, `already_published_count`, `published_question_ids`,
+`already_published_question_ids` and `all_published`. Already-published versions
+are counted without republishing them. The backend never publishes the parent
+certification or categories as part of this action.
+
+`409` conflict codes: `IMPORT_BATCH_NOT_IMPORTED`, `IMPORT_PUBLICATION_DATA_INVALID`,
+`IMPORT_QUESTIONS_NOT_PUBLISHABLE`. Unauthorized requests return `401`/`403`;
+a missing batch returns `404`. General Question Bank multi-selection is separate.
 
 ---
 
@@ -1311,8 +1511,8 @@ Frontend visibility does not replace backend authorization.
 | Learner session token | default 12 hours |
 | Question formats | `multiple_choice`, `short_answer` |
 | Difficulty | `easy`, `medium`, `hard` |
-| Review states | `pending`, `approved`, `rejected` |
-| Publication states | `draft`, `active`, `retired` |
+| Review states | `pending`, `submitted`, `in_review`, `approved`, `rejected` |
+| Publication states | `draft`, `active`, `inactive`, `retired` |
 | Managed Question Bank page size | UI uses 50; API max 100 |
 | Question image types | PNG, JPEG, WebP |
 | Images per question version | 1 |
@@ -1324,7 +1524,7 @@ Frontend visibility does not replace backend authorization.
 | Bulk question rows | max 1,000 |
 | Import history page size | default 20; max 100 |
 | Import preview page size | default 50; max 100 |
-| Bulk commit policy | all-or-nothing |
+| Bulk commit policy | all-or-nothing question creation; separately confirmed catalog records persist |
 | Bulk imported initial state | `pending / draft` |
 | Raw R2/storage keys | backend-only |
 
@@ -1342,7 +1542,7 @@ GET   /api/v1/exams/{attempt_id}/review
 GET   /api/v1/me/exam-attempts
 ```
 
-Question-bank batch actions such as bulk approve/publish/retire/category changes are also separate scope from JHEP-118.
+General Question Bank bulk selection/retirement/category changes remain separate scope. Administrator publication of an imported batch is implemented (see §10.12).
 
 ---
 
@@ -1360,6 +1560,8 @@ backend/app/api/v1/endpoints/admin_practice_exams.py
 backend/app/api/v1/endpoints/learner_practice_exams.py
 backend/app/api/v1/endpoints/admin.py
 backend/app/api/v1/endpoints/question_imports.py
+backend/app/api/v1/endpoints/question_import_actions.py
+backend/app/api/v1/endpoints/question_import_catalog.py
 
 backend/app/schemas/auth.py
 backend/app/schemas/category.py
@@ -1371,6 +1573,7 @@ backend/app/schemas/admin_question.py
 backend/app/schemas/admin_certification.py
 backend/app/schemas/admin_category.py
 backend/app/schemas/question_import.py
+backend/app/schemas/question_import_catalog.py
 
 backend/app/models/question_import_batch.py
 backend/app/models/question_import_row.py
@@ -1389,6 +1592,9 @@ backend/app/services/question_import_parser.py
 backend/app/services/question_import_validation_service.py
 backend/app/services/question_import_asset_service.py
 backend/app/services/question_import_commit_service.py
+backend/app/services/question_import_catalog_service.py
+backend/app/services/question_import_workflow_service.py
+backend/app/services/question_import_publish_service.py
 backend/app/services/r2_storage.py
 ```
 
@@ -1405,11 +1611,12 @@ Admin:       Submitted --start-review--> In Review
 Admin:       In Review --publish--> approved + active   (the existing atomic action)
 Admin:       In Review --request-changes(reason)--> pending/draft (the author reworks)
 Admin:       In Review --reject(reason)--> rejected + inactive (terminal, retained)
-Admin author: pending/draft --publish directly--> unchanged (JHEP-159's path)
+Admin:        pending/draft --publish directly--> approved + active (JHEP-159's path)
 ```
 
-- **Submit**: the owning contributor only (actor scoping); the
-  publication status stays `draft` — submission never publishes (AC1).
+- **Submit**: the UI offers this to the owning Contributor only; the API
+  also permits Administrators under its existing actor-scope rules. The
+  publication status stays `draft` — submission never publishes.
 - **Opening a submission changes nothing** (AC2): only Start Review
   moves Submitted → In Review, stamped with the reviewer.
 - **Request Changes** requires a reason; the reason is kept as the
@@ -1417,11 +1624,13 @@ Admin author: pending/draft --publish directly--> unchanged (JHEP-159's path)
 - **Reject** requires a reason and the outcome is terminal:
   `publication_status: inactive` — retained, never silently reactivated
   by editing (AC4; the pre-JHEP-119 edit-reset behavior was removed).
-- **Concurrency (AC5)**: transition preconditions return 409 for
-  out-of-order/duplicate requests (submit a submitted question, reject
-  an inactive one, publish a non-draft source).
-- **The review queue (AC2)**: `GET /admin/questions?review_status=submitted|in_review&author_email=…`
-  — server-side filtering on top of the role scoping.
+- **Transition preconditions**: invalid sequential or repeated actions return
+  409 (submit a submitted question, reject an inactive one, publish a non-draft
+  source). This is not a claim of comprehensive concurrent-transition coverage.
+- **The review queue**: `GET /admin/questions?review_status=submitted&author_email=…`
+  or `review_status=in_review` — a single status per request, within actor scope.
 - **AC7**: the review outcome, actor, timestamp and reason live on the
   question version (`review_status`, `reviewed_by_id`, `reviewed_at`,
-  `review_note`) and are visible on the question detail.
+  `review_note`). The current detail response exposes status, feedback, creator/
+  submitter IDs and `last_updated`; reviewer ID and review timestamp are not
+  separate detail response fields.

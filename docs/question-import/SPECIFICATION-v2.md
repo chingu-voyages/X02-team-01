@@ -1,10 +1,14 @@
 # JHEP-71 / JHEP-118 / JHEP-189 — Question Bank Bulk Import Contract v2
 
-**Status:** Implemented JHEP-118 contract with JHEP-189 recovery workflow  
+<!-- JHEP-207 checkpoint 4D -->
+
+**Status:** Implemented JHEP-118 contract with JHEP-189 recovery and JHEP-207 catalog confirmation  
 **Contract version:** 2.0  
 **Prepared:** 18 November 2026  
 **Implementation verified:** 19 November 2026  
-**Repository baseline:** `feat/JHEP-189-refine-import-workflow`  
+**Repository baseline:** `feat/JHEP-189-refine-import-workflow`
+
+> **JHEP-207 update:** 27 November 2026; catalog confirmation and responsive import behavior checked against `0aa545138100`. Earlier baseline retained for historical context.  
 **Supersedes for implementation:** the earlier JHEP-71 contract 1.0 review draft and `question-bank-import-template-v1.xlsx`
 
 ## 1. Goal
@@ -123,8 +127,8 @@ The old v1 `status` field is removed. Publication/review state is server-control
 | Field | Required? | Contract |
 |---|---|---|
 | `template_version` | Required | Exact text `2.0` on every data row |
-| `certification_code` | Required | Must resolve to an existing certification |
-| `category_name` | Optional | If present, must resolve within the selected certification |
+| `certification_code` | Required | Must resolve exactly before import; missing uppercase codes can be explicitly created by an Administrator |
+| `category_name` | Optional | If present, must resolve within the selected certification; missing categories can be explicitly confirmed by an Administrator |
 | `difficulty` | Required | `easy`, `medium`, or `hard` |
 | `question_type` | Required | `multiple_choice` or `short_answer` |
 | `allows_multiple_answers` | Required | `true` or `false`; false for short answer |
@@ -267,11 +271,7 @@ Importing a short-answer Draft does not introduce a new grading strategy. Surfac
 
 `category_name`, when present, resolves only inside that certification.
 
-The importer never auto-creates:
-
-- certifications;
-- categories;
-- publication state.
+The importer never silently creates certifications or categories or changes publication state. An explicit, separate Administrator catalog-confirmation action can resolve missing references before question commit.
 
 Blocking issues include:
 
@@ -285,6 +285,44 @@ CATEGORY_CERTIFICATION_MISMATCH
 Blank category is allowed if the existing question model permits it. Surface `CATEGORY_MISSING` as a warning because the learner journey is category-oriented.
 
 Unpublished catalog records may receive Draft questions but should surface `CATALOG_UNPUBLISHED`.
+
+### 10.1 Explicit catalog resolution (JHEP-207)
+
+Upload and validation never create catalog records. A missing reference remains a
+blocking row issue until it is resolved. The workbook format and its 18 headers
+are unchanged; certification display names, passing thresholds and feedback modes
+are not additional workbook columns.
+
+In **Import Questions → Resolve missing catalog records → Review missing records**:
+
+1. The server previews the missing certification codes and category names, grouped
+   by certification with affected physical Excel row numbers. No database write
+   occurs when opening or closing this preview.
+2. An Administrator supplies a name and whole-number threshold (0–100%) for each
+   new certification, and selects immediate or deferred feedback. New codes must
+   be uppercase; existing codes must match exactly. Category names resolve
+   case-insensitively under their own certification. Invalid/ambiguous references
+   must be corrected rather than guessed.
+3. The Administrator explicitly checks the acknowledgement and chooses **Create
+   records & revalidate**. Closing the form leaves the staged workbook unchanged.
+4. The server verifies the current plan and creates only the reviewed missing
+   records as unpublished. Creation and revalidation are atomic; no questions are
+   imported or published in this action.
+5. Review refreshed validation. Missing images, invalid answers, duplicates or other
+   blocking errors still prevent import. Fix those issues, then explicitly use the
+   existing **Import N Questions** action to create pending, unpublished drafts.
+
+A Contributor can inspect the proposed additions for their own batch but cannot
+create catalog records. An Administrator can reopen that batch from Recent Imports
+and confirm the additions; the Contributor can then revalidate and continue.
+Stale previews must be refreshed and confirmed again. Existing certifications and
+categories are not overwritten or published by catalog resolution.
+
+Confirmed catalog records remain even if the question import is subsequently
+cancelled or replaced. This is distinct from abandoning an unconfirmed preview.
+Question import remains all-or-nothing; catalog confirmation is a separately
+authorized transaction. See [API contract](../CONTRACT_API_JSON.md#108a-preview-and-confirm-missing-catalog-records--current-jhep-207)
+for request/response fields and error codes.
 
 ---
 
@@ -440,6 +478,7 @@ Required behaviors:
 - invalid/rolled-back attempts do not block a corrected workbook;
 - an authorized manager can cancel an uncommitted batch;
 - cancellation preserves an audit record and discards temporary image assets;
+- cancellation does not undo a completed catalog-confirmation operation;
 - repeated cancellation is idempotent;
 - a cancelled identical workbook can be reactivated and revalidated;
 - active uncommitted batches can be revalidated after catalog, duplicate or image conditions change.
@@ -460,6 +499,8 @@ There is no "import valid rows anyway" action in contract 2.0.
 Warnings do not make the batch invalid but must be visible before confirmation.
 
 If anything fails during confirmed persistence, the entire question batch transaction rolls back.
+
+This guarantee concerns question creation. Explicit catalog creation is a separate transaction with revalidation; previously confirmed catalog additions are retained if question commit fails or the batch is cancelled. A normal invalid validation result can coexist with successfully created unpublished catalog records.
 
 Image/object-storage cleanup must also be safe: failed imports must not leave question records pointing at missing objects, and uploaded temporary objects must be cleaned up or safely recoverable.
 
@@ -516,6 +557,8 @@ The preview currently allows the user to:
 - trigger automatic revalidation after image upload;
 - group repeated row errors by code/message/value;
 - manually revalidate after catalog/database changes;
+- preview missing catalog records and, for Administrators, explicitly confirm their creation;
+- use stacked validation rows on smaller screens and a table on larger screens, with errors attached to the affected row;
 - cancel an uncommitted import after confirmation;
 - upload a corrected workbook without leaving the page;
 - reopen cancelled imports as read-only audit records;
@@ -563,6 +606,8 @@ Confirmation must be explicit.
 
 The client sends only the import/validation identifier. It must not be able to replace the already-validated question rows in the confirmation request.
 
+For question commit, the batch ID in the URL identifies the staged data; no replacement rows are supplied. Missing-catalog confirmation is a different endpoint with the current plan ID, explicit boolean acknowledgement and configuration for each new certification (see §10.1).
+
 ---
 
 ## 18. Successful result
@@ -577,7 +622,7 @@ A successful import reports:
 - warning count;
 - image count.
 
-Imported questions immediately become visible in the authorized Question Bank and enter the existing review workflow.
+Imported questions immediately become visible in the authorized Question Bank as `pending / draft`. They are not automatically submitted for review. Contributors open the Question Bank and explicitly submit their remaining drafts; Administrators may separately approve/publish eligible imported batches without publishing their parent catalog records.
 
 ---
 
@@ -593,6 +638,8 @@ Anonymous      → authentication required
 ```
 
 Bulk import does not grant an importing Contributor any Administrator-only review, approval, publication or retirement ability.
+
+Catalog-plan preview is available to the owning Contributor or an Administrator; only an Administrator can confirm catalog creation or publish an imported batch. Administrator access to a Contributor's batch does not change ownership of questions created by the later import.
 
 ---
 
@@ -638,7 +685,7 @@ Question Bank filtering directly by `import_batch_id` and owner, plus multi-sele
 
 ## 21. Implementation status
 
-Implemented for JHEP-118 and JHEP-189:
+Implemented for JHEP-118, JHEP-189 and JHEP-207:
 
 1. contract/template v2;
 2. scalable Question Bank query API;
@@ -653,7 +700,10 @@ Implemented for JHEP-118 and JHEP-189:
 11. Recent Imports history/audit + reopen/continue behavior;
 12. API/configuration/spec documentation;
 13. cancel/revalidate/corrected-workbook recovery actions;
-14. grouped issue summaries and cancelled audit state.
+14. grouped issue summaries and cancelled audit state;
+15. explicit Administrator catalog confirmation, stale-plan recovery and unpublished catalog creation;
+16. responsive import preview and accurate Contributor draft messaging;
+17. separate Administrator publication of eligible imported batches.
 
 Final acceptance verification is performed as three explicit gates:
 
@@ -665,7 +715,7 @@ Integration tests
 Browser E2E tests
 ```
 
-Question Bank batch actions such as bulk approve/publish/retire/category changes are intentionally deferred to separate scope.
+General Question Bank bulk actions remain separate scope; the imported-batch publication endpoint is implemented.
 
 ---
 
@@ -675,7 +725,7 @@ Question Bank batch actions such as bulk approve/publish/retire/category changes
 - embedded Excel images;
 - image URLs/storage keys supplied by authors;
 - more than one image per question version;
-- automatic certification/category creation;
+- automatic or unconfirmed certification/category creation (explicit Administrator confirmation is implemented);
 - automatic approval or publication;
 - updating/upserting existing questions through import;
 - fuzzy/AI duplicate detection;
@@ -694,7 +744,9 @@ The implementation reuses the existing question/image lifecycle and adds dedicat
 ```text
 backend/app/api/v1/endpoints/question_imports.py
 backend/app/api/v1/endpoints/question_import_actions.py
+backend/app/api/v1/endpoints/question_import_catalog.py
 backend/app/schemas/question_import.py
+backend/app/schemas/question_import_catalog.py
 
 backend/app/models/question_import_batch.py
 backend/app/models/question_import_row.py
@@ -705,6 +757,8 @@ backend/app/services/question_import_validation_service.py
 backend/app/services/question_import_asset_service.py
 backend/app/services/question_import_commit_service.py
 backend/app/services/question_import_workflow_service.py
+backend/app/services/question_import_catalog_service.py
+backend/app/services/question_import_publish_service.py
 
 backend/app/services/admin_question_service.py
 backend/app/services/admin_question_bank_query_service.py
@@ -715,6 +769,8 @@ backend/app/services/r2_storage.py
 frontend/src/app/admin/questions/page.tsx
 frontend/src/app/admin/questions/import/page.tsx
 frontend/src/lib/question-import-api.ts
+frontend/src/lib/question-import-catalog-api.ts
+frontend/src/features/questions/ImportCatalogResolution.tsx
 frontend/src/types/question-import-api.types.ts
 frontend/src/lib/api-client.ts
 ```
@@ -745,7 +801,7 @@ Image files are intentionally supplied separately through the import UI rather t
 
 ## 25. Implemented API workflow
 
-Current JHEP-118 routes:
+Current import routes (JHEP-118/189/207):
 
 ```text
 GET  /api/v1/admin/question-imports
@@ -757,7 +813,10 @@ GET  /api/v1/admin/question-imports/{batch_id}/rows
 POST /api/v1/admin/question-imports/{batch_id}/assets
 POST /api/v1/admin/question-imports/{batch_id}/cancel
 POST /api/v1/admin/question-imports/{batch_id}/revalidate
+GET  /api/v1/admin/question-imports/{batch_id}/catalog-plan
+POST /api/v1/admin/question-imports/{batch_id}/catalog-confirm
 POST /api/v1/admin/question-imports/{batch_id}/commit
+POST /api/v1/admin/question-imports/{batch_id}/publish
 ```
 
 Current batch lifecycle:
@@ -795,3 +854,31 @@ all uploads + uploader identity in history
 ```
 
 Successful commit is atomic and creates only new `pending / draft` questions. Existing approved/published questions are never overwritten.
+
+Missing catalog resolution is a branch of the active validation lifecycle:
+`invalid → preview (read-only) → explicit Administrator confirmation → revalidate → invalid or ready`.
+Cancellation remains available before question commit; it does not delete confirmed catalog additions.
+
+## 26. Verification (JHEP-207)
+
+Relevant commands, using a disposable local development database and local test accounts:
+
+```bash
+# From backend/, virtual environment activated
+python -m pytest tests/test_question_import_catalog_api.py -v
+python -m pytest tests/test_question_import* -q
+
+# From frontend/
+npm test -- --run
+npx tsc --noEmit
+npm run lint
+npx playwright test e2e/question-import.e2e.ts e2e/question-import-recovery.e2e.ts e2e/question-import-catalog.e2e.ts --project=chromium --workers=1
+```
+
+The catalog E2E scenarios exercise explicit confirmation, role restrictions,
+stale-plan recovery, remaining image errors and responsive validation layouts.
+Existing import/recovery tests cover image staging, workbook replacement and
+all-or-nothing question creation. Image upload tests need local R2 configuration;
+the new catalog tests do not need real R2 uploads. On 27 November 2026 the local
+combined Chromium run reported six passing tests. This is evidence for those
+scenarios, not every browser/device or PostgreSQL concurrency case.
