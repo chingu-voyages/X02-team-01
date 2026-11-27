@@ -1,7 +1,8 @@
 """TOTP multi-factor authentication (JHEP-109).
 
 Design guarantees:
-- Unenrolled accounts retain the existing bootstrap login path.
+- Unenrolled administrators receive enrollment-only sessions; unrestricted
+  administrative access requires enrollment and a new two-factor sign-in.
 - Administrators are required by policy to enroll; Contributors may enroll.
   Once confirmed, MFA is required at sign-in regardless of subsequent role
   changes. Learners cannot start a new enrollment.
@@ -94,6 +95,11 @@ def mfa_configured() -> bool:
 
 def _decrypt_secret(encrypted: str) -> str:
     return _fernet().decrypt(encrypted.encode("utf-8")).decode("utf-8")
+
+
+def administrator_requires_enrollment(user: User) -> bool:
+    """Mandatory policy; no deployment-level bypass for administrator access."""
+    return user.role in MFA_MANDATORY_ROLES and user.mfa_enrolled_at is None
 
 
 def mfa_required_for(user: User) -> bool:

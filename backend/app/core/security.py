@@ -61,8 +61,8 @@ def decode_access_token(token: str) -> str:
         options={"require": ["sub", "iat", "exp"]},
     )
 
-    if payload.get("mfa") == "pending":
-        raise jwt.InvalidTokenError("MFA challenge tokens are not access tokens")
+    if payload.get("mfa") in ("pending", "enrollment"):
+        raise jwt.InvalidTokenError("Restricted MFA tokens are not access tokens")
     return payload["sub"]
 
 

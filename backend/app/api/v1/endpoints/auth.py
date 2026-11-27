@@ -35,7 +35,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from app.api.deps import bearer_scheme, get_current_subject, get_current_user
+from app.api.deps import bearer_scheme, get_current_mfa_user, get_current_subject
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
@@ -54,6 +54,7 @@ from app.schemas.auth import (
     ResendVerificationIn,
     UserRegistrationIn,
 )
+from app.services import mfa_service
 from app.services.mfa_service import (
     ChallengeLockedError,
     EnrollmentNotAllowedError,
@@ -253,7 +254,26 @@ def login(
             },
         )
 
-    access_token = create_access_token_for_learner(user)
+    # JHEP-207: password authentication alone must never grant an
+    # unenrolled Administrator a normal access token. The scope is also
+    # enforced by the server; the response flag only drives navigation.
+    if mfa_service.administrator_requires_enrollment(user):
+        enrollment_token = create_access_token(
+            subject=str(user.id),
+            expires_delta=timedelta(minutes=15),
+            extra_claims={
+                "mfa": "enrollment",
+                "role": user.role,
+                "iat": datetime.now(UTC).timestamp(),
+            },
+        )
+        return AuthTokenOut(
+            access_token=enrollment_token,
+            token_type="bearer",
+            learner=_learner_out(user),
+            mfa_enrollment_required=True,
+            mfa_expires_in_seconds=900,
+        )
 
     # JHEP-109 AC2: an MFA-required account must complete the second
     # factor before ANY session is established — the challenge token
@@ -275,7 +295,7 @@ def login(
         )
 
     return AuthTokenOut(
-        access_token=access_token,
+        access_token=create_access_token_for_learner(user),
         token_type="bearer",
         learner=_learner_out(user),
     )
@@ -360,7 +380,7 @@ def get_mfa_context(
 
 @router.post("/mfa/enroll/setup", status_code=status.HTTP_200_OK)
 def mfa_enroll_setup(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_mfa_user)],
     session: Annotated[Session, Depends(get_session)],
 ) -> dict:
     """JHEP-109 AC1: start TOTP enrollment — the secret (encrypted at
@@ -392,7 +412,7 @@ def mfa_enroll_setup(
 @router.post("/mfa/enroll/verify", status_code=status.HTTP_200_OK)
 def mfa_enroll_verify(
     payload: dict,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_mfa_user)],
     session: Annotated[Session, Depends(get_session)],
 ) -> dict:
     """JHEP-109 AC1: confirm the enrollment with a live code; the
@@ -523,7 +543,7 @@ def mfa_verify(
 
 @router.get("/mfa/status", status_code=status.HTTP_200_OK)
 def mfa_status(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_mfa_user)],
 ) -> dict:
     """JHEP-109: the account's MFA posture — drives the Security page
     and the forced-enrollment prompt for mandatory roles."""

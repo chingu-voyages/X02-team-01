@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   ClipboardList,
   FileQuestion,
@@ -23,6 +23,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useAuth, type UserRole } from "@/features/auth/AuthProvider";
+import { isEnrollmentOnlyToken } from "@/features/auth/session-scope";
 
 type NavItem = {
   label: string;
@@ -130,6 +131,7 @@ const getServerSnapshot = () => false;
 
 export default function Console({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { token, role, ready, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -146,7 +148,14 @@ export default function Console({ children }: { children: React.ReactNode }) {
   // Keep the route segment mounted during prerendering and hydration.
   // Gate only the console chrome, not the page itself. Protected pages
   // and the backend retain their existing authentication checks.
-  const showConsole = hydrated && ready && Boolean(token) && !isPublicRoute;
+  const enrollmentOnly = hydrated && ready && isEnrollmentOnlyToken(token);
+  const securityRoute = pathname === "/account/security" || pathname === "/account/security/";
+  const blockedByEnrollment = enrollmentOnly && !isPublicRoute && !securityRoute;
+  const showConsole = hydrated && ready && Boolean(token) && !isPublicRoute && !enrollmentOnly;
+
+  useEffect(() => {
+    if (blockedByEnrollment) router.replace("/account/security");
+  }, [blockedByEnrollment, router]);
 
   const consoleLabel =
     role === "administrator"
@@ -355,7 +364,11 @@ export default function Console({ children }: { children: React.ReactNode }) {
           className={showConsole ? "min-w-0 px-4 py-6 sm:px-6 lg:px-8 lg:py-7" : "contents"}
         >
           <div className={showConsole ? "mx-auto w-full max-w-280" : "contents"}>
-            {children}
+            {blockedByEnrollment ? (
+              <p role="status" className="p-6 text-sm text-brand-text/70">
+                Complete two-factor setup before accessing the workspace.
+              </p>
+            ) : children}
           </div>
         </div>
       </div>
