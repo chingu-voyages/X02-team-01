@@ -87,7 +87,12 @@ def change_role(
     if new_role not in [role.value for role in MANAGEABLE_ROLES]:
         raise ValueError(f"Role {new_role!r} is not manageable on this screen")
 
-    target = session.get(User, target_id)
+    target = session.exec(
+        select(User)
+        .where(User.id == target_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).first()
     if target is None:
         raise UserNotFoundError(f"User {target_id} does not exist")
 
@@ -166,7 +171,12 @@ def update_grading_permissions(
     """JHEP-192 AC1/AC5: save a Contributor's written-response grading
     permissions (two independent flags). All refusals raise before any
     mutation; the audit rows commit atomically with the change."""
-    target = session.get(User, target_id)
+    target = session.exec(
+        select(User)
+        .where(User.id == target_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).first()
 
     if target is None:
         raise UserNotFoundError(f"User {target_id} does not exist")

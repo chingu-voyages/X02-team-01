@@ -23,12 +23,13 @@ Design guarantees:
 
 import hashlib
 import secrets
+from base64 import b32decode
 from datetime import UTC, datetime, timedelta
 from typing import NoReturn
 from uuid import UUID
 
 import pyotp
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from sqlmodel import Session, select
 
 from app.core.config import settings
@@ -95,6 +96,18 @@ def mfa_configured() -> bool:
 
 def _decrypt_secret(encrypted: str) -> str:
     return _fernet().decrypt(encrypted.encode("utf-8")).decode("utf-8")
+
+
+def has_usable_enrollment(user: User) -> bool:
+    """Check confirmed MFA can be decrypted without revealing any secret."""
+    if user.mfa_enrolled_at is None or not user.totp_secret_encrypted:
+        return False
+    try:
+        secret = _decrypt_secret(user.totp_secret_encrypted)
+        padded = secret + "=" * ((-len(secret)) % 8)
+        return bool(b32decode(padded, casefold=True))
+    except (MfaNotConfiguredError, InvalidToken, ValueError, TypeError):
+        return False
 
 
 def administrator_requires_enrollment(user: User) -> bool:
