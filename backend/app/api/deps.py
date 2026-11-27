@@ -131,6 +131,26 @@ def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+    # A confirmed enrollment is meaningful only if the current session
+    # actually completed the second factor. Legacy enrolled sessions must
+    # sign in again after this change; unenrolled local bootstrap accounts
+    # retain the existing onboarding path.
+    if user.mfa_enrolled_at is not None:
+        enrolled_at = user.mfa_enrolled_at
+        if enrolled_at.tzinfo is None:
+            enrolled_at = enrolled_at.replace(tzinfo=UTC)
+        verified_at = payload.get("mfa_verified_at")
+        if (
+            not isinstance(verified_at, (int, float))
+            or isinstance(verified_at, bool)
+            or not (verified_at >= enrolled_at.timestamp())
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Two-factor sign-in required. Please sign in again.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
     return user
 
 

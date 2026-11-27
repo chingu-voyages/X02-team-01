@@ -24,6 +24,7 @@ hashes and never leave the service; tokens are never logged by this
 module.
 """
 
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -222,7 +223,10 @@ def login(
     distinct coded 403 guiding them to their pending verification email.
     """
     user = session.exec(
-        select(User).where(func.lower(User.email) == payload.email.lower().strip())
+        select(User)
+        .where(func.lower(User.email) == payload.email.lower().strip())
+        .with_for_update()
+        .execution_options(populate_existing=True)
     ).first()
 
     if user is None or user.hashed_password is None:
@@ -256,8 +260,6 @@ def login(
     # authorizes nothing but /auth/mfa/verify.
     if mfa_required_for(user):
         payload, challenge_id = begin_challenge(session, user=user)
-        from datetime import timedelta
-
         challenge_token = create_access_token(
             subject=str(user.id),
             expires_delta=timedelta(minutes=settings.mfa_challenge_minutes),
@@ -288,8 +290,6 @@ def logout(
     JWT expiry is the server-side bound for stale credentials; a
     server-side invalidation store is a documented follow-up.
     """
-    from datetime import UTC, datetime
-
     return {
         "message": "Logged out",
         "logged_out_at": datetime.now(UTC).isoformat(),
@@ -369,6 +369,10 @@ def mfa_enroll_setup(
 
     try:
         setup = mfa_service.begin_enrollment(session, actor=current_user)
+    except MfaAlreadyEnrolledError as exc:
+        raise CodedAuthError(
+            status.HTTP_409_CONFLICT, "MFA_ALREADY_ENROLLED", str(exc)
+        ) from exc
     except EnrollmentNotAllowedError as exc:
         raise CodedAuthError(
             status.HTTP_403_FORBIDDEN, "MFA_NOT_AVAILABLE", str(exc)
@@ -404,6 +408,10 @@ def mfa_enroll_verify(
         )
     try:
         result = mfa_service.confirm_enrollment(session, actor=current_user, code=code)
+    except EnrollmentNotAllowedError as exc:
+        raise CodedAuthError(
+            status.HTTP_403_FORBIDDEN, "MFA_NOT_AVAILABLE", str(exc)
+        ) from exc
     except MfaNotEnrolledError as exc:
         raise CodedAuthError(
             status.HTTP_409_CONFLICT, "MFA_NOT_ENROLLED", str(exc)
@@ -463,7 +471,15 @@ def mfa_verify(
             "Start again with your email and password",
         ) from exc
 
-    user = session.get(User, UUID(subject))
+    try:
+        user_id = UUID(subject)
+    except (TypeError, ValueError) as exc:
+        raise CodedAuthError(
+            status.HTTP_401_UNAUTHORIZED,
+            "INVALID_MFA_CHALLENGE",
+            "Start again with your email and password",
+        ) from exc
+    user = session.get(User, user_id)
     if user is None:
         raise CodedAuthError(
             status.HTTP_401_UNAUTHORIZED,
@@ -473,11 +489,11 @@ def mfa_verify(
 
     try:
         if use_recovery:
-            mfa_service.verify_recovery_code(
+            authenticated_at = mfa_service.verify_recovery_code(
                 session, user=user, challenge_id=challenge_id, code=code
             )
         else:
-            mfa_service.verify_challenge(
+            authenticated_at = mfa_service.verify_challenge(
                 session, user=user, challenge_id=challenge_id, code=code
             )
     except InvalidMfaCodeError as exc:
@@ -493,7 +509,11 @@ def mfa_verify(
             status.HTTP_409_CONFLICT, "MFA_NOT_AVAILABLE", str(exc)
         ) from exc
 
-    token = create_access_token_for_learner(user)
+    token = create_access_token_for_learner(
+        user,
+        authenticated_at=authenticated_at,
+        mfa_verified_at=datetime.now(UTC),
+    )
     return AuthTokenOut(
         access_token=token,
         token_type="bearer",
