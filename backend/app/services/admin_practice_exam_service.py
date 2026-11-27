@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.core.config import settings
-from app.models import Category, Certification, PracticeExam
+from app.models import Category, Certification, ExamAttempt, PracticeExam
 from app.repositories.question_eligibility import eligible_exam_questions_statement
 from app.schemas.admin_practice_exam import (
     PracticeExamConfigurationUpdate,
@@ -34,6 +34,14 @@ class PracticeExamNameConflictError(ValueError):
 
 class PracticeExamNotEditableError(ValueError):
     """The requested exam configuration change is not permitted."""
+
+
+class PracticeExamDeletionError(ValueError):
+    """Deleting this exam would violate its lifecycle or data protection rules."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        super().__init__(message)
 
 
 class PracticeExamNotReadyError(ValueError):
@@ -341,5 +349,51 @@ def set_practice_exam_publication(
         return _details(session, exam, certification, category)
     except Exception:
         # Explicit rollback also releases a SELECT FOR UPDATE lock on errors.
+        session.rollback()
+        raise
+
+
+def delete_practice_exam(session: Session, exam_id: UUID) -> None:
+    """Delete only an unpublished, unused configuration; never learner history.
+
+    The exclusive row lock serializes deletion with publication changes and
+    the shared lock taken by PublishedExamService when starting an attempt.
+    The foreign key remains the final database-level protection.
+    """
+    try:
+        exam = session.exec(
+            select(PracticeExam).where(PracticeExam.id == exam_id).with_for_update()
+        ).first()
+        if exam is None:
+            raise PracticeExamNotFoundError("Practice exam not found")
+
+        if exam.status not in ("draft", "unpublished"):
+            raise PracticeExamDeletionError(
+                "PRACTICE_EXAM_PUBLISHED",
+                "Unpublish the practice exam before deleting it.",
+            )
+
+        existing_attempt = session.exec(
+            select(ExamAttempt.id)
+            .where(ExamAttempt.practice_exam_id == exam_id)
+            .limit(1)
+        ).first()
+        if existing_attempt is not None:
+            raise PracticeExamDeletionError(
+                "PRACTICE_EXAM_HAS_ATTEMPTS",
+                "This exam has learner attempts and cannot be deleted. "
+                "Keep it unpublished to preserve learner history.",
+            )
+
+        session.delete(exam)
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise PracticeExamDeletionError(
+            "PRACTICE_EXAM_DELETE_CONFLICT",
+            "This practice exam is linked to other records and cannot be deleted. "
+            "Refresh the exam list and try again only if it has no learner history.",
+        ) from exc
+    except Exception:
         session.rollback()
         raise
