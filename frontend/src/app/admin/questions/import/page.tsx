@@ -2205,8 +2205,7 @@ export default function QuestionImportPage() {
             )
           ) : (
             <div className="mt-5 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-              The questions were submitted
-              for Administrator review.
+              This import created drafts. Open the Question Bank to submit any remaining drafts for administrator review.
             </div>
           )}
 
@@ -2828,8 +2827,7 @@ function ImportActions({
           {role ===
             "contributor" && (
             <p className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-              The questions were submitted
-              for Administrator review.
+              This import created drafts. Open the Question Bank to submit any remaining drafts for administrator review.
             </p>
           )}
 

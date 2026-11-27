@@ -914,13 +914,14 @@ test.describe.serial(
         ).toBeVisible();
 
         await expect(
-          page.getByText(
-            "CERTIFICATION_NOT_FOUND",
-            {
-              exact:
-                true,
-            },
-          ),
+          page
+            .getByRole("table", {
+              name: "Validation rows",
+              exact: true,
+            })
+            .getByText("CERTIFICATION_NOT_FOUND", {
+              exact: true,
+            }),
         ).toBeVisible();
 
         await expect(
