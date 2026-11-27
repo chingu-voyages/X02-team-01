@@ -1,3 +1,4 @@
+import { Activity } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -203,5 +204,79 @@ describe("JHEP-107 learner exam configuration and error recovery", () => {
     await user.click(screen.getByRole("button", { name: `Continue exam — ${exam.name}` }));
     expect(onContinue).toHaveBeenCalledTimes(1);
     expect(onStart).not.toHaveBeenCalled();
+  });
+
+
+  it("consumes only the selected resume hint when continuing an attempt", async () => {
+    const siblingAttemptId = "55555555-5555-4555-8555-555555555555";
+    mockCatalog.mockResolvedValue([exam, otherExam]);
+    mockStart
+      .mockRejectedValueOnce(new ApiError(409, "Conflict", {
+        code: "ATTEMPT_IN_PROGRESS", attempt_id: attemptId,
+      }))
+      .mockRejectedValueOnce(new ApiError(409, "Conflict", {
+        code: "ATTEMPT_IN_PROGRESS", attempt_id: siblingAttemptId,
+      }));
+    const user = await openCatalog();
+    await user.click(startButton());
+    const resume = await card().findByRole("button", { name: `Continue exam — ${exam.name}` });
+    await user.click(startButton(otherExam));
+    await card(otherExam).findByRole("button", { name: `Continue exam — ${otherExam.name}` });
+
+    await user.click(resume);
+    expect(mockPush).toHaveBeenCalledWith(`/exams/${attemptId}`);
+    expect(startButton().matches(":disabled")).toBe(false);
+    expect(card(otherExam).getByRole("button", { name: `Continue exam — ${otherExam.name}` })).toBeTruthy();
+    expect(mockStart).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears old resume hints on cached route reactivation before starting with the refreshed count", async () => {
+    const updated = { ...exam, question_count: 15 };
+    const retakeId = "66666666-6666-4666-8666-666666666666";
+    mockCatalog.mockResolvedValueOnce([exam]).mockResolvedValueOnce([updated]);
+    mockStart.mockRejectedValueOnce(new ApiError(409, "Conflict", {
+      code: "ATTEMPT_IN_PROGRESS", attempt_id: attemptId,
+    }));
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <Activity mode="visible"><PracticeExamsScreen /></Activity>,
+    );
+    await user.click(await screen.findByRole("button", { name: `Start exam — ${exam.name}` }));
+    await card().findByRole("button", { name: `Continue exam — ${exam.name}` });
+
+    // Simulate Next.js hiding a route without unmounting its React state.
+    rerender(<Activity mode="hidden"><PracticeExamsScreen /></Activity>);
+    rerender(<Activity mode="visible"><PracticeExamsScreen /></Activity>);
+    await waitFor(() => {
+      expect(mockCatalog).toHaveBeenCalledTimes(2);
+      expect(card().getByText("15")).toBeTruthy();
+      expect(startButton().matches(":disabled")).toBe(false);
+    });
+    expect(card().queryByRole("button", { name: `Continue exam — ${exam.name}` })).toBeNull();
+
+    mockStart.mockResolvedValueOnce({
+      attempt_id: retakeId,
+      certification_id: exam.certification_id,
+      status: "in_progress",
+      question_count: 15,
+      questions: [],
+    });
+    await user.click(startButton());
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith(`/exams/${retakeId}`));
+    expect(mockStart).toHaveBeenLastCalledWith("learner-token", updated);
+  });
+
+  it("can rediscover a still-unfinished attempt after consuming its resume hint", async () => {
+    const conflict = new ApiError(409, "Conflict", {
+      code: "ATTEMPT_IN_PROGRESS", attempt_id: attemptId,
+    });
+    mockStart.mockRejectedValueOnce(conflict).mockRejectedValueOnce(conflict);
+    const user = await openCatalog();
+    await user.click(startButton());
+    await user.click(await card().findByRole("button", { name: `Continue exam — ${exam.name}` }));
+    await user.click(startButton());
+    expect(await card().findByRole("button", { name: `Continue exam — ${exam.name}` })).toBeTruthy();
+    expect(mockStart).toHaveBeenCalledTimes(2);
+    expect(mockPush.mock.calls).toEqual([[`/exams/${attemptId}`]]);
   });
 });

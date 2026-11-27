@@ -1,5 +1,8 @@
 # JHEP — Current API Contract and Mock JSON Responses
 
+<!-- JHEP-107 exam contract update -->
+> **Exam configuration update (JHEP-126/203/107):** The practice-exam route inventory and exam lifecycle sections below describe administrator-controlled publication, fixed counts and attempt isolation. See [exam-generation.md](exam-generation.md) for detailed configuration examples, error handling and verification. Other sections retain their existing baseline. This update is source-verified, not a claim of completed acceptance testing.
+
 **Current contract baseline:** `feat/JHEP-118-bulk-question-import`
 **Verified:** November 19, 2026  
 **API prefix:** `/api/v1`
@@ -169,6 +172,7 @@ Bulk-imported questions begin as `pending / draft`, so they are not learner-visi
 |---|---|---|---|
 | GET | `/api/v1/categories?certification_id={certification_id}` | CURRENT | Bearer |
 | GET | `/api/v1/questions` | CURRENT | Bearer |
+| GET | `/api/v1/exams/catalog` | CURRENT (JHEP-126/107) | Bearer |
 | POST | `/api/v1/exams` | CURRENT | Bearer |
 | GET | `/api/v1/exams/{attempt_id}` | CURRENT | Bearer |
 | PATCH | `/api/v1/exams/{attempt_id}/progress` | CURRENT | Bearer |
@@ -178,6 +182,16 @@ Bulk-imported questions begin as `pending / draft`, so they are not learner-visi
 | GET | `/api/v1/exams/{attempt_id}/results` | CURRENT | Bearer |
 
 `{question_id}` on response routes accepts either the attempt-question addressing ID or the pinned `question_version_id`.
+
+## 2.2A Admin — practice exam configuration and publication
+
+| Method | Route | Status | Auth |
+|---|---|---|---|
+| GET | `/api/v1/admin/practice-exams` | CURRENT | Administrator |
+| POST | `/api/v1/admin/practice-exams` | CURRENT | Administrator |
+| GET | `/api/v1/admin/practice-exams/{exam_id}` | CURRENT | Administrator |
+| PUT | `/api/v1/admin/practice-exams/{exam_id}` | CURRENT (JHEP-107) | Administrator |
+| PATCH | `/api/v1/admin/practice-exams/{exam_id}/publication` | CURRENT | Administrator |
 
 ## 2.3 Admin — certifications and categories
 
@@ -245,6 +259,8 @@ Bulk-imported questions begin as `pending / draft`, so they are not learner-visi
 ```
 
 ## 2.8 Not implemented
+
+The older proposed `/exam-catalog` and `/admin/exam-catalog` paths are not the active configuration API. Use `/exams/catalog` and `/admin/practice-exams` instead. Completed-answer review and attempt-history routes remain outside JHEP-107.
 
 | Method | Route | Status |
 |---|---|---|
@@ -497,48 +513,52 @@ Correct-answer flags and short-answer keys are not returned.
 
 # 6. Practice exams
 
-## 6.1 Start
+## 6.1 Discover and start
+
+**GET** `/api/v1/exams/catalog`
+
+Returns `{ "exams": [...] }`, containing only currently startable published practice exams.
+Each entry includes `id`, certification/category IDs and names, `name`, `question_count`
+and `available_question_count`. A successful empty catalog returns `{ "exams": [] }`.
 
 **POST** `/api/v1/exams`
 
-Category-scoped:
-
 ```json
 {
+  "practice_exam_id": "11111111-1111-4111-8111-111111111111",
   "certification_id": "3c27471b-ed05-5433-b8c5-bf611b1dc12d",
   "category_id": "42e9c25f-4ada-5147-a894-d7fbcb0df5b7",
   "question_count": 10
 }
 ```
 
-Certification-wide:
+- Use the exact published practice exam ID and configured count from the catalog.
+- `question_count` must be a whole integer from 1–100 and within the deployment's configured maximum.
+- Learner identity comes from the JWT. No learner-adjustable count or identity override is accepted.
+- Legacy requests without `practice_exam_id` must uniquely match a published exam by certification, category and count. Certification-only starts are rejected by the HTTP publication gate.
+- Parent certification/category must be published and valid; the certification needs a passing threshold.
+- Select eligible approved/active/unflagged question versions in the selected scope, with the required answer-option configuration.
+- A `201` returns the original persisted attempt ID, certification ID, status, question count and assigned questions in order.
+- Only one active attempt per learner and exact published practice exam is permitted. Historical unlinked attempts retain their own scope.
 
-```json
-{
-  "certification_id": "3c27471b-ed05-5433-b8c5-bf611b1dc12d",
-  "question_count": 10
-}
-```
-
-Rules include:
-
-- `question_count` 1–100;
-- learner identity from the JWT;
-- approved/active/unflagged questions only;
-- selected category must belong to the certification;
-- certification must have a passing threshold;
-- one in-progress attempt per learner/certification.
+Common `409` detail codes: `PRACTICE_EXAM_UNAVAILABLE`, `PRACTICE_EXAM_COUNT_MISMATCH`
+(with `expected` and `received`), `INSUFFICIENT_QUESTIONS` (with `requested` and `available`),
+`ATTEMPT_IN_PROGRESS` (with the original `attempt_id`), `CATEGORY_UNAVAILABLE`, and `MISSING_THRESHOLD`.
+Invalid request bodies are rejected with `422`.
 
 ## 6.2 Resume/progress/answers
 
 ```http
 GET   /api/v1/exams/{attempt_id}
 PATCH /api/v1/exams/{attempt_id}/progress
+PUT   /api/v1/exams/{attempt_id}/questions/{question_id}/flag
 PUT   /api/v1/exams/{attempt_id}/responses/{question_id}
 POST  /api/v1/exams/{attempt_id}/responses/{question_id}/submit
 ```
 
-Submitted questions are locked.
+Submitted questions are locked. Attempt ownership is checked before retrieving saved
+questions and answers. Existing question count, pinned versions, order, answers and flags
+are independent of the current practice-exam configuration.
 
 ## 6.3 Complete/results
 
@@ -548,6 +568,42 @@ GET  /api/v1/exams/{attempt_id}/results
 ```
 
 The server-provided `passed` value is authoritative. Short-answer questions may remain ungraded.
+Configuration changes and unpublishing do not invalidate previously persisted results.
+The completed-answer review endpoint is deferred separately under JHEP-207.
+
+## 6.4 Administrator configuration (JHEP-107)
+
+**PUT** `/api/v1/admin/practice-exams/{exam_id}` — Administrator only.
+
+```json
+{
+  "certification_id": "3c27471b-ed05-5433-b8c5-bf611b1dc12d",
+  "category_id": "42e9c25f-4ada-5147-a894-d7fbcb0df5b7",
+  "name": "Computer Science Practice",
+  "question_count": 15
+}
+```
+
+Full configuration update; the count is required, strictly integer and between 1 and 100.
+Creation accepts a nullable/omitted count for an incomplete draft. Draft configuration can
+be edited. Published exams must be unpublished first. Unpublished exams permit count changes
+only; the name and catalog scope remain unchanged. Updating never changes publication status.
+
+The `200` response is the administrator exam record, including `status`, the configured
+`question_count`, and `readiness` (`ready`, `required_question_count`, `eligible_question_count`,
+`issues`). A valid count with insufficient available questions may be saved, but the exam
+cannot publish until readiness is satisfied. Duplicate names and disallowed changes return
+`409`; invalid scope/not-found returns `404`; missing/invalid fields return `422`;
+unauthenticated/non-administrator requests return `401`/`403`.
+
+**PATCH** `/api/v1/admin/practice-exams/{exam_id}/publication` with
+`{ "is_published": true }` or `{ "is_published": false }` changes availability separately.
+Readiness rejection returns `409` with `detail.code = "PRACTICE_EXAM_NOT_READY"`, a message
+and current readiness. New starts use the updated published configuration. Existing attempts
+retain their original count, pinned questions, responses and results.
+
+See [exam-generation.md](exam-generation.md#api-contract) for complete illustrative responses,
+security and persistence behavior, and the verification matrix.
 
 ---
 
@@ -1176,42 +1232,37 @@ Administrator provisioning is separately governed and not exposed through this r
 # 12. End-to-end publication contract
 
 ```text
-Administrator creates Certification
+Administrator creates Certification and Category
         ↓
 unpublished
-
-Administrator creates Category
         ↓
-unpublished
-
-Contributor/Admin creates OR imports Question
+Contributor/Admin creates or imports Questions
         ↓
-pending / draft
-
-Contributor/Admin may attach/stage image
+Administrator approves and publishes eligible Questions
         ↓
-version-pinned media reference
-
-Administrator approves + publishes Question
+Administrator publishes Category and Certification
         ↓
-approved / active
-
-Administrator publishes Category
+Administrator creates a practice exam draft (Manage Exams)
         ↓
-
-Administrator publishes Certification
+Configure name, scope and question count; validate readiness
         ↓
-
-GET /api/v1/categories
+Administrator explicitly publishes the practice exam
         ↓
-Learner discovers category
-
-POST /api/v1/exams
+GET /api/v1/exams/catalog
         ↓
-Learner receives pinned question version + safe hosted image URL
+Learner sees the exact published exam and configured question count
+        ↓
+POST /api/v1/exams with practice_exam_id and configured count
+        ↓
+Learner receives pinned question versions and safe hosted image URLs
 ```
 
-Persisted attempts remain pinned to their original version.
+A published category alone does not make a practice exam available. If eligibility changes,
+readiness and the learner catalog reflect the live bank; starts are revalidated by the server.
+
+To change a published exam's count, unpublish it, save the new count, and republish after
+readiness is satisfied. Configuration changes affect future attempts only. Existing attempts
+retain their original assigned versions, ordering, responses, flags and results.
 
 ---
 
@@ -1239,7 +1290,7 @@ Create Question
 Import Questions
 ```
 
-Administrator additionally has Catalog and Users & Access navigation.
+Administrator additionally has Catalog, Manage Exams (`/admin/practice-exams`) and Users & Access navigation. Learner `/categories` uses the published practice-exam catalog.
 
 Frontend visibility does not replace backend authorization.
 
@@ -1249,7 +1300,7 @@ Frontend visibility does not replace backend authorization.
 
 | Setting | Current limit / behavior |
 |---|---|
-| Exam question count | 1–100 |
+| Exam question count | Administrator-configured integer 1–100; publication/start also respect the deployment maximum |
 | Selected option IDs per response | max 10 |
 | Short-answer text | max 10,000 characters |
 | Question rejection note | max 2,000 characters |
@@ -1281,7 +1332,7 @@ Frontend visibility does not replace backend authorization.
 
 # 15. Proposed/not-yet-implemented resources and scope
 
-The following remain proposed:
+The legacy `exam-catalog` paths below are not the active configuration API; use the routes in §2.2A. The following remain unimplemented paths:
 
 ```text
 GET   /api/v1/exam-catalog
@@ -1305,6 +1356,8 @@ backend/app/api/v1/endpoints/auth.py
 backend/app/api/v1/endpoints/categories.py
 backend/app/api/v1/endpoints/questions.py
 backend/app/api/v1/endpoints/exams.py
+backend/app/api/v1/endpoints/admin_practice_exams.py
+backend/app/api/v1/endpoints/learner_practice_exams.py
 backend/app/api/v1/endpoints/admin.py
 backend/app/api/v1/endpoints/question_imports.py
 
@@ -1312,6 +1365,8 @@ backend/app/schemas/auth.py
 backend/app/schemas/category.py
 backend/app/schemas/question.py
 backend/app/schemas/exam.py
+backend/app/schemas/admin_practice_exam.py
+backend/app/schemas/learner_practice_exam.py
 backend/app/schemas/admin_question.py
 backend/app/schemas/admin_certification.py
 backend/app/schemas/admin_category.py
@@ -1321,6 +1376,11 @@ backend/app/models/question_import_batch.py
 backend/app/models/question_import_row.py
 backend/app/models/question_import_asset.py
 
+backend/app/services/admin_practice_exam_service.py
+backend/app/services/published_exam_service.py
+backend/app/services/exam_service.py
+backend/app/services/exam_attempt_service.py
+backend/app/repositories/practice_exam_catalog_repository.py
 backend/app/services/admin_question_service.py
 backend/app/services/admin_question_bank_query_service.py
 backend/app/services/admin_question_image_service.py

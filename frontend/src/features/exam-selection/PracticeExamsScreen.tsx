@@ -69,6 +69,12 @@ export default function PracticeExamsScreen() {
         if (cancelled) return;
 
         setExams(data);
+        // Next.js can restore this screen with its previous React state.
+        // Resume IDs and start errors are hints from the previous catalog
+        // visit, not durable attempt status. Let the server confirm any
+        // unfinished attempt again on the next start request.
+        setResumeState(null);
+        setStartIssueState(null);
         // A refresh may remove the last exam for the selected certification.
         setCertificationFilter((current) =>
           current === "all" || data.some((exam) => exam.certification_id === current)
@@ -184,6 +190,16 @@ export default function PracticeExamsScreen() {
     if (!token || startingRef.current) return;
     const attemptId = resumeAttempts[examId];
     if (!attemptId) return;
+
+    // Consume only this exam's resume hint. The learner may finish this
+    // attempt before returning to a cached catalog. Keep other exam hints
+    // intact; the backend still prevents duplicate active attempts.
+    setResumeState((previous) => {
+      if (previous?.token !== token) return previous;
+      const attempts = { ...previous.attempts };
+      delete attempts[examId];
+      return { token, attempts };
+    });
     router.push(`/exams/${encodeURIComponent(attemptId)}`);
   }
 
