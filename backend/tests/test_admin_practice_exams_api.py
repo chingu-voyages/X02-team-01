@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+from admin_auth_fixtures import domain_access_token, make_domain_user
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import event
@@ -12,7 +13,6 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.api.v1.endpoints import admin_practice_exams
-from app.core.security import create_access_token
 from app.db.session import get_session
 from app.models import (
     AnswerOption,
@@ -74,7 +74,7 @@ def client(session: Session) -> Iterator[TestClient]:
 
 
 def _user(session: Session, role: str = "administrator") -> User:
-    user = User(email=f"{uuid4()}@example.test", role=role)
+    user = make_domain_user(email=f"{uuid4()}@example.test", role=role)
     session.add(user)
     session.commit()
     session.refresh(user)
@@ -82,7 +82,7 @@ def _user(session: Session, role: str = "administrator") -> User:
 
 
 def _headers(user: User) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token(str(user.id))}"}
+    return {"Authorization": f"Bearer {domain_access_token(user)}"}
 
 
 def _scope(session: Session, threshold: int | None = 70):

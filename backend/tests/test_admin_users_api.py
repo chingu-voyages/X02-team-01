@@ -10,7 +10,9 @@ request because roles are read from the database row, not the token.
 from collections.abc import Iterator
 from uuid import UUID, uuid4
 
+import pytest
 import sqlalchemy as sa
+from admin_auth_fixtures import sign_in_administrator
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -22,6 +24,8 @@ from app.models import (
     AnswerOption,
     Category,
     Certification,
+    MfaLoginChallenge,
+    MfaRecoveryCode,
     PermissionChangeAudit,
     Question,
     QuestionImage,
@@ -29,6 +33,8 @@ from app.models import (
     RoleChangeAudit,
     User,
 )
+
+pytestmark = pytest.mark.usefixtures("isolated_mfa_configuration")
 
 
 def _create_user(
@@ -74,6 +80,8 @@ class UsersHarness:
             self.engine,
             tables=[
                 User.__table__,
+                MfaLoginChallenge.__table__,
+                MfaRecoveryCode.__table__,
                 Certification.__table__,
                 Category.__table__,
                 Question.__table__,
@@ -119,7 +127,10 @@ class UsersHarness:
         app.dependency_overrides[get_session] = override_session
 
         self.client = TestClient(app)
-        self.admin_headers = self._login(self.admin.email, "AdminPass1!")
+        admin_login = sign_in_administrator(
+            self.client, self.admin.email, "AdminPass1!"
+        )
+        self.admin_headers = {"Authorization": f"Bearer {admin_login['access_token']}"}
         self.learner_headers = self._login(self.learner.email, "LearnerPass1!")
         self.contributor_headers = self._login(self.contributor.email, "ContribPass1!")
 

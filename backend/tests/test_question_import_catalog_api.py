@@ -5,6 +5,7 @@ from io import BytesIO
 from uuid import UUID, uuid4
 
 import pytest
+from admin_auth_fixtures import domain_access_token, make_domain_user
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
@@ -18,7 +19,6 @@ from app.api.v1.endpoints import (
     question_imports,
 )
 from app.core.roles import UserRole
-from app.core.security import create_access_token
 from app.db.session import get_session
 from app.models.answer_option import AnswerOption
 from app.models.category import Category
@@ -84,14 +84,14 @@ def environment() -> Iterator[tuple[TestClient, Session]]:
 
 
 def user(session: Session, role: UserRole = UserRole.ADMINISTRATOR) -> User:
-    account = User(email=f"{uuid4()}@example.test", role=role)
+    account = make_domain_user(email=f"{uuid4()}@example.test", role=role)
     session.add(account)
     session.commit()
     return account
 
 
 def headers(account: User) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token(str(account.id))}"}
+    return {"Authorization": f"Bearer {domain_access_token(account)}"}
 
 
 def row(code="CS-100", category="Algorithms", **changes):

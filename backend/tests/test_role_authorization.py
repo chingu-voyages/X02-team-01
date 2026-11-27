@@ -3,6 +3,7 @@ from typing import Annotated
 from uuid import uuid4
 
 import pytest
+from admin_auth_fixtures import domain_access_token, make_domain_user
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
@@ -88,7 +89,7 @@ def create_user(
     session: Session,
     role: UserRole,
 ) -> User:
-    user = User(
+    user = make_domain_user(
         email=f"{uuid4()}@example.com",
         full_name="Role Test User",
         role=role.value,
@@ -105,7 +106,7 @@ def create_user(
 def auth_header(
     user: User,
 ) -> dict[str, str]:
-    token = create_access_token(str(user.id))
+    token = domain_access_token(user)
 
     return {
         "Authorization": f"Bearer {token}",
@@ -239,7 +240,7 @@ def test_forbidden_response_is_safe(
     }
 
 
-def test_role_change_takes_effect_without_new_token(
+def test_unenrolled_role_change_cannot_bypass_mfa(
     client: TestClient,
     session: Session,
 ):
@@ -266,7 +267,38 @@ def test_role_change_takes_effect_without_new_token(
         headers=headers,
     )
 
-    assert after.status_code == 200
+    assert after.status_code == 403
+    assert after.json()["detail"]["code"] == "MFA_ENROLLMENT_REQUIRED"
+
+
+def test_ordinary_contributor_role_change_still_takes_effect_without_new_token(
+    client: TestClient, session: Session
+):
+    user = create_user(session, UserRole.LEARNER)
+    headers = auth_header(user)
+    assert client.get("/contributor", headers=headers).status_code == 403
+    user.role = UserRole.CONTRIBUTOR.value
+    session.add(user)
+    session.commit()
+    assert client.get("/contributor", headers=headers).status_code == 200
+    assert client.get("/administrator", headers=headers).status_code == 403
+
+
+def test_enrolled_admin_requires_mfa_proof_even_with_valid_signature(
+    client: TestClient, session: Session
+):
+    user = create_user(session, UserRole.ADMINISTRATOR)
+    # Even a newly signed token without the MFA proof must fail. Use the
+    # fractional iat issuer so this tests MFA, not just the revocation cutoff.
+    from app.core.security import create_access_token_for_learner
+
+    token = create_access_token_for_learner(user)
+    response = client.get(
+        "/administrator", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 401
+    assert "Two-factor sign-in required" in response.json()["detail"]
+    assert client.get("/administrator", headers=auth_header(user)).status_code == 200
 
 
 def test_role_guard_requires_at_least_one_role():
