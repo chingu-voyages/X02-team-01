@@ -2,6 +2,7 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from learner_auth_fixtures import stub_learner_database  # noqa: F401
 
 from app.main import app
 

@@ -128,9 +128,14 @@ test("JHEP-207: mobile Users & Access, grading permissions and explicit audited 
   await test.step("Invalidate the old Contributor session and require fresh MFA for administrator access", async () => {
     const stale = await page.request.get("/api/v1/admin/questions", { headers: bearer(oldContributorSession.access_token) });
     expect(stale.status()).toBe(401);
+    // Promotion must invalidate the same session on learner routes as well.
+    const staleCatalog = await page.request.get("/api/v1/exams/catalog", { headers: bearer(oldContributorSession.access_token) });
+    expect(staleCatalog.status()).toBe(401);
     const signedIn = await mfaLogin(page.request, fixture.contributor, secret);
     expect(signedIn.learner.role).toBe("administrator");
     const allowed = await page.request.get("/api/v1/admin/users", { headers: bearer(signedIn.access_token) });
     expect(allowed.status()).toBe(200);
+    const freshCatalog = await page.request.get("/api/v1/exams/catalog", { headers: bearer(signedIn.access_token) });
+    expect(freshCatalog.status()).toBe(200);
   });
 });

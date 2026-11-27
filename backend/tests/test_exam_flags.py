@@ -5,9 +5,9 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from learner_auth_fixtures import issue_learner_token
 
 from app.api.v1.endpoints.exams import get_exam_attempt_service, get_exam_service
-from app.core.security import create_access_token
 from app.main import app
 from app.services.exam_attempt_service import (
     AttemptAlreadySubmittedError,
@@ -72,7 +72,7 @@ class FlagServiceStub:
 
 
 def auth(learner_id):
-    return {"Authorization": f"Bearer {create_access_token(str(learner_id))}"}
+    return {"Authorization": f"Bearer {issue_learner_token(str(learner_id))}"}
 
 
 def flag_url(attempt_id, question_id):
@@ -80,7 +80,7 @@ def flag_url(attempt_id, question_id):
 
 
 @pytest.fixture
-def flag_api():
+def flag_api(stub_learner_database):
     stub = FlagServiceStub()
     app.dependency_overrides[get_exam_service] = lambda: stub
     app.dependency_overrides[get_exam_attempt_service] = lambda: stub

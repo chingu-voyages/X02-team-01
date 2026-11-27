@@ -40,7 +40,7 @@ def _enrollment_required() -> HTTPException:
 def get_current_subject(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
 ) -> str:
-    """Legacy learner subject guard; restricted MFA JWTs are never accepted."""
+    """Token-only guard for stateless logout and token contract tests."""
     if credentials is None:
         raise _unauthorized("Authentication required")
     try:
@@ -57,6 +57,7 @@ def _resolve_current_user(
     session: Session,
     *,
     allow_enrollment: bool = False,
+    reject_enrollment_scope: bool = False,
 ) -> User:
     """Authenticate and enforce current database state, revocation and MFA scope."""
     if credentials is None:
@@ -74,7 +75,7 @@ def _resolve_current_user(
         raise _unauthorized("Invalid or expired authentication token") from exc
 
     scope = payload.get("mfa")
-    if scope == "pending":
+    if scope == "pending" or (scope == "enrollment" and reject_enrollment_scope):
         raise _unauthorized("Multi-factor verification required")
     if scope not in (None, "enrollment"):
         raise _unauthorized("Invalid authentication token scope")
@@ -131,6 +132,20 @@ def get_current_user(
 ) -> User:
     """Full authenticated account; never permits enrollment-only sessions."""
     return _resolve_current_user(credentials, session)
+
+
+def get_authenticated_subject(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    session: Annotated[Session, Depends(get_session)],
+) -> str:
+    """Require a current full session before accessing learner content.
+
+    Keep the existing 401 contract for restricted enrollment/challenge tokens.
+    All other checks use the same database-backed resolver as admin routes.
+    Staff retain their existing ability to use practice exams.
+    """
+    user = _resolve_current_user(credentials, session, reject_enrollment_scope=True)
+    return str(user.id)
 
 
 def get_current_mfa_user(

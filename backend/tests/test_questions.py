@@ -2,9 +2,9 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from learner_auth_fixtures import STUB_LEARNER_ID, issue_learner_token
 
 from app.api.v1.endpoints.questions import get_question_repository
-from app.core.security import create_access_token
 from app.main import app
 from app.repositories.in_memory import InMemoryQuestionRepository
 from app.repositories.question_repository import Question
@@ -13,11 +13,11 @@ QUESTIONS_URL = "/api/v1/questions"
 
 
 def auth_header() -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token('test-learner')}"}
+    return {"Authorization": f"Bearer {issue_learner_token(STUB_LEARNER_ID)}"}
 
 
 @pytest.fixture
-def stub_client() -> Iterator[TestClient]:
+def stub_client(stub_learner_database) -> Iterator[TestClient]:
     """A client backed by the fixed in-memory question bank."""
 
     def _stub() -> InMemoryQuestionRepository:
@@ -32,7 +32,7 @@ def stub_client() -> Iterator[TestClient]:
 
 
 @pytest.fixture
-def empty_client() -> Iterator[TestClient]:
+def empty_client(stub_learner_database) -> Iterator[TestClient]:
     """A client whose repository holds no questions at all."""
 
     def _empty() -> InMemoryQuestionRepository:
