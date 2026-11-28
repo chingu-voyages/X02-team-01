@@ -1,5 +1,4 @@
 import { Clock } from "lucide-react";
-import Link from "next/link";
 import CompactResultCard from "./CompactResultCard";
 import ResultNextSteps from "./ResultNextSteps";
 import ResultSummaryCard from "./ResultSummaryCard";
@@ -12,6 +11,7 @@ interface ResultCardProps {
   passingScorePercent: number | null;
   categoryTitle?: string;
   onReviewAnswers?: () => void;
+  reviewHref?: string;
   isGradingComplete?: boolean;
   pendingManualGradingCount?: number;
   questionCount?: number;
@@ -26,6 +26,7 @@ export default function ResultCard({
   passingScorePercent,
   categoryTitle = "Agile Fundamentals",
   onReviewAnswers,
+  reviewHref,
   isGradingComplete = true,
   pendingManualGradingCount = 0,
   questionCount,
@@ -80,12 +81,6 @@ export default function ResultCard({
               Provisional score: {Math.round(scorePercent)}% (not final)
             </p>
           )}
-          <Link
-            href="/categories"
-            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-brand-primary/35 bg-white px-5 text-sm font-semibold text-brand-primary shadow-2xs transition-colors hover:border-brand-primary hover:bg-brand-surface"
-          >
-            Back to practice exams
-          </Link>
         </div>
       ) : (
         <>
@@ -106,10 +101,12 @@ export default function ResultCard({
             passingScorePercent={passingScorePercent}
             hasManualGrading={hasManualGrading}
           />
-
-          <ResultNextSteps onReviewAnswers={onReviewAnswers} />
         </>
       )}
+      <ResultNextSteps
+        onReviewAnswers={onReviewAnswers}
+        reviewHref={reviewHref}
+      />
     </section>
   );
 }

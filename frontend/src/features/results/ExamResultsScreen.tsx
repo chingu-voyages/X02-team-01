@@ -14,6 +14,7 @@ import type { ExamResultsResponse } from "@/types/exam-api.types";
 interface ExamResultsScreenProps {
   attemptId: string;
   accessToken: string;
+  reviewHref?: string;
 }
 
 type ResultsState =
@@ -21,15 +22,24 @@ type ResultsState =
   | { status: "success"; data: ExamResultsResponse }
   | { status: "error"; message: string };
 
+type ScopedResultsState = {
+  attemptId: string;
+  accessToken: string;
+  result: ResultsState;
+};
+
 export default function ExamResultsScreen({
   attemptId,
   accessToken,
+  reviewHref,
 }: ExamResultsScreenProps) {
   const { logout } = useAuth();
 
-  const [state, setState] = useState<ResultsState>({
-    status: "loading",
-  });
+  const [storedState, setStoredState] = useState<ScopedResultsState | null>(null);
+  const state: ResultsState =
+    storedState?.attemptId === attemptId && storedState.accessToken === accessToken
+      ? storedState.result
+      : { status: "loading" };
 
   const [retryCount, setRetryCount] = useState(0);
 
@@ -44,9 +54,10 @@ export default function ExamResultsScreen({
           throw new Error("Unexpected exam result received.");
         }
 
-        setState({
-          status: "success",
-          data,
+        setStoredState({
+          attemptId,
+          accessToken,
+          result: { status: "success", data },
         });
       })
       .catch((error: unknown) => {
@@ -59,12 +70,16 @@ export default function ExamResultsScreen({
         }
 
         // Preserve error handling for all other failures.
-        setState({
-          status: "error",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Unable to load exam results.",
+        setStoredState({
+          attemptId,
+          accessToken,
+          result: {
+            status: "error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Unable to load exam results.",
+          },
         });
       });
 
@@ -92,7 +107,7 @@ export default function ExamResultsScreen({
           type="button"
           variant="outline"
           onClick={() => {
-            setState({ status: "loading" });
+            setStoredState(null);
             setRetryCount((count) => count + 1);
           }}
           className="border-brand-border text-brand-text hover:bg-brand-surface"
@@ -109,6 +124,7 @@ export default function ExamResultsScreen({
   return (
     <div className="space-y-6">
       <ResultCard
+        reviewHref={reviewHref}
         scorePercent={results.score_percent}
         correctCount={results.correct_count}
         incorrectCount={results.incorrect_count}

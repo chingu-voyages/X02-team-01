@@ -574,3 +574,108 @@ def test_essay_gate_follows_the_response_type(monkeypatch) -> None:
         assert graded.json()["score"] == 1
     finally:
         harness.close()
+
+
+def test_completed_review_is_owned_read_only_and_tracks_grading() -> None:
+    harness = GradingHarness()
+    try:
+        url = f"/api/v1/exams/{harness.attempt_id}/review"
+        other = harness._user(f"other-{uuid4().hex}@example.test", "learner")
+        other_headers = harness._login(other.email, "Passw0rd!")
+        anonymous = harness.client.get(url)
+        assert anonymous.status_code == 401, anonymous.text
+        foreign = harness.client.get(url, headers=other_headers)
+        unknown = harness.client.get(
+            f"/api/v1/exams/{uuid4()}/review", headers=other_headers
+        )
+        assert foreign.status_code == unknown.status_code == 404
+        assert foreign.json() == unknown.json()
+        staff = harness.client.get(url, headers=harness.admin_headers)
+        assert staff.status_code == 404, staff.text
+
+        def snapshot() -> list:
+            harness.session.expire_all()
+            return [
+                [row.model_dump() for row in harness.session.exec(select(model)).all()]
+                for model in (
+                    ExamAttempt,
+                    ExamAttemptQuestion,
+                    ExamResponse,
+                    ExamQuestionGrade,
+                    ExamResult,
+                    ManualGradeHistory,
+                )
+            ]
+
+        before = snapshot()
+        first = harness.client.get(url, headers=harness.learner_headers)
+        assert first.status_code == 200, first.text
+        assert first.headers["cache-control"] == "no-store"
+        assert first.json() == {
+            "attempt_id": str(harness.attempt_id),
+            "status": "submitted",
+            "question_count": 1,
+            "questions": [
+                {
+                    "question_version_id": str(harness.version_id),
+                    "position": 1,
+                    "preview": "Explain the difference between the two concepts.",
+                    "status": "pending_manual_grading",
+                }
+            ],
+        }
+        repeated = harness.client.get(url, headers=harness.learner_headers)
+        assert repeated.status_code == 200, repeated.text
+        assert repeated.json() == first.json()
+        assert snapshot() == before
+
+        graded = harness.grade(harness.admin_headers, 1, feedback="Private feedback")
+        assert graded.status_code == 200, graded.text
+        reviewed = harness.client.get(url, headers=harness.learner_headers)
+        assert reviewed.status_code == 200, reviewed.text
+        assert reviewed.json()["questions"] == [
+            {**first.json()["questions"][0], "status": "manually_graded"}
+        ]
+        assert "Private feedback" not in reviewed.text
+        assert "A complete explanation" not in reviewed.text
+        assert "They differ in scope and application." not in reviewed.text
+
+        # A stale result row must not bypass the explicit submission gate.
+        attempt = harness.session.get(ExamAttempt, harness.attempt_id)
+        attempt.status = "in_progress"
+        attempt.submitted_at = None
+        harness.session.add(attempt)
+        harness.session.commit()
+        unfinished = harness.client.get(url, headers=harness.learner_headers)
+        assert unfinished.status_code == 409, unfinished.text
+        assert "questions" not in unfinished.json()
+        assert "Explain the difference" not in unfinished.text
+    finally:
+        harness.close()
+
+
+def test_completed_review_handles_no_pinned_questions() -> None:
+    harness = GradingHarness()
+    try:
+        original = harness.session.get(ExamAttempt, harness.attempt_id)
+        empty = ExamAttempt(
+            user_id=original.user_id,
+            certification_id=original.certification_id,
+            status="submitted",
+            question_count=1,
+            submitted_at=datetime.now(UTC),
+        )
+        harness.session.add(empty)
+        harness.session.commit()
+        response = harness.client.get(
+            f"/api/v1/exams/{empty.id}/review", headers=harness.learner_headers
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == {
+            "attempt_id": str(empty.id),
+            "status": "submitted",
+            "question_count": 1,
+            "questions": [],
+        }
+    finally:
+        harness.close()
