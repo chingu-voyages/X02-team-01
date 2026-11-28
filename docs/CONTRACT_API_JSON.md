@@ -665,9 +665,32 @@ Missing/invalid authentication returns `401`; unknown/foreign attempts return id
 an owned unfinished attempt returns `409`. An empty historical list is supported.
 
 The learner route is `/exams/{attemptId}/review`, with return navigation to the same attempt's
-results. Individual question detail and its navigation remain JHEP-72 integration work.
+results. JHEP-72 connects each question to its read-only detail (section 6.3B).
 See [completed-exam-review.md](completed-exam-review.md) for a JSON example, status semantics,
 historical integrity and verification.
+
+## 6.3B Individual completed question review (JHEP-72)
+
+**GET** `/api/v1/exams/{attempt_id}/review/questions/{question_version_id}` — authenticated attempt owner, submitted attempts only. Both identifiers are UUIDs; the second is the pinned version ID returned by the question list.
+
+A `200` returns `attempt_id`, `attempt_status: "submitted"`, `question_count`,
+`question_version_id`, `position`, `question_text`, `question_type`,
+`allows_multiple_answers`, `question_status`, ordered `options` and `images`,
+`submitted_response`, `correct_option_ids`, `explanation`, and `grading`.
+The submitted response is nullable and never includes drafts. Correct option IDs
+are nullable when no usable key exists or the question is written. Explanation
+is nullable; grading reflects persisted outcomes and includes learner-facing
+manual feedback when available, not reviewer identity or internal grading keys.
+
+Authentication failures return `401`; unknown/foreign attempts or unassigned
+versions return identical `404` responses; unfinished attempts and inconsistent
+recorded detail return `409` (the latter uses `QUESTION_REVIEW_UNAVAILABLE`).
+Malformed UUIDs return `422`. The route is GET-only. Success and explicitly handled
+errors use `Cache-Control: no-store`. Review performs no grading or writes.
+
+Browser route: `/exams/{attemptId}/review/questions/{questionVersionId}`.
+See [individual-question-review.md](individual-question-review.md) for the JSON
+example, field semantics, navigation, historical integrity and verification.
 
 ## 6.4 Administrator configuration (JHEP-107)
 

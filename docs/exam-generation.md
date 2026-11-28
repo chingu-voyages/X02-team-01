@@ -217,7 +217,7 @@ GET   /api/v1/exams/{attempt_id}/results
 GET   /api/v1/exams/{attempt_id}/review
 ```
 
-Only the attempt owner can retrieve the assigned question versions and saved responses. The original count, order, responses, flags, and grading records survive configuration changes. An unpublished exam blocks new starts but does not invalidate its existing attempts or results. Direct resume of an existing attempt is supported; discovery of all unfinished/unpublished attempts through a history screen is outside this scope. JHEP-37 adds [Review Answers](completed-exam-review.md), a read-only preview list for the same completed attempt. Individual answer detail and its navigation remain JHEP-72 integration work.
+Only the attempt owner can retrieve the assigned question versions and saved responses. The original count, order, responses, flags, and grading records survive configuration changes. An unpublished exam blocks new starts but does not invalidate its existing attempts or results. Direct resume of an existing attempt is supported; discovery of all unfinished/unpublished attempts through a history screen is outside this scope. JHEP-37 adds [Review Answers](completed-exam-review.md), a read-only preview list for the same completed attempt. JHEP-72 connects the list to [read-only individual question detail](individual-question-review.md), using the same pinned version, recorded answer and persisted grading outcome.
 
 ## Data model and concurrency
 

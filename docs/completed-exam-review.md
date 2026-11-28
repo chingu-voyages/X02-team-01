@@ -11,10 +11,11 @@ flowchart TD
     C --> D[Filter by status]
     D --> C
     C --> A
-    C -. JHEP-72 integration pending .-> E[Read-only individual question review]
+    C --> E[Read-only individual question review]
+    E --> C
 ```
 
-The review list is implemented; individual question selection and detail are not yet enabled. JHEP-72 must supply the working read-only detail route before JHEP-37 AC4 can be closed. The list does not contain a nonfunctional action or link to an unimplemented route. Attempt-history discovery, saved-question journals and new scoring logic are separate scope.
+JHEP-72 connects each question card to its [read-only historical detail](individual-question-review.md), including submitted and correct answers and an optional explanation. The detail returns to the question list, which returns to the same attempt's results. This completes the individual-question navigation implementation for JHEP-37 AC4; final integrated verification and product acceptance remain release gates. Attempt-history discovery, saved-question journals and new scoring logic are separate scope.
 
 ## API contract and ownership
 
@@ -23,7 +24,7 @@ The review list is implemented; individual question selection and detail are not
 - API: `GET /api/v1/exams/{attempt_id}/review` with a full `Authorization: Bearer <token>` session.
 - Server checks ownership before reading content. Unknown and other users' attempts return the same `404` response, including for staff who do not own the attempt. An unfinished owned attempt returns `409`; missing or invalid authentication returns `401`.
 - The successful response is marked `Cache-Control: no-store`; the frontend uses the existing uncached API client.
-- `question_version_id` is the originally pinned version UUID, not the parent question ID. Pair it with `attempt_id` for the future JHEP-72 detail contract. This document does not establish an active detail URL.
+- `question_version_id` is the originally pinned version UUID, not the parent question ID. Pair it with `attempt_id` for the JHEP-72 detail API `GET /api/v1/exams/{attempt_id}/review/questions/{question_version_id}` and browser route `/exams/{attemptId}/review/questions/{questionVersionId}`. See the [detail contract](individual-question-review.md).
 - Questions are returned in saved `position` order. `question_count` is the attempt's stored count. The preview collapses whitespace and is limited to 160 characters including the ellipsis if truncated.
 - An empty question list displays an unavailable/empty state. A nonempty incomplete list, duplicate IDs/positions, invalid status, unfinished status or mismatched attempt ID is rejected by the frontend rather than displayed as valid review data.
 
@@ -118,12 +119,12 @@ The new Playwright suite creates fresh local fixture learners/exams and uses rea
 | AC1 | Results CTA for submitted attempts, including pending grading; component and browser tests |
 | AC2 | Same owned attempt, saved order and previews; PostgreSQL and browser tests |
 | AC3 | Accessible grading labels, including pending and manual grades; component, API and browser tests |
-| AC4 | Return to results implemented; individual question detail selection still depends on JHEP-72 |
+| AC4 | Return to results and individual detail selection implemented; JHEP-72 browser tests verify the connected journey |
 | AC5 | Historical pinning, no write on review/refresh, response/result snapshots; PostgreSQL and browser tests |
 | AC6 | Owner-only review and non-disclosing error responses; API and browser tests |
 | AC7 | Loading/empty/error states, keyboard navigation, 320/375/768/1024/1440px viewports; component and Chromium tests |
 
-The implementer reported the new five-scenario Chromium suite and checkpoint tests passing locally. Record the full regression outputs separately before merge. Manual screen-reader, actual-device and contrast checks remain release verification tasks; automated viewport and keyboard checks are not a complete accessibility audit. PO acceptance and AC4 integration are still required for the parent story.
+The implementer reported the new five-scenario Chromium suite and checkpoint tests passing locally. Record the full regression outputs separately before merge. Manual screen-reader, actual-device and contrast checks remain release verification tasks; automated viewport and keyboard checks are not a complete accessibility audit. JHEP-72 now implements AC4 integration and its targeted browser suite has passed; PO acceptance and final integrated verification remain required for the parent story.
 
 ### Manual sign-off checklist
 
@@ -132,6 +133,6 @@ The implementer reported the new five-scenario Chromium suite and checkpoint tes
 - [ ] Verify readable status contrast and text enlargement (200% zoom), without clipped controls or horizontal page scrolling.
 - [ ] Inspect touch behavior on a real phone, long question previews and the 40-question list.
 - [ ] Verify both immediate and deferred feedback modes and pending written grading; revisit after a legitimate human grade.
-- [ ] Verify the JHEP-72 integration when implemented: each question opens its correct attempt-scoped historical detail and returns to the list/results.
+- [ ] Manually verify the implemented JHEP-72 integration: each question opens its correct attempt-scoped historical detail and returns to the list/results.
 
 See [the API contract](CONTRACT_API_JSON.md#63a-completed-exam-question-list-jhep-37) for the route summary. Implementation sources: `backend/app/services/exam_review_service.py`, `backend/app/schemas/exam_review.py`, `backend/app/api/v1/endpoints/exams.py`, and `frontend/src/features/exam-review/`.
