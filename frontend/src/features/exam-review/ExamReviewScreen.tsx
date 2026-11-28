@@ -2,20 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  ArrowLeft,
-  CheckCircle2,
-  ClipboardCheck,
-  Clock,
-  FileQuestion,
-  Minus,
-  XCircle,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { ApiError } from "@/lib/api-client";
 import { getCompletedExamReview } from "@/lib/exam-review";
+import { questionReviewHref } from "@/lib/exam-question-review";
+import QuestionReviewStatus, { statusInfo } from "./QuestionReviewStatus";
 import {
   reviewStatuses,
   type CompletedExamReview,
@@ -23,26 +16,7 @@ import {
   type ReviewStatus,
 } from "@/types/exam-review.types";
 
-const statusInfo = {
-  correct: { label: "Correct", Icon: CheckCircle2, color: "bg-emerald-50 text-emerald-800" },
-  incorrect: { label: "Incorrect", Icon: XCircle, color: "bg-red-50 text-red-800" },
-  unanswered: { label: "Unanswered", Icon: Minus, color: "bg-slate-100 text-slate-800" },
-  pending_manual_grading: { label: "Pending Grading", Icon: Clock, color: "bg-amber-50 text-amber-900" },
-  manually_graded: { label: "Manually graded", Icon: ClipboardCheck, color: "bg-blue-50 text-blue-900" },
-  unavailable: { label: "Not graded", Icon: FileQuestion, color: "bg-slate-100 text-slate-800" },
-} satisfies Record<ReviewStatus, { label: string; Icon: LucideIcon; color: string }>;
-
-function QuestionStatus({ status }: { status: ReviewStatus }) {
-  const { label, Icon, color } = statusInfo[status];
-  return (
-    <span className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-sm font-semibold ${color}`}>
-      <Icon className="size-4 shrink-0" aria-hidden="true" />
-      <span>{label}</span>
-    </span>
-  );
-}
-
-function ReviewQuestions({ questions }: { questions: ReviewQuestion[] }) {
+function ReviewQuestions({ questions, attemptId }: { questions: ReviewQuestion[]; attemptId: string }) {
   const [filter, setFilter] = useState<ReviewStatus | "all">("all");
   const visible = filter === "all" ? questions : questions.filter((question) => question.status === filter);
 
@@ -90,17 +64,20 @@ function ReviewQuestions({ questions }: { questions: ReviewQuestion[] }) {
       ) : (
         <ol className="min-w-0 space-y-2" aria-label="Completed exam questions">
           {visible.map((question) => (
-            <li key={question.question_version_id} value={question.position} className="min-w-0 rounded-xl border border-brand-border bg-white p-4 shadow-xs sm:p-5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-semibold">Question {question.position}</h3>
-                <QuestionStatus status={question.status} />
-              </div>
-              <p className="mt-2 wrap-anywhere text-sm leading-6 text-brand-text/85">{question.preview}</p>
+            <li key={question.question_version_id} value={question.position} className="min-w-0">
+              <Link href={questionReviewHref(attemptId, question.question_version_id)} prefetch={false} aria-label={`Review question ${question.position}: ${statusInfo[question.status].label}`} className="block min-h-11 min-w-0 rounded-xl border border-brand-border bg-white p-4 shadow-xs transition-colors hover:border-brand-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary sm:p-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-semibold">Question {question.position}</h3>
+                  <QuestionReviewStatus status={question.status} />
+                </div>
+                <p className="mt-2 wrap-anywhere text-sm leading-6 text-brand-text/85">{question.preview}</p>
+                <span className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-brand-primary">Review question <ChevronRight aria-hidden="true" className="size-4 shrink-0" /></span>
+              </Link>
             </li>
           ))}
         </ol>
       )}
-      <p className="text-sm leading-6 text-brand-text/80">Individual answer details and explanations are not available on this page yet.</p>
+      <p className="text-sm leading-6 text-brand-text/80">Open any question to see your recorded answer and available feedback.</p>
     </section>
   );
 }
@@ -189,7 +166,7 @@ export default function ExamReviewScreen({ attemptId, accessToken }: ExamReviewS
           <p className="text-sm leading-6 text-brand-text/80">There are no questions available to review for this attempt.</p>
         </section>
       ) : (
-        <ReviewQuestions questions={result.data.questions} />
+        <ReviewQuestions questions={result.data.questions} attemptId={attemptId} />
       )}
     </div>
   );

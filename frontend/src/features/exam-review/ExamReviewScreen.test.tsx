@@ -52,11 +52,15 @@ describe("ExamReviewScreen", () => {
       expect(within(row).getByRole("heading", { name: `Question ${index + 1}` })).toBeTruthy();
       expect(within(row).getByText(labels[index])).toBeTruthy();
       expect(within(row).getByText(`Original preview ${index + 1}`)).toBeTruthy();
+      const link = within(row).getByRole("link", { name: `Review question ${index + 1}: ${labels[index]}` });
+      expect(link.getAttribute("href")).toBe(`/exams/${attemptId}/review/questions/${result.questions[index].question_version_id}`);
     });
     expect(screen.getByRole("status").textContent).toBe("Showing 6 of 6 questions");
-    // No fake question links or submission controls before JHEP-72 exists.
-    expect(within(list()).queryAllByRole("link")).toHaveLength(0);
+    // JHEP-72 enables the real detail links but never adds answer controls.
+    expect(within(list()).getAllByRole("link")).toHaveLength(6);
     expect(within(list()).queryAllByRole("button")).toHaveLength(0);
+    expect(within(list()).queryAllByRole("radio")).toHaveLength(0);
+    expect(within(list()).queryAllByRole("checkbox")).toHaveLength(0);
   });
 
   it("filters by status without renumbering, including empty filter results and reset", async () => {
@@ -71,6 +75,8 @@ describe("ExamReviewScreen", () => {
     await user.selectOptions(filter, "incorrect");
     expect(within(list()).getAllByRole("listitem")).toHaveLength(1);
     expect(within(list()).getByRole("heading", { name: "Question 2" })).toBeTruthy();
+    const link = within(list()).getByRole("link", { name: "Review question 2: Incorrect" });
+    expect(link.getAttribute("href")).toBe(`/exams/${attemptId}/review/questions/${result.questions[1].question_version_id}`);
     expect(screen.getByRole("status").textContent).toBe("Showing 1 of 2 questions");
     await user.selectOptions(filter, "pending_manual_grading");
     expect(screen.getByText("No questions match this status.")).toBeTruthy();
