@@ -13,6 +13,11 @@ import type { QuestionState } from "@/lib/question-states";
 const { handleError, replace, logout } = vi.hoisted(() => ({ handleError: vi.fn(), replace: vi.fn(), logout: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
 vi.mock("@/features/auth/AuthProvider", () => ({ useDemoSession: () => ({ ready: true, token: "test-token", handleError }), useAuth: () => ({ logout }) }));
+vi.mock("@/lib/exam-recovery-api", () => ({
+  saveExamDraft: () => Promise.resolve(undefined),
+  saveExamPosition: () => Promise.resolve(undefined),
+}));
+
 vi.mock("@/lib/exam-api", () => ({ getExam: vi.fn(), setQuestionFlag: vi.fn(), submitAnswer: vi.fn() }));
 vi.mock("@/lib/exam-submission", () => ({ submitExam: vi.fn() }));
 vi.mock("@/components/ui/radio-group", () => ({ RadioGroup: ({ children }: { children: ReactNode }) => <div>{children}</div> }));

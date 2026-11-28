@@ -28,6 +28,11 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
+vi.mock("@/lib/exam-recovery-api", () => ({
+  saveExamDraft: () => Promise.resolve(undefined),
+  saveExamPosition: () => Promise.resolve(undefined),
+}));
+
 vi.mock("@/lib/exam-api", () => ({
   getExam: vi.fn(),
   submitAnswer: vi.fn(),

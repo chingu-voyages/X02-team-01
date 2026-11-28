@@ -78,7 +78,7 @@ async function startAttempt(page: Page, mode: FeedbackMode) {
     return (await response.json()) as ExamAttempt;
   }
 
-  return { attempt, writes, readAttempt };
+  return { attempt, writes, readAttempt, fixture };
 }
 
 async function expectQuestion(page: Page, attempt: ExamCreatedResponse, number: number) {
@@ -154,10 +154,15 @@ test.describe("JHEP-105 numbered exam navigation", () => {
     await questionButton(page, 1).click();
     await expectQuestion(page, attempt, 1);
     await expect(firstOption(page)).toBeChecked();
-    expect(writes).toEqual([]);
+    expect(writes.filter((write) => write.startsWith("POST "))).toEqual([]);
+    await expect(page.getByText("Progress saved", { exact: true })).toBeVisible();
     const before = await readAttempt();
     expect(before.status).toBe("in_progress");
-    expect(before.questions.every((question) => !question.response)).toBe(true);
+    expect(before.current_position).toBe(1);
+    expect(before.questions[0].response).toMatchObject({
+      is_submitted: false, selected_option_ids: [attempt.questions[0].options[0].id],
+    });
+    expect(before.questions.slice(1).every((question) => !question.response)).toBe(true);
 
     const immediate = await submitCurrentAnswer(page, attempt, 1);
     expect(immediate.feedback_released).toBe(true);
@@ -188,12 +193,12 @@ test.describe("JHEP-105 numbered exam navigation", () => {
     await expectQuestion(page, attempt, 3);
     const saved = await readAttempt();
     expect(saved.questions.every((question) => question.response?.is_submitted)).toBe(true);
-    expect(writes).toHaveLength(3);
+    expect(writes.filter((write) => write.startsWith("POST "))).toHaveLength(3);
 
     await page.getByRole("button", { name: "Finish Exam", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/exams/${attempt.attempt_id}/results$`));
     await expect(page.getByRole("heading", { name: "Practice exam complete" })).toBeVisible();
-    expect(writes).toHaveLength(4);
+    expect(writes.filter((write) => write.startsWith("POST "))).toHaveLength(4);
   });
 
   test("mobile: paginated navigation supports keyboard and deferred feedback without losing answers", async ({ page }) => {
@@ -216,13 +221,14 @@ test.describe("JHEP-105 numbered exam navigation", () => {
     await page.keyboard.press("Tab");
     await expect(questionButton(page, 1)).toBeFocused();
 
-    // Paging browses the full question set without navigating or saving.
+    // Paging browses the full question set without changing the saved position.
+    // The draft selection itself may already have been autosaved.
     await nav.goToLastSet();
     await expect(questionButton(page, 40)).toBeVisible();
     await expect(questionButton(page, 40)).not.toHaveAttribute("aria-current");
     await expectQuestion(page, attempt, 1);
     await expect(firstOption(page)).toBeChecked();
-    expect(writes).toEqual([]);
+    expect(writes.filter((write) => write.startsWith("POST ") || write.startsWith("PATCH "))).toEqual([]);
 
     await questionButton(page, 40).press("Escape");
     await nav.expectClosed();
@@ -239,6 +245,10 @@ test.describe("JHEP-105 numbered exam navigation", () => {
     await expectQuestion(page, attempt, 40);
     await nav.expectQuestionFocus(40);
     await expect(firstOption(page)).not.toBeChecked();
+    await expect(page.getByText("Progress saved", { exact: true })).toBeVisible();
+    await page.reload();
+    await expectQuestion(page, attempt, 40);
+    await expect(firstOption(page)).not.toBeChecked();
 
     await nav.open();
     await nav.expectSet(31, 40);
@@ -254,7 +264,7 @@ test.describe("JHEP-105 numbered exam navigation", () => {
     await expectQuestion(page, attempt, 1);
     await nav.expectQuestionFocus(1);
     await expect(firstOption(page)).toBeChecked();
-    expect(writes).toEqual([]);
+    expect(writes.filter((write) => write.startsWith("POST "))).toEqual([]);
 
     const deferred = await submitCurrentAnswer(page, attempt, 1);
     expect(deferred.feedback_released).toBe(false);
@@ -282,6 +292,93 @@ test.describe("JHEP-105 numbered exam navigation", () => {
     expect(saved.status).toBe("in_progress");
     expect(saved.questions[0].response?.is_submitted).toBe(true);
     expect(saved.questions.slice(1).every((question) => !question.response)).toBe(true);
-    expect(writes).toHaveLength(1);
+    expect(writes.filter((write) => write.startsWith("POST "))).toHaveLength(1);
   });
+  test("JHEP-89: saved draft and position survive refresh and a fresh authenticated browser context", async ({ page, browser }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const { attempt, fixture, readAttempt } = await startAttempt(page, "immediate");
+    await firstOption(page).click();
+    await submitCurrentAnswer(page, attempt, 1);
+    await questionButton(page, 2).click();
+    await expectQuestion(page, attempt, 2);
+    await firstOption(page).click();
+    await expect(page.getByText("Progress saved", { exact: true })).toBeVisible();
+    const saved = await readAttempt();
+    expect(saved.current_position).toBe(2);
+    expect(saved.questions[0].response?.is_submitted).toBe(true);
+    expect(saved.questions[1].response).toMatchObject({
+      is_submitted: false, selected_option_ids: [attempt.questions[1].options[0].id],
+    });
+    await page.reload();
+    await expectQuestion(page, attempt, 2);
+    await expect(firstOption(page)).toBeChecked();
+    await expect(firstOption(page)).toBeEnabled();
+    await page.close();
+
+    // A new context has no sessionStorage or cookies from the original page.
+    // Re-authenticate as the same learner, then resume the exact attempt URL.
+    const context = await browser.newContext({ baseURL: "http://localhost:3030", viewport: { width: 390, height: 844 } });
+    try {
+      const returned = await context.newPage();
+      await returned.goto("/login");
+      await returned.getByLabel("Email address").fill(fixture.email);
+      await returned.getByLabel("Password", { exact: true }).fill(fixture.password);
+      await returned.getByRole("button", { name: "Sign in", exact: true }).click();
+      await expect(returned).toHaveURL(/\/categories\/?$/);
+      const creates: string[] = [];
+      returned.on("request", (request) => {
+        if (request.method() === "POST" && new URL(request.url()).pathname === "/api/v1/exams") creates.push(request.url());
+      });
+      await returned.goto(`/exams/${attempt.attempt_id}`);
+      await expectQuestion(returned, attempt, 2);
+      await expect(firstOption(returned)).toBeChecked();
+      await expect(firstOption(returned)).toBeEnabled();
+      const nav = mobileNavigation(returned);
+      await nav.open();
+      await questionButton(returned, 1).click();
+      await nav.expectClosed();
+      await expectQuestion(returned, attempt, 1);
+      await expect(firstOption(returned)).toBeChecked();
+      await expect(firstOption(returned)).toBeDisabled();
+      await expect(returned.getByText("Progress saved", { exact: true })).toBeVisible();
+      expect(creates).toEqual([]);
+      const overflow = await returned.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+      expect(overflow, "no horizontal page overflow on mobile").toBe(false);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("JHEP-89: mobile failed draft save retains input and retries without submitting", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const { attempt, readAttempt, writes } = await startAttempt(page, "immediate");
+    const endpoint = `/api/v1/exams/${attempt.attempt_id}/responses/${attempt.questions[0].id}`;
+    await page.route(`**${endpoint}`, async (route) => {
+      if (route.request().method() !== "PUT") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Save temporarily unavailable" }) });
+    }, { times: 1 });
+    await firstOption(page).click();
+    await expect(page.getByRole("alert").filter({ hasText: "Changes not saved" })).toBeVisible();
+    await expect(firstOption(page)).toBeChecked();
+    await expect(firstOption(page)).toBeEnabled();
+    expect((await readAttempt()).questions[0].response ?? null).toBeNull();
+    await expect(page.getByText("Progress saved", { exact: true })).toHaveCount(0);
+    const retry = page.getByRole("button", { name: "Retry saving" });
+    await expect(retry).toBeVisible();
+    await retry.focus();
+    await retry.press("Enter");
+    await expect(page.getByText("Progress saved", { exact: true })).toBeVisible();
+    expect((await readAttempt()).questions[0].response).toMatchObject({
+      is_submitted: false, selected_option_ids: [attempt.questions[0].options[0].id],
+    });
+    expect(writes.filter((write) => write.startsWith("POST "))).toEqual([]);
+    await page.reload();
+    await expectQuestion(page, attempt, 1);
+    await expect(firstOption(page)).toBeChecked();
+    await expect(firstOption(page)).toBeEnabled();
+  });
+
 });

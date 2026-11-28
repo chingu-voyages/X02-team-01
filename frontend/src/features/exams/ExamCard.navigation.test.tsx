@@ -10,6 +10,11 @@ import type { ExamAttempt } from "@/types/exam-api.types";
 
 const { handleError, replace, logout } = vi.hoisted(() => ({ handleError: vi.fn(), replace: vi.fn(), logout: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
+vi.mock("@/lib/exam-recovery-api", () => ({
+  saveExamDraft: () => Promise.resolve(undefined),
+  saveExamPosition: () => Promise.resolve(undefined),
+}));
+
 vi.mock("@/lib/exam-api", () => ({ getExam: vi.fn(), submitAnswer: vi.fn(), setQuestionFlag: vi.fn() }));
 vi.mock("@/lib/exam-submission", () => ({ submitExam: vi.fn() }));
 vi.mock("@/features/auth/AuthProvider", () => ({
@@ -64,7 +69,7 @@ beforeEach(() => { vi.resetAllMocks(); vi.mocked(getExam).mockResolvedValue(atte
 afterEach(cleanup);
 
 describe("ExamCard numbered navigation", () => {
-  it("jumps directly and retains unsubmitted option selections and short answers without API writes", async () => {
+  it("jumps directly and retains unsubmitted option selections and short answers without submitting", async () => {
     const user = userEvent.setup();
     await loadCard();
     await user.click(screen.getByRole("button", { name: "First choice" }));

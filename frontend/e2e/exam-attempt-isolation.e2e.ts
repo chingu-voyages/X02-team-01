@@ -156,16 +156,10 @@ async function readAttempt(page: Page, headers: Headers, attempt: ExamCreatedRes
   return (await response.json()) as ExamAttempt;
 }
 
-async function savePosition(page: Page, headers: Headers, attempt: ExamCreatedResponse, position: number) {
-  // The numbered navigator currently changes position in React state only.
-  // Exercise the existing progress endpoint explicitly, then verify that
-  // the browser restores the persisted position for the correct attempt.
-  const response = await page.request.patch(`/api/v1/exams/${attempt.attempt_id}/progress`, {
-    headers,
-    data: { current_position: position },
-  });
-  expect(response.ok(), "save attempt position via progress API").toBe(true);
-  expect(await response.json()).toMatchObject({ attempt_id: attempt.attempt_id, current_position: position });
+async function expectSavedPosition(page: Page, headers: Headers, attempt: ExamCreatedResponse, position: number) {
+  // Check the actual UI autosave, not a second manual progress PATCH.
+  await expect(page.getByText("Progress saved", { exact: true })).toBeVisible();
+  await expect.poll(async () => (await readAttempt(page, headers, attempt)).current_position).toBe(position);
 }
 
 async function readResults(page: Page, headers: Headers, attempt: ExamCreatedResponse): Promise<ExamResultsResponse> {
@@ -211,7 +205,7 @@ test("JHEP-203: identical published exam configurations keep independent attempt
   await answer(page, data, 1, true);
   await flag(page, data, 1);
   await navigate(page, data, 2);
-  await savePosition(page, headers, data, 2);
+  await expectSavedPosition(page, headers, data, 2);
 
   const programming = await startNew(page, fixture, programmingExam);
   expect(programming.attempt_id).not.toBe(data.attempt_id);
@@ -233,7 +227,7 @@ test("JHEP-203: identical published exam configurations keep independent attempt
   await expect(page.getByRole("button", { name: "Flag for Review", exact: true })).toBeEnabled();
   await answer(page, programming, matchingNumber, false);
   await navigate(page, programming, 3);
-  await savePosition(page, headers, programming, 3);
+  await expectSavedPosition(page, headers, programming, 3);
 
   // Recover Data by starting the same published exam again. The API must
   // return Data's attempt ID and the browser must use that exact ID.

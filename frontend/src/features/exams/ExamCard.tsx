@@ -5,6 +5,7 @@ import QuestionControls from "../questions/QuestionControls";
 import QuestionRenderer from "./QuestionRenderer";
 import { Button } from "@/components/ui/button";
 import ExamSidebar from "./ExamSidebar";
+import ExamSaveStatus from "./ExamSaveStatus";
 import { useExamAttempt } from "@/hooks/useExamAttempt";
 
 interface ExamCardProps {
@@ -44,6 +45,12 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     handleTextChange,
     handleSubmit,
     handleFinish,
+    saveState,
+    canRetrySave,
+    saveErrorMessage,
+    retrySave,
+    isAttemptSubmitted,
+    viewResults,
   } = useExamAttempt(attemptId);
 
   if (!ready || !token) {
@@ -77,6 +84,16 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
             </Button>
           </>
         )}
+      </section>
+    );
+  }
+
+  if (isAttemptSubmitted && saveState.pendingCount === 0) {
+    return (
+      <section className="space-y-3 rounded-xl border border-brand-border bg-white p-4 text-brand-text sm:p-6">
+        <h1 className="text-xl font-bold">This exam is already submitted</h1>
+        <p className="text-sm">Your submitted answers are locked. You can view the results of this attempt.</p>
+        <Button type="button" onClick={viewResults} className="min-h-11 w-full sm:w-auto">View results</Button>
       </section>
     );
   }
@@ -117,6 +134,14 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         onToggleFlag={handleToggleFlag}
       />
 
+      <ExamSaveStatus
+        state={saveState}
+        errorMessage={saveErrorMessage}
+        canRetry={canRetrySave}
+        disabled={isSubmitting || isFinishing}
+        onRetry={retrySave}
+      />
+
       <ExamSidebar
         variant="mobile"
         currentQuestion={currentQuestion}
@@ -126,7 +151,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         flaggedQuestionIndices={flaggedQuestionIndices}
         isSubmitted={isSubmitted}
         isSubmitting={isSubmitting}
-        isFinishing={isFinishing}
+        isFinishing={isFinishing || isAttemptSubmitted}
         isSavingFlag={isSavingFlag}
         allQuestionsSubmitted={allQuestionsSubmitted}
         finishError={finishError}
@@ -143,7 +168,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
             textValue={textValue}
             isSubmitted={isSubmitted}
             isSubmitting={isSubmitting}
-            isFinishing={isFinishing}
+            isFinishing={isFinishing || isAttemptSubmitted}
             submitError={submitError}
             feedback={currentFeedback}
             onSelectOption={handleSelect}
@@ -156,7 +181,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
             selectedCount={selectedCount}
             isSubmitted={isSubmitted}
             isSubmitting={isSubmitting}
-            isFinishing={isFinishing}
+            isFinishing={isFinishing || isAttemptSubmitted}
             isSavingFlag={isSavingFlag}
             allQuestionsSubmitted={allQuestionsSubmitted}
             firstUnsubmittedIndex={firstUnsubmittedIndex}
@@ -176,7 +201,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           flaggedQuestionIndices={flaggedQuestionIndices}
           isSubmitted={isSubmitted}
           isSubmitting={isSubmitting}
-          isFinishing={isFinishing}
+          isFinishing={isFinishing || isAttemptSubmitted}
           isSavingFlag={isSavingFlag}
           allQuestionsSubmitted={allQuestionsSubmitted}
           finishError={finishError}

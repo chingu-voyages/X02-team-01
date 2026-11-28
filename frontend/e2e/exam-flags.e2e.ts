@@ -201,10 +201,14 @@ test.describe("JHEP-104 flag and unflag questions", () => {
     await questionButton(page, 1, true).click();
     await expectQuestion(page, attempt, 1);
     await expect(firstOption(page)).toBeChecked();
+    await expect(page.getByText("Progress saved", { exact: true })).toBeVisible();
     const draft = await readAttempt();
-    expect(draft.questions[0].response ?? null).toBeNull();
+    expect(draft.questions[0].response).toMatchObject({
+      is_submitted: false, selected_option_ids: [attempt.questions[0].options[0].id],
+    });
     expect(draft.questions[0].flagged_for_review).toBe(true);
-    expect(writes).toEqual(Array(3).fill(`PUT ${flagPath(attempt, 1)}`));
+    expect(writes.filter((write) => write.endsWith("/flag"))).toEqual(Array(3).fill(`PUT ${flagPath(attempt, 1)}`));
+    expect(writes.filter((write) => write.startsWith("POST "))).toEqual([]);
 
     const feedback = await submitCurrentAnswer(page, attempt, 1);
     expect(feedback.feedback_released).toBe(true);
@@ -270,7 +274,8 @@ test.describe("JHEP-104 flag and unflag questions", () => {
     await questionButton(page, 1, true).click();
     await expectQuestion(page, attempt, 1);
     await expect(firstOption(page)).toBeChecked();
-    expect(writes).toEqual([`PUT ${flagPath(attempt, 1)}`, `PUT ${flagPath(attempt, 40)}`]);
+    expect(writes.filter((write) => write.endsWith("/flag"))).toEqual([`PUT ${flagPath(attempt, 1)}`, `PUT ${flagPath(attempt, 40)}`]);
+    expect(writes.filter((write) => write.startsWith("POST "))).toEqual([]);
 
     // Fail exactly one write before it reaches the server. The next retry is real.
     const endpoint = `**${flagPath(attempt, 1)}`;
