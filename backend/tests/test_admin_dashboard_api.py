@@ -36,6 +36,7 @@ from app.models import (
     QuestionVersion,
     User,
 )
+from tests.admin_auth_fixtures import domain_access_token
 
 
 @compiles(JSONB, "sqlite")
@@ -128,6 +129,16 @@ class DashboardHarness:
             password="AdminPass1!",
             role="administrator",
         )
+        # JHEP-207: administrators must be MFA-enrolled before any admin
+        # API call is accepted — model confirmed enrollment like the
+        # shared domain fixtures do.
+        enrolled_at = datetime.now(UTC)
+        self.admin.totp_secret_encrypted = "test-encrypted-secret"
+        self.admin.mfa_enrolled_at = enrolled_at
+        self.admin.sessions_invalid_before = enrolled_at
+        self.session.add(self.admin)
+        self.session.commit()
+        self.session.refresh(self.admin)
         self.learner = _create_user(
             self.session,
             email=f"learner-{uuid4().hex[:8]}@example.test",
@@ -174,15 +185,15 @@ class DashboardHarness:
 
         app.dependency_overrides[get_session] = override_session
         self.client = TestClient(app)
-        self.admin_headers = self._login(self.admin.email, "AdminPass1!")
-
-    def _login(self, email: str, password: str) -> dict[str, str]:
-        response = self.client.post(
-            "/api/v1/auth/login",
-            json={"email": email, "password": password},
-        )
-        assert response.status_code == 200, response.text
-        return {"Authorization": f"Bearer {response.json()['access_token']}"}
+        self.admin_headers = {
+            "Authorization": f"Bearer {domain_access_token(self.admin)}"
+        }
+        self.learner_headers = {
+            "Authorization": f"Bearer {domain_access_token(self.learner)}"
+        }
+        self.contributor_headers = {
+            "Authorization": f"Bearer {domain_access_token(self.contributor)}"
+        }
 
     def overview(self, params: str = "") -> dict:
         response = self.client.get(
@@ -234,18 +245,16 @@ def test_requires_administrator(harness: DashboardHarness) -> None:
     # AC1: anonymous requests are refused outright.
     assert harness.client.get("/api/v1/admin/dashboard/overview").status_code == 401
 
-    learner = harness._login(harness.learner.email, "LearnerPass1!")
     assert (
         harness.client.get(
-            "/api/v1/admin/dashboard/overview", headers=learner
+            "/api/v1/admin/dashboard/overview", headers=harness.learner_headers
         ).status_code
         == 403
     )
 
-    contributor = harness._login(harness.contributor.email, "ContribPass1!")
     assert (
         harness.client.get(
-            "/api/v1/admin/dashboard/overview", headers=contributor
+            "/api/v1/admin/dashboard/overview", headers=harness.contributor_headers
         ).status_code
         == 403
     )
