@@ -1,3 +1,6 @@
+"use client";
+
+import { useId } from "react";
 import { Check, X } from "lucide-react";
 
 import { Checkbox } from "@/components/ui/checkbox";
@@ -28,6 +31,10 @@ export default function OptionItem({
   correctOptionIds,
   disabled = false,
 }: OptionItemProps) {
+  // Name the actual control from its visible answer text, not the badge
+  // or verdict. React supplies a unique, server/client-stable label ID.
+  const labelId = useId();
+
   // Never infer correctness when the backend withheld its feedback.
   const isCorrectOption =
     isSubmitted && feedbackReleased && correctOptionIds.includes(id);
@@ -69,6 +76,7 @@ export default function OptionItem({
       <RadioGroupItem
         value={id}
         id={id}
+        aria-labelledby={labelId}
         disabled={isLocked}
         onClick={(event) => event.stopPropagation()}
         className={
@@ -82,6 +90,7 @@ export default function OptionItem({
     ) : (
       <Checkbox
         id={id}
+        aria-labelledby={labelId}
         checked={isSelected}
         onCheckedChange={!isLocked ? onSelect : undefined}
         disabled={isLocked}
@@ -142,7 +151,7 @@ export default function OptionItem({
               {choiceLabel}
             </span>
           )}
-          <span>{option}</span>
+          <span id={labelId}>{option}</span>
         </span>
 
         {isCorrectOption ? (

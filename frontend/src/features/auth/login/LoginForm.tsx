@@ -29,7 +29,7 @@ type LoginResponse = {
 };
 
 export default function LoginForm() {
-  const { setToken } = useAuth();
+  const { setToken, ready } = useAuth();
 
   const [formData, setFormData] = useState({
     email: "",
@@ -95,6 +95,7 @@ export default function LoginForm() {
     event: React.FormEvent<HTMLFormElement>,
   ) => {
     event.preventDefault();
+    if (!ready) return;
 
     setTouched({
       email: true,
@@ -361,6 +362,12 @@ export default function LoginForm() {
         </div>
       )}
 
+      {!ready && (
+        <p role="status" className="text-sm text-brand-text/70">
+          Preparing sign-in…
+        </p>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         <FormInput
           label="Email address"
@@ -369,6 +376,7 @@ export default function LoginForm() {
           type="email"
           placeholder="you@example.com"
           value={formData.email}
+          disabled={!ready}
           onChange={handleChange}
           onBlur={() => handleBlur("email")}
           error={touched.email ? errors.email : undefined}
@@ -382,6 +390,7 @@ export default function LoginForm() {
           passwordToggle
           placeholder="Enter your password"
           value={formData.password}
+          disabled={!ready}
           onChange={handleChange}
           onBlur={() => handleBlur("password")}
           error={touched.password ? errors.password : undefined}
@@ -390,7 +399,7 @@ export default function LoginForm() {
         <div className="pt-1">
           <Button
             type="submit"
-            disabled={isSubmitting}
+            disabled={!ready || isSubmitting}
             className="min-h-11 w-full cursor-pointer rounded-md bg-brand-accent px-6 text-sm font-semibold text-brand-text shadow-xs transition-colors hover:bg-brand-accent-tint focus-visible:ring-2 focus-visible:ring-brand-accent disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
             {isSubmitting ? "Signing in..." : "Sign in"}
