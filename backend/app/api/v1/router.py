@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     admin_promotion,
     auth,
     categories,
+    dashboard,
     exams,
     learner_practice_exams,
     manual_grading,
@@ -87,4 +88,9 @@ api_router.include_router(
     admin_promotion.router,
     prefix="/admin/users",
     tags=["admin", "users"],
+)
+
+api_router.include_router(
+    dashboard.router,
+    tags=["admin", "dashboard"],
 )
