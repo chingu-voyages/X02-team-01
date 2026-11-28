@@ -31,6 +31,7 @@ from app.models import (
     QuestionVersion,
     TextAnswerKey,
 )
+from app.schemas.exam import MAX_TEXT_ANSWER_LENGTH
 from app.services.grading_service import (
     AttemptNotSubmittedError,
     GradedQuestion,
@@ -40,6 +41,7 @@ from app.services.grading_service import (
 )
 
 MC_TYPE = "multiple_choice"
+ESSAY_TYPE = "essay"
 
 
 class AttemptQuestionNotFoundError(LookupError):
@@ -241,14 +243,30 @@ class ExamAttemptService:
         self._session.refresh(pinned)
         return pinned
 
+    def _lock_active_attempt(self, attempt: ExamAttempt) -> ExamAttempt:
+        """Serialize answer writes and final submission on the attempt row."""
+        locked = self._session.exec(
+            select(ExamAttempt)
+            .where(ExamAttempt.id == attempt.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).first()
+        if locked is None:
+            raise AttemptQuestionNotFoundError("Exam attempt not found")
+        if locked.status != "in_progress":
+            raise AttemptAlreadySubmittedError("Attempt already submitted")
+        return locked
+
     def _existing_response(
         self, attempt_id: UUID, question_version_id: UUID
     ) -> ExamResponse | None:
         return self._session.exec(
-            select(ExamResponse).where(
+            select(ExamResponse)
+            .where(
                 ExamResponse.attempt_id == attempt_id,
                 ExamResponse.question_version_id == question_version_id,
             )
+            .execution_options(populate_existing=True)
         ).first()
 
     def save_response(
@@ -266,14 +284,27 @@ class ExamAttemptService:
         unanswered). Locked rows (individually submitted questions) are
         immutable; a finally submitted attempt rejects everything.
         """
-        if attempt.status == "submitted":
-            raise AttemptAlreadySubmittedError("Attempt already submitted")
+        attempt = self._lock_active_attempt(attempt)
 
         pinned = self._pinned_question(attempt.id, question_version_id)
         question_type, _multiple = self._question_meta(question_version_id)
         existing = self._existing_response(attempt.id, question_version_id)
         if existing is not None and existing.is_submitted:
             raise QuestionAlreadyLockedError("Question already submitted")
+
+        if question_type == ESSAY_TYPE and text_response is not None:
+            if len(text_response) > MAX_TEXT_ANSWER_LENGTH:
+                raise InvalidResponseContentError(
+                    f"Essay responses cannot exceed {MAX_TEXT_ANSWER_LENGTH} characters"
+                )
+            if "\x00" in text_response:
+                raise InvalidResponseContentError("Essay contains an invalid character")
+            try:
+                text_response.encode("utf-8")
+            except UnicodeEncodeError as exc:
+                raise InvalidResponseContentError(
+                    "Essay contains an invalid character"
+                ) from exc
 
         has_selections = bool(selected_option_ids)
         has_text = bool(text_response and text_response.strip())
@@ -324,7 +355,12 @@ class ExamAttemptService:
                 )
             selections = list(selected_option_ids or [])
         else:
-            content = (text_response or "").strip()
+            # Preserve the exact essay, including indentation and line breaks.
+            content = (
+                text_response
+                if question_type == ESSAY_TYPE
+                else (text_response or "").strip()
+            )
 
         if existing is not None:
             existing.selected_option_ids = (
@@ -383,11 +419,21 @@ class ExamAttemptService:
         text_response: str | None,
     ) -> dict:
         """Lock one question's answer and (in immediate mode) grade it now."""
-        if attempt.status == "submitted":
-            raise AttemptAlreadySubmittedError("Attempt already submitted")
+        attempt = self._lock_active_attempt(attempt)
 
+        self._pinned_question(attempt.id, question_version_id)
+        question_type, allows_multiple = self._question_meta(question_version_id)
         existing = self._existing_response(attempt.id, question_version_id)
         if existing is not None and existing.is_submitted:
+            if (
+                question_type == ESSAY_TYPE
+                and not selected_option_ids
+                and text_response == existing.text_response
+            ):
+                # A lost success response can be retried without another write.
+                feedback = self._essay_feedback(existing)
+                self._session.commit()
+                return feedback
             raise QuestionAlreadyLockedError("Question already submitted")
 
         row = self.save_response(
@@ -400,9 +446,13 @@ class ExamAttemptService:
         if row is None:  # pragma: no cover - save_response raises instead
             raise NoAnswerContentError("Cannot submit an empty answer")
 
+        if question_type == ESSAY_TYPE:
+            # Written essays are reviewed after final submission. A confirmed
+            # save is not a verdict, even in immediate-feedback exams.
+            return self._essay_feedback(row)
+
         immediate = feedback_permitted(attempt, "per_question")
         pinned = self._pinned_question(attempt.id, question_version_id)
-        question_type, allows_multiple = self._question_meta(question_version_id)
         correct = (
             self._correct_options(question_version_id)
             if question_type == MC_TYPE
@@ -449,6 +499,16 @@ class ExamAttemptService:
             "is_correct": row.is_correct if immediate else None,
             "correct_option_ids": correct if immediate else None,
             "explanation": explanation if immediate else None,
+        }
+
+    @staticmethod
+    def _essay_feedback(row: ExamResponse) -> dict:
+        return {
+            "question_submitted_at": row.question_submitted_at,
+            "feedback_released": False,
+            "is_correct": None,
+            "correct_option_ids": None,
+            "explanation": None,
         }
 
     def _persist_single_grade(
@@ -498,8 +558,7 @@ class ExamAttemptService:
     # ------------------------------------------------------------------
 
     def apply_progress(self, attempt: ExamAttempt, current_position: int) -> None:
-        if attempt.status == "submitted":
-            raise AttemptAlreadySubmittedError("Attempt already submitted")
+        attempt = self._lock_active_attempt(attempt)
         if not 1 <= current_position <= attempt.question_count:
             raise InvalidResponseContentError(
                 "current_position is outside the exam's question range"
@@ -515,8 +574,7 @@ class ExamAttemptService:
 
     def final_submit(self, attempt: ExamAttempt) -> ExamResult:
         """Flip the attempt to `submitted` and grade it exactly once."""
-        if attempt.status == "submitted":
-            raise AttemptAlreadySubmittedError("Attempt already submitted")
+        attempt = self._lock_active_attempt(attempt)
         if attempt.passing_threshold_pct is None:
             raise AttemptNotGradableError("Attempt has no recorded threshold")
 

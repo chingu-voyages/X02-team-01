@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -319,5 +320,123 @@ describe("JHEP-126 administrator practice exam publishing UI", () => {
     expect(screen.queryByRole("button", { name: "New exam" })).toBeNull();
     expect(mockGet).not.toHaveBeenCalled();
     expect(mockPublication).not.toHaveBeenCalled();
+  });
+});
+
+// Reproduce a background load which re-runs while the already-loaded page
+// remains interactive. Its response was captured before the mutation.
+async function startBackgroundListLoad(
+  rerender: ReturnType<typeof render>["rerender"],
+) {
+  let resolveList!: (exams: AdminPracticeExam[]) => void;
+  let rejectList!: (error: Error) => void;
+  mockGet.mockImplementationOnce(() => new Promise<AdminPracticeExam[]>((resolve, reject) => {
+    resolveList = resolve;
+    rejectList = reject;
+  }));
+  // A changed auth callback is an existing dependency of the load effect.
+  // Use a stable replacement so exactly one additional load is started.
+  auth.handleError = vi.fn();
+  rerender(<AdminPracticeExamsPage />);
+  await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+  return { resolveList, rejectList };
+}
+
+async function createReadyDraft(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "New exam" }));
+  await user.type(screen.getByLabelText("Exam name"), readyExam.name);
+  await user.selectOptions(screen.getByLabelText("Category"), category.id);
+  const count = screen.getByLabelText("Question count (1–100)");
+  await user.clear(count);
+  await user.type(count, "2");
+  await user.click(screen.getByRole("button", { name: "Create draft" }));
+  await screen.findByText(/was created as a Draft/);
+}
+
+function expectSelectedDraft() {
+  const details = screen.getByRole("region", { name: readyExam.name });
+  expect(within(details).getByRole("heading", { name: readyExam.name })).toBeVisible();
+  expect(within(details).getByText("Draft")).toBeVisible();
+  expect(screen.getByRole("button", { name: `Manage ${readyExam.name}` }))
+    .toHaveAttribute("aria-current", "true");
+  expect(within(details).getByRole("button", { name: "Publish exam" })).toBeEnabled();
+  return details;
+}
+
+describe("JHEP-201 confirmed practice exam selection", () => {
+  it.each(["stale list", "stale error"] as const)(
+    "keeps the created exam selected after a %s arrives", async (outcome) => {
+      setup([blockedExam]);
+      mockCreate.mockResolvedValue(readyExam);
+      mockPublication.mockResolvedValue({ ...readyExam, status: "published" });
+      const user = userEvent.setup();
+      const { rerender } = render(<AdminPracticeExamsPage />);
+      await screen.findByRole("button", { name: `Manage ${blockedExam.name}` });
+      const background = await startBackgroundListLoad(rerender);
+
+      await createReadyDraft(user);
+      expectSelectedDraft();
+
+      await act(async () => {
+        if (outcome === "stale list") background.resolveList([blockedExam]);
+        else background.rejectList(new ApiError(503, "Old list request failed"));
+      });
+
+      const details = expectSelectedDraft();
+      expect(within(details).getByText(/was created as a Draft/)).toBeVisible();
+      expect(screen.queryByRole("alert")).toBeNull();
+      // Prove the subsequent action targets the just-created ID, not the
+      // first exam in the stale server response.
+      await user.click(within(details).getByRole("button", { name: "Publish exam" }));
+      await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm publish" }));
+      await waitFor(() => expect(mockPublication).toHaveBeenCalledWith("admin-token", readyExam.id, true));
+      expect(mockPublication).toHaveBeenCalledTimes(1);
+      expect(await screen.findByRole("button", { name: "Unpublish exam" })).toBeEnabled();
+    },
+  );
+
+  it("does not revert confirmed publication when an older list returns", async () => {
+    setup([readyExam, blockedExam]);
+    mockPublication.mockResolvedValue({ ...readyExam, status: "published" });
+    const user = userEvent.setup();
+    const { rerender } = render(<AdminPracticeExamsPage />);
+    await screen.findByRole("button", { name: "Publish exam" });
+    const background = await startBackgroundListLoad(rerender);
+    await user.click(screen.getByRole("button", { name: "Publish exam" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm publish" }));
+    await screen.findByRole("button", { name: "Unpublish exam" });
+    await act(async () => background.resolveList([readyExam, blockedExam]));
+    const details = screen.getByRole("region", { name: readyExam.name });
+    expect(within(details).getByRole("button", { name: "Unpublish exam" })).toBeEnabled();
+    expect(within(details).getByText(/is now Published and available to learners/)).toBeVisible();
+  });
+
+  it("keeps a creation notice associated with its exam when filtering", async () => {
+    setup([publishedExam]);
+    mockCreate.mockResolvedValue(readyExam);
+    const user = userEvent.setup();
+    render(<AdminPracticeExamsPage />);
+    await screen.findByRole("button", { name: `Manage ${publishedExam.name}` });
+    await createReadyDraft(user);
+    expectSelectedDraft();
+    await user.click(screen.getByRole("button", { name: "Published", pressed: false }));
+    expect(screen.getByRole("region", { name: publishedExam.name })).toBeVisible();
+    expect(screen.queryByText(/was created as a Draft/)).toBeNull();
+  });
+
+  it("accepts a deliberate fresh refresh after a successful creation", async () => {
+    setup([blockedExam]);
+    mockCreate.mockResolvedValue(readyExam);
+    const user = userEvent.setup();
+    render(<AdminPracticeExamsPage />);
+    await screen.findByRole("button", { name: `Manage ${blockedExam.name}` });
+    await createReadyDraft(user);
+    expectSelectedDraft();
+    // A later server read may legitimately omit a record removed elsewhere.
+    mockGet.mockResolvedValueOnce([blockedExam]);
+    await user.click(screen.getByRole("button", { name: "Refresh exam list" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: `Manage ${readyExam.name}` })).toBeNull());
+    expect(screen.getByRole("region", { name: blockedExam.name })).toBeVisible();
+    expect(screen.queryByText(/was created as a Draft/)).toBeNull();
   });
 });

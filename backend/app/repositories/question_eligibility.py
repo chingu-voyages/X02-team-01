@@ -76,6 +76,11 @@ def eligible_exam_questions_statement() -> Select:
             or_(
                 QuestionVersion.question_type == "short_answer",
                 and_(
+                    QuestionVersion.question_type == "essay",
+                    QuestionVersion.allows_multiple_answers.is_(False),
+                    func.coalesce(option_counts.c.option_count, 0) == 0,
+                ),
+                and_(
                     QuestionVersion.question_type == "multiple_choice",
                     option_counts.c.option_count >= 2,
                     option_counts.c.correct_count >= 1,

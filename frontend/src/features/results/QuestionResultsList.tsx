@@ -18,7 +18,7 @@ export default function QuestionResultsList({
   return (
     <section
       aria-labelledby="question-results-heading"
-      className="rounded-md border border-[#cbd0d3] bg-white p-5"
+      className="min-w-0 rounded-md border border-[#cbd0d3] bg-white p-5"
     >
       <h2
         id="question-results-heading"
@@ -26,11 +26,11 @@ export default function QuestionResultsList({
       >
         Question breakdown
       </h2>
-      <ul className="mt-4 space-y-4">
+      <ul className="mt-4 min-w-0 space-y-4">
         {questions.map((question) => (
           <li
             key={question.question_version_id}
-            className="rounded-md border border-[#e2e5e7] p-4"
+            className="min-w-0 rounded-md border border-[#e2e5e7] p-4"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <p className="text-sm font-semibold text-[#303639]">
@@ -48,11 +48,11 @@ export default function QuestionResultsList({
                 {statusLabels[question.status]}
               </p>
             </div>
-            <p className="mt-2 text-sm leading-6 text-[#303639]">
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#303639] [overflow-wrap:anywhere]">
               {question.question_text}
             </p>
             {question.learner_response && (
-              <p className="mt-2 rounded-md bg-[#f8f9fa] p-3 text-sm leading-6 text-[#687178]">
+              <p className="mt-2 whitespace-pre-wrap rounded-md bg-[#f8f9fa] p-3 text-sm leading-6 text-[#687178] [overflow-wrap:anywhere]">
                 Your response: {question.learner_response}
               </p>
             )}
@@ -73,7 +73,7 @@ export default function QuestionResultsList({
               </p>
             )}
             {question.feedback && (
-              <p className="mt-2 text-sm leading-6 text-[#303639]">
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#303639] [overflow-wrap:anywhere]">
                 Feedback: {question.feedback}
               </p>
             )}

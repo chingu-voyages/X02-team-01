@@ -281,6 +281,8 @@ export default function AdminPracticeExamsPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [loadError, setLoadError] = useState("");
   const [exams, setExams] = useState<AdminPracticeExam[]>([]);
+  // A list read started before an acknowledged write must not undo it.
+  const examListRevisionRef = useRef(0);
   const [certifications, setCertifications] = useState<AdminCertification[]>([]);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -292,7 +294,10 @@ export default function AdminPracticeExamsPage() {
   const listHeadingRef = useRef<HTMLHeadingElement>(null);
   const actionErrorRef = useRef<HTMLDivElement>(null);
   const mobileFocusRef = useRef<"list" | "details" | null>(null);
-  const [successMessage, setSuccessMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState<{
+    examId: string;
+    message: string;
+  } | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [editingExam, setEditingExam] = useState<AdminPracticeExam | null>(null);
@@ -387,6 +392,7 @@ export default function AdminPracticeExamsPage() {
   useEffect(() => {
     if (!ready || !token || role !== "administrator") return;
     let cancelled = false;
+    const revisionAtStart = examListRevisionRef.current;
 
     Promise.all([
       getAdminPracticeExams(token),
@@ -394,7 +400,7 @@ export default function AdminPracticeExamsPage() {
       getAdminCategories(token),
     ])
       .then(([allExams, allCertifications, allCategories]) => {
-        if (cancelled) return;
+        if (cancelled || revisionAtStart !== examListRevisionRef.current) return;
         setExams(allExams);
         setCertifications(allCertifications);
         setCategories(allCategories);
@@ -408,7 +414,7 @@ export default function AdminPracticeExamsPage() {
         setLoadState("ready");
       })
       .catch((error: unknown) => {
-        if (cancelled) return;
+        if (cancelled || revisionAtStart !== examListRevisionRef.current) return;
         if (error instanceof ApiError && error.status === 401) {
           handleError(error);
           return;
@@ -471,7 +477,7 @@ export default function AdminPracticeExamsPage() {
     setMobilePanel("details");
     setSelectedId(examId);
     setActionError(null);
-    setSuccessMessage("");
+    setSuccessMessage(null);
     setDeletionNotice("");
   }
 
@@ -503,6 +509,7 @@ export default function AdminPracticeExamsPage() {
   }
 
   function upsertExam(exam: AdminPracticeExam) {
+    examListRevisionRef.current += 1;
     setExams((existing) => {
       const found = existing.some((item) => item.id === exam.id);
       return found
@@ -513,11 +520,15 @@ export default function AdminPracticeExamsPage() {
 
   async function refreshList() {
     if (!token || controlsLocked) return;
+    const revisionAtStart = examListRevisionRef.current;
     setRefreshing(true);
+    setSuccessMessage(null);
     setActionError(null);
     setDeletionNotice("");
     try {
       const results = await getAdminPracticeExams(token);
+      if (revisionAtStart !== examListRevisionRef.current) return;
+      examListRevisionRef.current += 1;
       setExams(results);
       setSelectedId((current) =>
         current && results.some((exam) => exam.id === current)
@@ -527,6 +538,7 @@ export default function AdminPracticeExamsPage() {
       setLoadError("");
       setLoadState("ready");
     } catch (error: unknown) {
+      if (revisionAtStart !== examListRevisionRef.current) return;
       if (error instanceof ApiError && error.status === 401) {
         handleError(error);
         return;
@@ -549,7 +561,7 @@ export default function AdminPracticeExamsPage() {
     if (!token || !selectedExam || controlsLocked) return;
     setRefreshing(true);
     setActionError(null);
-    setSuccessMessage("");
+    setSuccessMessage(null);
     try {
       const updated = await getAdminPracticeExam(token, selectedExam.id);
       upsertExam(updated);
@@ -588,7 +600,7 @@ export default function AdminPracticeExamsPage() {
     setMobilePanel("details");
     clearFormFeedback();
     setActionError(null);
-    setSuccessMessage("");
+    setSuccessMessage(null);
     setShowForm(true);
   }
 
@@ -620,7 +632,7 @@ export default function AdminPracticeExamsPage() {
     setSaving(true);
     clearFormFeedback();
     setActionError(null);
-    setSuccessMessage("");
+    setSuccessMessage(null);
     const payload = {
       name: normalizedName,
       certification_id: certId,
@@ -637,11 +649,12 @@ export default function AdminPracticeExamsPage() {
       setSearch("");
       setMobilePanel("details");
       closeForm("details");
-      setSuccessMessage(
-        editingExam
+      setSuccessMessage({
+        examId: saved.id,
+        message: editingExam
           ? `Changes saved for “${saved.name}”. Review readiness before publishing.`
           : `“${saved.name}” was created as a Draft. Review readiness before publishing.`,
-      );
+      });
     } catch (error: unknown) {
       if (error instanceof ApiError && error.status === 401) {
         handleError(error);
@@ -666,7 +679,7 @@ export default function AdminPracticeExamsPage() {
     if (!token || changing || saving || refreshing || showForm || !pending || !pendingExam || pending.action === "delete") return;
     setChanging(true);
     setActionError(null);
-    setSuccessMessage("");
+    setSuccessMessage(null);
     const publish = pending.action === "publish";
     try {
       const updated = await setAdminPracticeExamPublication(token, pending.examId, publish);
@@ -676,11 +689,12 @@ export default function AdminPracticeExamsPage() {
       setSearch("");
       setSelectedId(updated.id);
       setMobilePanel("details");
-      setSuccessMessage(
-        publish
+      setSuccessMessage({
+        examId: updated.id,
+        message: publish
           ? `“${updated.name}” is now Published and available to learners.`
           : `“${updated.name}” is now Unpublished. New attempts are blocked.`,
-      );
+      });
     } catch (error: unknown) {
       if (error instanceof ApiError && error.status === 401) {
         setPending(null);
@@ -707,7 +721,7 @@ export default function AdminPracticeExamsPage() {
   function requestDeletion(exam: AdminPracticeExam) {
     if (controlsLocked || role !== "administrator" || exam.status === "published" || protectedExams[exam.id]) return;
     setActionError(null);
-    setSuccessMessage("");
+    setSuccessMessage(null);
     setDeletionNotice("");
     setPending({ examId: exam.id, action: "delete" });
   }
@@ -728,11 +742,12 @@ export default function AdminPracticeExamsPage() {
     deleteRequestRef.current = true;
     setChanging(true);
     setActionError(null);
-    setSuccessMessage("");
+    setSuccessMessage(null);
     setDeletionNotice("");
     try {
       await deleteAdminPracticeExam(token, target.id);
       // Remove only the exact exam acknowledged by the server. Preserve filters.
+      examListRevisionRef.current += 1;
       setExams((current) => current.filter((exam) => exam.id !== target.id));
       setSelectedId((current) => current === target.id ? null : current);
       setMobilePanel("list");
@@ -820,7 +835,7 @@ export default function AdminPracticeExamsPage() {
             returnFocusRef.current = event.currentTarget;
             clearFormFeedback();
             setActionError(null);
-            setSuccessMessage("");
+            setSuccessMessage(null);
             setDeletionNotice("");
             setShowForm(true);
           }}
@@ -1109,10 +1124,10 @@ export default function AdminPracticeExamsPage() {
                 </span>
               </div>
 
-              {successMessage && (
+              {successMessage?.examId === selectedExam.id && (
                 <div role="status" className="flex items-start gap-2 rounded-md border border-[#b8cbbd] bg-[#edf4ee] p-3 text-sm text-[#35583a]">
                   <CheckCircle2 className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
-                  <div className="min-w-0 [overflow-wrap:anywhere]">{successMessage}</div>
+                  <div className="min-w-0 [overflow-wrap:anywhere]">{successMessage.message}</div>
                 </div>
               )}
 

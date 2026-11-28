@@ -540,6 +540,7 @@ def list_managed_questions(
     question_type: Literal[
         "multiple_choice",
         "short_answer",
+        "essay",
     ]
     | None = None,
     review_status: Literal[

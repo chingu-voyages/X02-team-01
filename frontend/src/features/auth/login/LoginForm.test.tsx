@@ -15,10 +15,12 @@ import {
 import LoginForm from "./LoginForm";
 
 const mockSetToken = vi.fn();
+let mockReady = true;
 
 vi.mock("../AuthProvider", () => ({
   useAuth: () => ({
     setToken: mockSetToken,
+    ready: mockReady,
   }),
 }));
 
@@ -394,4 +396,41 @@ it("routes an enrollment-only administrator to Account Security", async () => {
   await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
   await waitFor(() => expect(mockSetToken).toHaveBeenCalledWith("restricted-token", "/account/security"));
   expect(mockFetch).toHaveBeenCalledTimes(1);
+});
+
+
+it("keeps login controls disabled until authentication state is ready", async () => {
+  mockReady = false;
+  const originalFetch = global.fetch;
+  const mockFetch = vi.fn();
+  global.fetch = mockFetch;
+
+  try {
+    const { rerender } = render(<LoginForm />);
+    const email = screen.getByLabelText(/email address/i);
+    const password = screen.getByLabelText(/^password$/i);
+    const submit = screen.getByRole("button", { name: /^sign in$/i });
+
+    expect(email).toBeDisabled();
+    expect(password).toBeDisabled();
+    expect(submit).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Preparing sign-in");
+    await userEvent.click(submit);
+    expect(mockFetch).not.toHaveBeenCalled();
+
+    mockReady = true;
+    rerender(<LoginForm />);
+
+    expect(email).toBeEnabled();
+    expect(password).toBeEnabled();
+    expect(submit).toBeEnabled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    await userEvent.type(email, "learner@example.com");
+    await userEvent.type(password, "ExamplePassword123!");
+    expect(email).toHaveValue("learner@example.com");
+    expect(password).toHaveValue("ExamplePassword123!");
+  } finally {
+    mockReady = true;
+    global.fetch = originalFetch;
+  }
 });
