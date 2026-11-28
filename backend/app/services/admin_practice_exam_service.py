@@ -1,4 +1,4 @@
-"""Admin-only exam catalog and atomic publication rules (JHEP-126).
+"""Admin-only exam configuration and atomic publication rules (JHEP-107/126).
 
 Publication state belongs to a configured PracticeExam, not to the parent
 Certification, Category, or individual Question. Existing attempts are untouched.
@@ -12,9 +12,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.core.config import settings
-from app.models import Category, Certification, PracticeExam
+from app.models import Category, Certification, ExamAttempt, PracticeExam
 from app.repositories.question_eligibility import eligible_exam_questions_statement
-from app.schemas.admin_practice_exam import PracticeExamCreate
+from app.schemas.admin_practice_exam import (
+    PracticeExamConfigurationUpdate,
+    PracticeExamCreate,
+)
 
 
 class PracticeExamNotFoundError(LookupError):
@@ -27,6 +30,18 @@ class PracticeExamScopeError(ValueError):
 
 class PracticeExamNameConflictError(ValueError):
     """An exam with this name already exists in the category."""
+
+
+class PracticeExamNotEditableError(ValueError):
+    """The requested exam configuration change is not permitted."""
+
+
+class PracticeExamDeletionError(ValueError):
+    """Deleting this exam would violate its lifecycle or data protection rules."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        super().__init__(message)
 
 
 class PracticeExamNotReadyError(ValueError):
@@ -231,6 +246,72 @@ def create_practice_exam(
     return _details(session, exam, certification, category)
 
 
+def update_practice_exam(
+    session: Session, exam_id: UUID, payload: PracticeExamConfigurationUpdate
+) -> PracticeExamDetails:
+    """Edit a draft or change an unpublished exam's count for future attempts.
+
+    Share the publication row lock so a concurrent publish cannot race an
+    edit. Do not change publication state, existing attempts, or pinned questions.
+    """
+    try:
+        exam = session.exec(
+            select(PracticeExam).where(PracticeExam.id == exam_id).with_for_update()
+        ).first()
+        if exam is None:
+            raise PracticeExamNotFoundError("Practice exam not found")
+
+        if exam.status not in ("draft", "unpublished"):
+            raise PracticeExamNotEditableError(
+                "Unpublish the practice exam before editing"
+            )
+
+        if exam.status == "unpublished" and (
+            payload.certification_id != exam.certification_id
+            or payload.category_id != exam.category_id
+            or payload.name != exam.name
+        ):
+            raise PracticeExamNotEditableError(
+                "Only the question count can be changed for an unpublished practice exam"
+            )
+
+        certification = session.get(Certification, payload.certification_id)
+        category = session.get(Category, payload.category_id)
+        if certification is None or category is None:
+            raise PracticeExamScopeError("Certification or category not found")
+        if category.certification_id != certification.id:
+            raise PracticeExamScopeError("Category does not belong to certification")
+
+        existing = session.exec(
+            select(PracticeExam.id).where(
+                PracticeExam.category_id == payload.category_id,
+                PracticeExam.name == payload.name,
+                PracticeExam.id != exam_id,
+            )
+        ).first()
+        if existing is not None:
+            raise PracticeExamNameConflictError("Exam name already exists in category")
+
+        exam.certification_id = payload.certification_id
+        exam.category_id = payload.category_id
+        exam.name = payload.name
+        exam.question_count = payload.question_count
+
+        session.add(exam)
+        session.flush()
+        snapshot = _details(session, exam, certification, category)
+        session.commit()
+        return snapshot
+    except IntegrityError as exc:
+        session.rollback()
+        raise PracticeExamNameConflictError(
+            "Exam already exists or its catalog scope is invalid"
+        ) from exc
+    except Exception:
+        session.rollback()
+        raise
+
+
 def set_practice_exam_publication(
     session: Session, exam_id: UUID, *, is_published: bool
 ) -> PracticeExamDetails:
@@ -268,5 +349,51 @@ def set_practice_exam_publication(
         return _details(session, exam, certification, category)
     except Exception:
         # Explicit rollback also releases a SELECT FOR UPDATE lock on errors.
+        session.rollback()
+        raise
+
+
+def delete_practice_exam(session: Session, exam_id: UUID) -> None:
+    """Delete only an unpublished, unused configuration; never learner history.
+
+    The exclusive row lock serializes deletion with publication changes and
+    the shared lock taken by PublishedExamService when starting an attempt.
+    The foreign key remains the final database-level protection.
+    """
+    try:
+        exam = session.exec(
+            select(PracticeExam).where(PracticeExam.id == exam_id).with_for_update()
+        ).first()
+        if exam is None:
+            raise PracticeExamNotFoundError("Practice exam not found")
+
+        if exam.status not in ("draft", "unpublished"):
+            raise PracticeExamDeletionError(
+                "PRACTICE_EXAM_PUBLISHED",
+                "Unpublish the practice exam before deleting it.",
+            )
+
+        existing_attempt = session.exec(
+            select(ExamAttempt.id)
+            .where(ExamAttempt.practice_exam_id == exam_id)
+            .limit(1)
+        ).first()
+        if existing_attempt is not None:
+            raise PracticeExamDeletionError(
+                "PRACTICE_EXAM_HAS_ATTEMPTS",
+                "This exam has learner attempts and cannot be deleted. "
+                "Keep it unpublished to preserve learner history.",
+            )
+
+        session.delete(exam)
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise PracticeExamDeletionError(
+            "PRACTICE_EXAM_DELETE_CONFLICT",
+            "This practice exam is linked to other records and cannot be deleted. "
+            "Refresh the exam list and try again only if it has no learner history.",
+        ) from exc
+    except Exception:
         session.rollback()
         raise

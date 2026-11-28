@@ -341,3 +341,16 @@ export async function startQuestionReview(
     },
   );
 }
+
+/** Return an in-review question to draft with the author's review feedback. */
+export async function requestQuestionChanges(
+  token: string,
+  questionId: string,
+  reviewNote: string,
+): Promise<AdminQuestionDetail> {
+  return apiRequest<AdminQuestionDetail>(
+    `/admin/questions/${encodeURIComponent(questionId)}/request-changes`,
+    token,
+    { method: "POST", body: JSON.stringify({ review_note: reviewNote }) },
+  );
+}

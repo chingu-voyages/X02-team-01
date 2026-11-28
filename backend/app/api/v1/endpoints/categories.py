@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session
 
-from app.api.deps import get_current_subject
+from app.api.deps import get_authenticated_subject
 from app.db.session import get_session
 from app.repositories.category_repository import SQLModelCategoryRepository
 from app.schemas.category import CategoryListOut, CategoryOut
@@ -27,7 +27,7 @@ def get_category_repository(
 
 @router.get("", response_model=CategoryListOut)
 def list_categories(
-    _subject: Annotated[str, Depends(get_current_subject)],
+    _subject: Annotated[str, Depends(get_authenticated_subject)],
     repository: Annotated[
         SQLModelCategoryRepository,
         Depends(get_category_repository),

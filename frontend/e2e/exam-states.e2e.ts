@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { mobileNavigation } from "./helpers/exam-navigation";
 import {
   expect,
   test,
@@ -201,12 +202,10 @@ async function expectProgress(
   submitted: number,
   total: number,
 ) {
-  const progress = navigator(page).getByRole(
-    "progressbar",
-    {
-      name: "Exam submission progress",
-    },
-  );
+  const progress = page.getByRole("progressbar", {
+    name: "Progress",
+    exact: true,
+  });
 
   await expect(progress).toHaveAttribute(
     "aria-valuetext",
@@ -233,6 +232,7 @@ async function expectLegend(page: Page) {
     "Selected but unsubmitted",
     "Submitted",
     "Flagged for review",
+    "Submitted + flagged",
     "Current question",
   ]) {
     await expect(
@@ -249,17 +249,19 @@ async function setFlag(
     .getByRole("button", {
       name: flagged
         ? "Flag for Review"
-        : "Remove Flag",
+        : "Flagged for Review",
       exact: true,
+      pressed: !flagged,
     })
     .click();
 
   await expect(
     page.getByRole("button", {
       name: flagged
-        ? "Remove Flag"
+        ? "Flagged for Review"
         : "Flag for Review",
       exact: true,
+      pressed: flagged,
     }),
   ).toBeEnabled();
 }
@@ -550,259 +552,104 @@ test.describe("JHEP-106 question state indicators", () => {
     });
   });
 
-  test("mobile: states, progress, scrolling and deferred feedback remain accurate", async ({
-    page,
-  }) => {
-    await page.setViewportSize({
-      width: 390,
-      height: 844,
-    });
-
-    const { attempt, readAttempt } =
-      await startAttempt(page, "deferred");
-
+  test("mobile: paginated states, progress and deferred feedback remain accurate", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const { attempt, readAttempt } = await startAttempt(page, "deferred");
     expect(attempt.questions).toHaveLength(40);
-
-    const trigger = page
-      .locator('button[aria-haspopup="dialog"]')
-      .filter({ hasText: "Question Navigation" });
-
-    const dialog = page.getByRole("dialog", {
-      name: "Question Navigation",
-      exact: true,
-    });
-
-    const close = dialog.getByRole("button", {
-      name: "Close question navigation",
-    });
-
-    await expect(trigger).toBeVisible();
+    const nav = mobileNavigation(page);
+    await expect(nav.trigger).toBeVisible();
+    await nav.expectClosed();
 
     // Select and flag without submitting.
-
     await firstOption(page).click();
     await setFlag(page, true);
-
-    await trigger.focus();
-    await page.keyboard.press("Enter");
-
-    await expect(dialog).toBeVisible();
-    await expect(close).toBeFocused();
-
-    await expect(
-      navigator(page).getByRole("button"),
-    ).toHaveCount(40);
-
-    await expect(
-      questionButton(page, 1, true),
-    ).toHaveAccessibleDescription(
-      "Selected but unsubmitted",
-    );
-
-    await expect(
-      questionButton(page, 1, true),
-    ).toHaveAttribute("aria-current", "step");
-
-    await expect(
-      questionButton(page, 40),
-    ).toHaveAccessibleDescription("Unanswered");
-
+    await nav.trigger.press("Enter");
+    await nav.expectOpen();
+    await expect(nav.trigger).toBeFocused();
+    await nav.expectSet(1, 15);
+    await expect(questionButton(page, 1, true)).toHaveAccessibleDescription("Selected but unsubmitted");
+    await expect(questionButton(page, 1, true)).toHaveAttribute("aria-current", "step");
     await expectProgress(page, 0, 40);
     await expectLegend(page);
 
-    // Verify keyboard navigation.
-
     await page.keyboard.press("Tab");
+    await expect(questionButton(page, 1, true)).toBeFocused();
 
-    await expect(
-      questionButton(page, 1, true),
-    ).toBeFocused();
+    // Inspect all three sets without changing the active question.
+    await nav.goToLastSet();
+    await expect(questionButton(page, 40)).toHaveAccessibleDescription("Unanswered");
+    await expect(questionButton(page, 40)).not.toHaveAttribute("aria-current");
+    await expectProgress(page, 0, 40);
+    await questionButton(page, 40).press("Escape");
+    await nav.expectClosed();
+    await expect(nav.trigger).toBeFocused();
+    await expectQuestion(page, attempt, 1);
+    await expect(firstOption(page)).toBeChecked();
 
-    // Verify real scrolling in a long exam.
-
-    const scroller = navigator(page)
-      .locator("ol")
-      .locator("..");
-
-    const scrollTop = await scroller.evaluate(
-      (element) => {
-        element.scrollTop = element.scrollHeight;
-        return element.scrollTop;
-      },
-    );
-
-    expect(scrollTop).toBeGreaterThan(0);
-
-    await page.keyboard.press("Escape");
-
-    await expect(dialog).toBeHidden();
-    await expect(trigger).toBeFocused();
-
-    await trigger.click();
-
-    await expect(dialog).toBeVisible();
-
-    await expect
-      .poll(() =>
-        scroller.evaluate(
-          (element) => element.scrollTop,
-        ),
-      )
-      .toBe(scrollTop);
-
-    // Jump to the final question.
-
+    // Reopen at the active set, then jump to the final question.
+    await nav.open();
+    await nav.expectSet(1, 15);
+    await nav.goToLastSet();
     await questionButton(page, 40).click();
-
-    await expect(dialog).toBeHidden();
-    await expect(trigger).toBeFocused();
-
+    await nav.expectClosed();
     await expectQuestion(page, attempt, 40);
-
+    await nav.expectQuestionFocus(40);
     await setFlag(page, true);
-
-    await trigger.click();
-
-    await expect(
-      questionButton(page, 40, true),
-    ).toHaveAccessibleDescription("Unanswered");
-
-    await expect(
-      questionButton(page, 40, true),
-    ).toHaveAttribute("aria-current", "step");
-
+    await nav.open();
+    await nav.expectSet(31, 40);
+    await expect(questionButton(page, 40, true)).toHaveAccessibleDescription("Unanswered");
+    await expect(questionButton(page, 40, true)).toHaveAttribute("aria-current", "step");
     await expectProgress(page, 0, 40);
 
     // Return to the original draft.
-
+    await nav.goToFirstSet();
     await questionButton(page, 1, true).click();
-
     await expectQuestion(page, attempt, 1);
     await expect(firstOption(page)).toBeChecked();
 
-    // Simulate a failed submission before it
-    // reaches the backend. The retry is real.
-
+    // Simulate a failed submission before it reaches the backend; retry is real.
     const endpoint = submitPath(attempt, 1);
-
-    await page.route(
-      `**${endpoint}`,
-      async (route) => {
-        await route.fulfill({
-          status: 503,
-          contentType: "application/json",
-          body: JSON.stringify({
-            detail: "Unable to submit answer",
-          }),
-        });
-      },
-      { times: 1 },
-    );
-
+    await page.route(`**${endpoint}`, async (route) => {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Unable to submit answer" }) });
+    }, { times: 1 });
     await submitButton(page).click();
-
-    await expect(
-      page.getByRole("alert").filter({
-        hasText: "Unable to submit answer",
-      }),
-    ).toBeVisible();
-
+    await expect(page.getByRole("alert").filter({ hasText: "Unable to submit answer" })).toBeVisible();
     await expect(submitButton(page)).toBeEnabled();
-
     const failed = await readAttempt();
-
-    expect(
-      failed.questions[0].response ?? null,
-    ).toBeNull();
-
-    await trigger.click();
-
-    await expect(
-      questionButton(page, 1, true),
-    ).toHaveAccessibleDescription(
-      "Selected but unsubmitted",
-    );
-
+    expect(failed.questions[0].response ?? null).toBeNull();
+    await nav.open();
+    await expect(questionButton(page, 1, true)).toHaveAccessibleDescription("Selected but unsubmitted");
     await expectProgress(page, 0, 40);
+    await nav.close();
 
-    await close.click();
-
-    // Retry using the actual backend.
-
-    const feedback = await submitCurrentAnswer(
-      page,
-      attempt,
-      1,
-    );
-
+    const feedback = await submitCurrentAnswer(page, attempt, 1);
     expect(feedback.feedback_released).toBe(false);
-
-    expect(
-      feedback.is_correct ?? null,
-    ).toBeNull();
-
-    expect(
-      feedback.correct_option_ids ?? null,
-    ).toBeNull();
-
-    expect(
-      feedback.explanation ?? null,
-    ).toBeNull();
-
+    expect(feedback.is_correct ?? null).toBeNull();
+    expect(feedback.correct_option_ids ?? null).toBeNull();
+    expect(feedback.explanation ?? null).toBeNull();
     await expectNoFeedback(page);
-
-    await trigger.click();
-
-    await expect(
-      questionButton(page, 1, true),
-    ).toHaveAccessibleDescription("Submitted");
-
-    await expect(
-      questionButton(page, 40, true),
-    ).toHaveAccessibleDescription("Unanswered");
-
+    await nav.open();
+    await expect(questionButton(page, 1, true)).toHaveAccessibleDescription("Submitted");
     await expectProgress(page, 1, 40);
-
+    await nav.goToLastSet();
+    await expect(questionButton(page, 40, true)).toHaveAccessibleDescription("Unanswered");
+    await expectProgress(page, 1, 40);
     await questionButton(page, 40, true).click();
-
     await expectQuestion(page, attempt, 40);
-
-    await trigger.click();
-
+    await nav.open();
+    await nav.goToFirstSet();
     await questionButton(page, 1, true).click();
-
     await expectQuestion(page, attempt, 1);
-
     await expect(firstOption(page)).toBeDisabled();
     await expect(firstOption(page)).toBeChecked();
-
     await expectNoFeedback(page);
 
     const saved = await readAttempt();
-
     expect(saved.status).toBe("in_progress");
-
-    expect(
-      saved.questions[0].response?.is_submitted,
-    ).toBe(true);
-
-    expect(
-      saved.questions[0].flagged_for_review,
-    ).toBe(true);
-
-    expect(
-      saved.questions[39].flagged_for_review,
-    ).toBe(true);
-
-    expect(
-      saved.questions.filter(
-        (question) =>
-          question.response?.is_submitted,
-      ),
-    ).toHaveLength(1);
-
-    expect(
-      saved.questions[0].response?.is_correct,
-    ).toBeUndefined();
+    expect(saved.questions[0].response?.is_submitted).toBe(true);
+    expect(saved.questions[0].flagged_for_review).toBe(true);
+    expect(saved.questions[39].flagged_for_review).toBe(true);
+    expect(saved.questions.filter((question) => question.response?.is_submitted)).toHaveLength(1);
+    expect(saved.questions[0].response?.is_correct).toBeUndefined();
   });
 });

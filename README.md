@@ -26,6 +26,10 @@ cp frontend/.env.example frontend/.env.local
 See [docs/configuration.md](./docs/configuration.md) for the full variable
 reference, container notes, and secrets rules.
 
+See [Administrator security and onboarding](./docs/administrator-security.md)
+for mandatory MFA, secure promotion, local administrator setup and release
+prerequisites.
+
 ## Branching and releases
 
 Two long-lived branches:
@@ -55,8 +59,11 @@ pip install -r requirements.txt
 pytest -q
 ```
 
-PostgreSQL-backed constraint tests are opt-in with `RUN_DB_INTEGRATION=1`; wiring
-that (and `alembic upgrade head` / `alembic check`) into CI is a follow-up.
+PostgreSQL-backed tests are opt-in locally with `RUN_DB_INTEGRATION=1`.
+The backend CI workflow already runs this integration suite against a local
+PostgreSQL service in addition to its fast test job. Use only a disposable
+local database for integration tests. Migration-command checks remain separate
+from these test jobs.
 
 ## Team Documents
 

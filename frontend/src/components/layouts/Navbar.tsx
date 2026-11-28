@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { isEnrollmentOnlyToken } from "@/features/auth/session-scope";
 import { Button } from "../ui/button";
 
 const navLink =
@@ -9,6 +10,7 @@ const navLink =
 
 export default function Navbar() {
   const { token, role, logout } = useAuth();
+  const enrollmentOnly = isEnrollmentOnlyToken(token);
   const staff = role === "contributor" || role === "administrator";
   const administrator = role === "administrator";
 
@@ -19,14 +21,16 @@ export default function Navbar() {
     >
       <div className="flex flex-wrap items-center gap-8">
         <Link
-          href={token ? "/categories" : "/login"}
+          href={enrollmentOnly ? "/account/security" : token ? "/categories" : "/login"}
           className="text-base font-bold tracking-tight text-[#303639] hover:underline"
         >
           THE JOB HACKERS
         </Link>
 
         <div className="flex flex-wrap items-center gap-4 text-sm">
-          {token ? (
+          {enrollmentOnly ? (
+            <Link href="/account/security" className={navLink}>Account Security</Link>
+          ) : token ? (
             <>
               <Link href="/categories" className={navLink}>Practice Exams</Link>
               {staff && (

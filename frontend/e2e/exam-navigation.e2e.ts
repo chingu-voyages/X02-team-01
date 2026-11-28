@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { mobileNavigation } from "./helpers/exam-navigation";
 import { expect, test, type Page } from "@playwright/test";
 import type { ExamAttempt, ExamCreatedResponse, QuestionFeedback } from "../src/types/exam-api.types";
 
@@ -195,64 +196,63 @@ test.describe("JHEP-105 numbered exam navigation", () => {
     expect(writes).toHaveLength(4);
   });
 
-  test("mobile: long modal supports keyboard, scroll and deferred feedback without losing answers", async ({ page }) => {
+  test("mobile: paginated navigation supports keyboard and deferred feedback without losing answers", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const { attempt, writes, readAttempt } = await startAttempt(page, "deferred");
-    // Keep a stable locator even when the native modal makes the background inert.
-    const trigger = page.locator('button[aria-haspopup="dialog"]').filter({ hasText: "Question Navigation" });
-    const dialog = page.getByRole("dialog", { name: "Question Navigation", exact: true });
-    const close = dialog.getByRole("button", { name: "Close question navigation" });
-
-    await expect(trigger).toBeVisible();
+    const nav = mobileNavigation(page);
+    await expect(nav.trigger).toBeVisible();
+    await nav.expectClosed();
     await expect(page.getByRole("navigation", { name: "Question navigation", exact: true })).toHaveCount(0);
     await firstOption(page).click();
     await expect(firstOption(page)).toBeChecked();
 
-    await trigger.focus();
-    await page.keyboard.press("Enter");
-    await expect(dialog).toBeVisible();
-    await expect(trigger).toHaveAttribute("aria-expanded", "true");
-    await expect(close).toBeFocused();
-    await expect(dialog.getByRole("navigation").getByRole("button")).toHaveCount(40);
+    // The current control is an inline disclosure, not a modal. Keyboard
+    // activation keeps focus on the trigger; Tab enters the first tile.
+    await nav.trigger.press("Enter");
+    await nav.expectOpen();
+    await nav.expectSet(1, 15);
+    await expect(nav.trigger).toBeFocused();
     await expect(questionButton(page, 1)).toHaveAttribute("aria-current", "step");
     await page.keyboard.press("Tab");
     await expect(questionButton(page, 1)).toBeFocused();
 
-    const scroller = dialog
-      .getByRole("navigation")
-      .locator("ol")
-      .locator("..");
-    const scrollTop = await scroller.evaluate((element) => {
-      element.scrollTop = element.scrollHeight;
-      return element.scrollTop;
-    });
-    expect(scrollTop).toBeGreaterThan(0);
+    // Paging browses the full question set without navigating or saving.
+    await nav.goToLastSet();
+    await expect(questionButton(page, 40)).toBeVisible();
+    await expect(questionButton(page, 40)).not.toHaveAttribute("aria-current");
+    await expectQuestion(page, attempt, 1);
+    await expect(firstOption(page)).toBeChecked();
+    expect(writes).toEqual([]);
 
-    await page.keyboard.press("Escape");
-    await expect(dialog).toBeHidden();
-    await expect(trigger).toBeFocused();
+    await questionButton(page, 40).press("Escape");
+    await nav.expectClosed();
+    await expect(nav.trigger).toBeFocused();
     await expectQuestion(page, attempt, 1);
     await expect(firstOption(page)).toBeChecked();
 
-    await trigger.click();
-    await expect(dialog).toBeVisible();
-    await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBe(scrollTop);
+    // Reopening follows the active question, rather than a stale browsing page.
+    await nav.open();
+    await nav.expectSet(1, 15);
+    await nav.goToLastSet();
     await questionButton(page, 40).click();
-    await expect(dialog).toBeHidden();
-    await expect(trigger).toBeFocused();
+    await nav.expectClosed();
     await expectQuestion(page, attempt, 40);
+    await nav.expectQuestionFocus(40);
     await expect(firstOption(page)).not.toBeChecked();
 
-    await trigger.click();
+    await nav.open();
+    await nav.expectSet(31, 40);
     await expect(questionButton(page, 40)).toHaveAttribute("aria-current", "step");
-    await close.click();
-    await expect(dialog).toBeHidden();
-    await expect(trigger).toBeFocused();
+    await nav.close();
+    await expect(nav.trigger).toBeFocused();
     await expectQuestion(page, attempt, 40);
 
-    await trigger.click();
+    await nav.open();
+    await nav.goToFirstSet();
     await questionButton(page, 1).click();
+    await nav.expectClosed();
     await expectQuestion(page, attempt, 1);
+    await nav.expectQuestionFocus(1);
     await expect(firstOption(page)).toBeChecked();
     expect(writes).toEqual([]);
 
@@ -263,10 +263,12 @@ test.describe("JHEP-105 numbered exam navigation", () => {
     expect(deferred.explanation ?? null).toBeNull();
     await expect(page.getByText("Answer submitted.", { exact: true })).toBeVisible();
 
-    await trigger.click();
+    await nav.open();
+    await nav.goToLastSet();
     await questionButton(page, 40).click();
     await expectQuestion(page, attempt, 40);
-    await trigger.click();
+    await nav.open();
+    await nav.goToFirstSet();
     await questionButton(page, 1).click();
     await expectQuestion(page, attempt, 1);
     await expect(firstOption(page)).toBeDisabled();

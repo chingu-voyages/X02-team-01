@@ -12,12 +12,12 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from learner_auth_fixtures import issue_learner_token
 
 from app.api.v1.endpoints.exams import (
     get_exam_attempt_service,
     get_exam_service,
 )
-from app.core.security import create_access_token
 from app.main import app
 from app.services.exam_attempt_service import (
     AttemptAlreadySubmittedError,
@@ -37,7 +37,7 @@ EXAM_URL = "/api/v1/exams"
 
 
 def auth(learner_id) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token(str(learner_id))}"}
+    return {"Authorization": f"Bearer {issue_learner_token(str(learner_id))}"}
 
 
 def _question(version_id=None):
@@ -181,7 +181,7 @@ class StubAttemptService:
 
 
 @pytest.fixture
-def api():
+def api(stub_learner_database):
     learner_id, attempt_id = uuid4(), uuid4()
     exam_service = StubExamService(attempt_id, learner_id)
     attempt_service = StubAttemptService()

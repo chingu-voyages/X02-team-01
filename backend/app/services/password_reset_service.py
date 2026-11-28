@@ -157,9 +157,10 @@ def reset_password(session: Session, *, raw_token: str, new_password: str) -> Us
     validate_password(new_password)
 
     token = session.exec(
-        select(PasswordResetToken).where(
-            PasswordResetToken.token_hash == _token_hash(raw_token)
-        )
+        select(PasswordResetToken)
+        .where(PasswordResetToken.token_hash == _token_hash(raw_token))
+        .with_for_update()
+        .execution_options(populate_existing=True)
     ).first()
 
     if token is None or token.used_at is not None:
@@ -171,7 +172,12 @@ def reset_password(session: Session, *, raw_token: str, new_password: str) -> Us
     if expires_at < _utcnow():
         raise InvalidResetTokenError("This password-reset link is invalid")
 
-    user = session.get(User, token.user_id)
+    user = session.exec(
+        select(User)
+        .where(User.id == token.user_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).first()
     if user is None:
         raise InvalidResetTokenError("This password-reset link is invalid")
 

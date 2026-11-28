@@ -5,9 +5,9 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from learner_auth_fixtures import issue_learner_token
 
 from app.api.v1.endpoints.exams import get_exam_attempt_service, get_exam_service
-from app.core.security import create_access_token
 from app.main import app
 from app.services.exam_service import (
     ExamAttemptNotFoundError,
@@ -53,11 +53,11 @@ class StubResumeService:
 
 
 def auth(learner):
-    return {"Authorization": f"Bearer {create_access_token(str(learner))}"}
+    return {"Authorization": f"Bearer {issue_learner_token(str(learner))}"}
 
 
 @pytest.fixture
-def resume_api():
+def resume_api(stub_learner_database):
     learner_id, attempt_id, cert_id = uuid4(), uuid4(), uuid4()
     service = StubResumeService(learner_id, attempt_id, cert_id)
     app.dependency_overrides[get_exam_service] = lambda: service
@@ -162,7 +162,7 @@ class StubResumeServiceWithSavedAnswers(StubResumeService):
 
 
 @pytest.fixture
-def resume_api_with_saved_answers():
+def resume_api_with_saved_answers(stub_learner_database):
     learner_id, attempt_id, cert_id = uuid4(), uuid4(), uuid4()
     exam_service = StubResumeServiceWithSavedAnswers(learner_id, attempt_id, cert_id)
     app.dependency_overrides[get_exam_service] = lambda: exam_service

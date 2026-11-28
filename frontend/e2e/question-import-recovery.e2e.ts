@@ -6,21 +6,13 @@ import {
   type TestInfo,
 } from "@playwright/test";
 
+import { loginMfaAdministrator } from "./helpers/admin-mfa";
+
 import {
   Workbook,
   type Worksheet,
 } from "exceljs";
 
-
-const adminEmail =
-  process.env
-    .E2E_ADMIN_EMAIL ??
-  "jhep159-demo-admin@example.test";
-
-const adminPassword =
-  process.env
-    .E2E_ADMIN_PASSWORD ??
-  "DemoAdm1n!";
 
 const contributorEmail =
   process.env
@@ -59,10 +51,6 @@ const importHeaders = [
   "image_alt_text",
 ] as const;
 
-
-type LoginResponse = {
-  access_token: string;
-};
 
 type AdminUsersPage = {
   items: Array<{
@@ -111,24 +99,7 @@ async function responseJson<T>(
 async function ensureContributor(
   request: APIRequestContext,
 ) {
-  const login =
-    await request.post(
-      "/api/v1/auth/login",
-      {
-        data: {
-          email:
-            adminEmail,
-          password:
-            adminPassword,
-        },
-      },
-    );
-
-  const admin =
-    await responseJson<LoginResponse>(
-      login,
-      "Administrator login",
-    );
+  const admin = await loginMfaAdministrator(request);
 
   const authorization = {
     Authorization:

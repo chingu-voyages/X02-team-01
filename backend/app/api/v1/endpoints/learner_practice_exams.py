@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session
 
-from app.api.deps import get_current_subject
+from app.api.deps import get_authenticated_subject
 from app.db.session import get_session
 from app.repositories.practice_exam_catalog_repository import (
     SQLModelPracticeExamCatalogRepository,
@@ -29,7 +29,7 @@ def get_practice_exam_catalog_repository(
 
 @router.get("/catalog", response_model=PublishedPracticeExamListOut)
 def list_published_practice_exams(
-    _subject: Annotated[str, Depends(get_current_subject)],
+    _subject: Annotated[str, Depends(get_authenticated_subject)],
     repository: Annotated[
         SQLModelPracticeExamCatalogRepository,
         Depends(get_practice_exam_catalog_repository),
