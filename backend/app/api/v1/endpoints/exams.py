@@ -30,6 +30,7 @@ from app.schemas.exam import (
     ExamQuestionOut,
     ExamResumedOut,
     FinalSubmitOut,
+    FinalSubmitRequest,
     ProgressSavedOut,
     ProgressUpdateRequest,
     QuestionFeedbackOut,
@@ -48,6 +49,7 @@ from app.services.exam_attempt_service import (
     InvalidResponseContentError,
     NoAnswerContentError,
     QuestionAlreadyLockedError,
+    RecoveryRevisionConflictError,
 )
 from app.services.exam_service import (
     AttemptInProgressError,
@@ -291,6 +293,7 @@ def get_exam_attempt(
         status=attempt.status,
         question_count=attempt.question_count,
         current_position=attempt.current_position,
+        recovery_revision=getattr(attempt, "recovery_revision", None),
         questions=questions,
     )
 
@@ -348,7 +351,25 @@ def update_progress(
     attempt = _owned_attempt(attempt_id, learner_id, service)
 
     try:
-        attempt_service.apply_progress(attempt, payload.current_position)
+        attempt_service.apply_progress(
+            attempt,
+            payload.current_position,
+            **(
+                {"expected_revision": payload.expected_revision}
+                if payload.expected_revision is not None
+                else {}
+            ),
+        )
+    except AttemptQuestionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Exam attempt not found") from exc
+    except RecoveryRevisionConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "RECOVERY_REVISION_CONFLICT",
+                "message": "Exam progress changed elsewhere. Reload before saving again.",
+            },
+        ) from exc
     except AttemptAlreadySubmittedError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -362,9 +383,10 @@ def update_progress(
 
     answered, unanswered = attempt_service.answer_counts(attempt)
     return ProgressSavedOut(
+        recovery_revision=getattr(attempt_service, "last_saved_revision", None),
         attempt_id=attempt.id,
-        status=attempt.status,
-        current_position=attempt.current_position,
+        status="in_progress",
+        current_position=payload.current_position,
         question_count=attempt.question_count,
         answered_count=answered,
         unanswered_count=unanswered,
@@ -398,11 +420,24 @@ def save_response(
             question_version_id,
             selected_option_ids=payload.selected_option_ids,
             text_response=payload.text_response,
+            **(
+                {"expected_revision": payload.expected_revision}
+                if payload.expected_revision is not None
+                else {}
+            ),
         )
     except AttemptQuestionNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Exam attempt not found",
+        ) from exc
+    except RecoveryRevisionConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "RECOVERY_REVISION_CONFLICT",
+                "message": "Exam progress changed elsewhere. Reload before saving again.",
+            },
         ) from exc
     except AttemptAlreadySubmittedError as exc:
         raise HTTPException(
@@ -423,6 +458,7 @@ def save_response(
     answered, unanswered = attempt_service.answer_counts(attempt)
     if row is None:
         return ResponseSavedOut(
+            recovery_revision=getattr(attempt_service, "last_saved_revision", None),
             attempt_id=attempt.id,
             question_version_id=question_version_id,
             selected_option_ids=None,
@@ -435,6 +471,7 @@ def save_response(
             unanswered_count=unanswered,
         )
     return ResponseSavedOut(
+        recovery_revision=getattr(attempt_service, "last_saved_revision", None),
         attempt_id=attempt.id,
         question_version_id=row.question_version_id,
         selected_option_ids=[UUID(item) for item in row.selected_option_ids]
@@ -480,11 +517,24 @@ def submit_question(
             question_version_id,
             selected_option_ids=payload.selected_option_ids,
             text_response=payload.text_response,
+            **(
+                {"expected_revision": payload.expected_revision}
+                if payload.expected_revision is not None
+                else {}
+            ),
         )
     except AttemptQuestionNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Exam attempt not found",
+        ) from exc
+    except RecoveryRevisionConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "RECOVERY_REVISION_CONFLICT",
+                "message": "Exam progress changed elsewhere. Reload before saving again.",
+            },
         ) from exc
     except AttemptAlreadySubmittedError as exc:
         raise HTTPException(
@@ -503,6 +553,7 @@ def submit_question(
         ) from exc
 
     return QuestionFeedbackOut(
+        recovery_revision=getattr(attempt_service, "last_saved_revision", None),
         attempt_id=attempt.id,
         question_version_id=question_version_id,
         is_submitted=True,
@@ -516,6 +567,7 @@ def submit_exam(
     subject: Annotated[str, Depends(get_authenticated_subject)],
     service: Annotated[ExamService, Depends(get_exam_service)],
     attempt_service: Annotated[ExamAttemptService, Depends(get_exam_attempt_service)],
+    payload: FinalSubmitRequest | None = None,
 ) -> FinalSubmitOut:
     """Finalize the attempt and trigger grading exactly once.
 
@@ -526,7 +578,24 @@ def submit_exam(
     attempt = _owned_attempt(attempt_id, learner_id, service)
 
     try:
-        attempt_service.final_submit(attempt)
+        attempt_service.final_submit(
+            attempt,
+            **(
+                {"expected_revision": payload.expected_revision}
+                if payload is not None and payload.expected_revision is not None
+                else {}
+            ),
+        )
+    except AttemptQuestionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Exam attempt not found") from exc
+    except RecoveryRevisionConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "RECOVERY_REVISION_CONFLICT",
+                "message": "Exam progress changed elsewhere. Reload before saving again.",
+            },
+        ) from exc
     except AttemptAlreadySubmittedError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -540,6 +609,7 @@ def submit_exam(
 
     answered, unanswered = attempt_service.answer_counts(attempt)
     return FinalSubmitOut(
+        recovery_revision=getattr(attempt_service, "last_saved_revision", None),
         attempt_id=attempt.id,
         status="submitted",
         question_count=attempt.question_count,

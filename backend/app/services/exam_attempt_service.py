@@ -54,6 +54,10 @@ class AttemptAlreadySubmittedError(ValueError):
     """The exam was finally submitted; no edits or duplicate submits."""
 
 
+class RecoveryRevisionConflictError(ValueError):
+    """A write was based on an older answer/position snapshot."""
+
+
 class AttemptNotGradableError(ValueError):
     """The attempt has no recorded threshold snapshot (historical rows)."""
 
@@ -115,6 +119,40 @@ class ExamAttemptService:
 
     def __init__(self, session: Session):
         self._session = session
+        # The service is request-scoped. Capture this operation's revision,
+        # not a later revision observed after releasing the database lock.
+        self.last_saved_revision: int | None = None
+
+    def _lock_attempt(
+        self,
+        attempt: ExamAttempt,
+        *,
+        expected_revision: int | None = None,
+        shared: bool = False,
+    ) -> ExamAttempt:
+        locked = self._session.exec(
+            select(ExamAttempt)
+            .where(ExamAttempt.id == attempt.id)
+            .with_for_update(read=shared)
+            .execution_options(populate_existing=True)
+        ).first()
+        if locked is None:
+            raise AttemptQuestionNotFoundError("Exam attempt not found")
+        if (
+            expected_revision is not None
+            and locked.recovery_revision != expected_revision
+        ):
+            raise RecoveryRevisionConflictError("Exam progress changed elsewhere")
+        return locked
+
+    def _commit_revision(self, attempt: ExamAttempt) -> None:
+        # Call only while holding the exclusive attempt lock. The mutation
+        # and revision increment are committed in the SAME transaction.
+        attempt.recovery_revision += 1
+        self._session.add(attempt)
+        revision = attempt.recovery_revision
+        self._session.commit()
+        self.last_saved_revision = revision
 
     # ------------------------------------------------------------------
     # Reading
@@ -140,8 +178,13 @@ class ExamAttemptService:
         resume payload never hints at correctness for an in-progress
         attempt in either feedback mode.
         """
+        # Hold a shared attempt lock until the resume request ends: position,
+        # answer rows, flags and revision belong to one coherent snapshot.
+        attempt = self._lock_attempt(attempt, shared=True)
         rows = self._session.exec(
-            select(ExamResponse).where(ExamResponse.attempt_id == attempt.id)
+            select(ExamResponse)
+            .where(ExamResponse.attempt_id == attempt.id)
+            .execution_options(populate_existing=True)
         ).all()
         release = feedback_permitted(attempt, "final_results")
         blocks: dict[UUID, dict] = {}
@@ -245,13 +288,43 @@ class ExamAttemptService:
         self, attempt_id: UUID, question_version_id: UUID
     ) -> ExamResponse | None:
         return self._session.exec(
-            select(ExamResponse).where(
+            select(ExamResponse)
+            .where(
                 ExamResponse.attempt_id == attempt_id,
                 ExamResponse.question_version_id == question_version_id,
             )
+            .execution_options(populate_existing=True)
         ).first()
 
     def save_response(
+        self,
+        attempt: ExamAttempt,
+        question_version_id: UUID,
+        *,
+        selected_option_ids: list[UUID] | None,
+        text_response: str | None,
+        submit: bool = False,
+        expected_revision: int | None = None,
+    ) -> ExamResponse | None:
+        """Create/replace/clear one answer atomically with its revision."""
+        attempt = self._lock_attempt(attempt, expected_revision=expected_revision)
+        row = self._stage_response(
+            attempt,
+            question_version_id,
+            selected_option_ids=selected_option_ids,
+            text_response=text_response,
+            submit=submit,
+        )
+        self._session.flush()
+        if row is not None:
+            # Read the acknowledgement while still locked. Detach the fully
+            # loaded row so a later write cannot alter this confirmation.
+            self._session.refresh(row)
+            self._session.expunge(row)
+        self._commit_revision(attempt)
+        return row
+
+    def _stage_response(
         self,
         attempt: ExamAttempt,
         question_version_id: UUID,
@@ -283,7 +356,6 @@ class ExamAttemptService:
                 raise NoAnswerContentError("Cannot submit an empty answer")
             if existing is not None:
                 self._session.delete(existing)
-                self._session.commit()
             return None
 
         if has_selections and has_text:
@@ -350,8 +422,6 @@ class ExamAttemptService:
                 question_submitted_at=_utcnow() if submit else None,
             )
             self._session.add(row)
-        self._session.commit()
-        self._session.refresh(row)
         return row
 
     def _question_meta(self, question_version_id: UUID):
@@ -381,8 +451,10 @@ class ExamAttemptService:
         *,
         selected_option_ids: list[UUID] | None,
         text_response: str | None,
+        expected_revision: int | None = None,
     ) -> dict:
-        """Lock one question's answer and (in immediate mode) grade it now."""
+        """Lock and grade a question in one attempt-serialized transaction."""
+        attempt = self._lock_attempt(attempt, expected_revision=expected_revision)
         if attempt.status == "submitted":
             raise AttemptAlreadySubmittedError("Attempt already submitted")
 
@@ -390,7 +462,7 @@ class ExamAttemptService:
         if existing is not None and existing.is_submitted:
             raise QuestionAlreadyLockedError("Question already submitted")
 
-        row = self.save_response(
+        row = self._stage_response(
             attempt,
             question_version_id,
             selected_option_ids=selected_option_ids,
@@ -400,6 +472,7 @@ class ExamAttemptService:
         if row is None:  # pragma: no cover - save_response raises instead
             raise NoAnswerContentError("Cannot submit an empty answer")
 
+        self._session.flush()
         immediate = feedback_permitted(attempt, "per_question")
         pinned = self._pinned_question(attempt.id, question_version_id)
         question_type, allows_multiple = self._question_meta(question_version_id)
@@ -428,8 +501,6 @@ class ExamAttemptService:
             row.is_correct = grade.outcome == "correct"
             row.graded_at = _utcnow()
             self._session.add(row)
-            self._session.commit()
-            self._session.refresh(row)
         elif immediate and question_type != MC_TYPE:
             # Short answers are excluded from automatic grading; the
             # explanation is still released immediately.
@@ -443,13 +514,16 @@ class ExamAttemptService:
                 ),
             )
 
-        return {
+        feedback = {
             "question_submitted_at": row.question_submitted_at,
             "feedback_released": immediate,
             "is_correct": row.is_correct if immediate else None,
             "correct_option_ids": correct if immediate else None,
             "explanation": explanation if immediate else None,
         }
+        # Do not release the lock between locking the answer and grading it.
+        self._commit_revision(attempt)
+        return feedback
 
     def _persist_single_grade(
         self,
@@ -474,7 +548,7 @@ class ExamAttemptService:
                 points_earned=grade.points_earned,
             )
         )
-        self._session.commit()
+        self._session.flush()
 
     def _correct_options(self, question_version_id: UUID) -> list[UUID]:
         rows = self._session.exec(
@@ -497,7 +571,14 @@ class ExamAttemptService:
     # Navigation (JHEP-32)
     # ------------------------------------------------------------------
 
-    def apply_progress(self, attempt: ExamAttempt, current_position: int) -> None:
+    def apply_progress(
+        self,
+        attempt: ExamAttempt,
+        current_position: int,
+        *,
+        expected_revision: int | None = None,
+    ) -> None:
+        attempt = self._lock_attempt(attempt, expected_revision=expected_revision)
         if attempt.status == "submitted":
             raise AttemptAlreadySubmittedError("Attempt already submitted")
         if not 1 <= current_position <= attempt.question_count:
@@ -505,16 +586,20 @@ class ExamAttemptService:
                 "current_position is outside the exam's question range"
             )
         attempt.current_position = current_position
-        self._session.add(attempt)
-        self._session.commit()
-        self._session.refresh(attempt)
+        self._commit_revision(attempt)
 
     # ------------------------------------------------------------------
     # Final submission (JHEP-34) and grading trigger
     # ------------------------------------------------------------------
 
-    def final_submit(self, attempt: ExamAttempt) -> ExamResult:
+    def final_submit(
+        self,
+        attempt: ExamAttempt,
+        *,
+        expected_revision: int | None = None,
+    ) -> ExamResult:
         """Flip the attempt to `submitted` and grade it exactly once."""
+        attempt = self._lock_attempt(attempt, expected_revision=expected_revision)
         if attempt.status == "submitted":
             raise AttemptAlreadySubmittedError("Attempt already submitted")
         if attempt.passing_threshold_pct is None:
@@ -522,8 +607,7 @@ class ExamAttemptService:
 
         attempt.status = "submitted"
         attempt.submitted_at = _utcnow()
-        self._session.add(attempt)
-        self._session.commit()
+        self._commit_revision(attempt)
         self._session.refresh(attempt)
 
         grading = GradingService(

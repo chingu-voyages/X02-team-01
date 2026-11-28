@@ -378,3 +378,88 @@ describe("JHEP-89 save and leave", () => {
     expect(hook.result.current.isLeaving).toBe(false);
   });
 });
+
+describe("JHEP-89 version-aware autosave", () => {
+  it("uses the acknowledged revision for every subsequent write and question submission", async () => {
+    persisted.recovery_revision = 4;
+    vi.mocked(saveExamDraft).mockResolvedValueOnce({ ...confirmation("q1", ["q1-a"]), recovery_revision: 5 });
+    vi.mocked(submitAnswer).mockResolvedValueOnce({ question_version_id: "q1", is_submitted: true, feedback_released: false, recovery_revision: 6 });
+    vi.mocked(saveExamPosition).mockResolvedValueOnce({ attempt_id: attemptId, status: "in_progress", current_position: 2, question_count: 3, answered_count: 1, unanswered_count: 2, recovery_revision: 7 });
+    const { result } = await load();
+    act(() => result.current.handleSelect("q1-a"));
+    act(() => result.current.handleSubmit());
+    await waitFor(() => expect(result.current.isSubmitted).toBe(true));
+    expect(saveExamDraft).toHaveBeenCalledWith(attemptId, "q1", { selected_option_ids: ["q1-a"], text_response: null }, "token-a", expect.any(AbortSignal), 4);
+    expect(submitAnswer).toHaveBeenCalledWith(attemptId, "q1", { selected_option_ids: ["q1-a"], text_response: null, expected_revision: 5 }, "token-a");
+    act(() => { result.current.goToQuestion(1); });
+    await waitFor(() => expect(result.current.saveState.status).toBe("saved"));
+    expect(saveExamPosition).toHaveBeenCalledWith(attemptId, 2, "token-a", expect.any(AbortSignal), 6);
+  });
+
+  it("keeps the stale selection visible and blocks blind retries and leaving", async () => {
+    persisted.recovery_revision = 1;
+    vi.mocked(saveExamDraft).mockRejectedValueOnce(new ApiError(409, "Changed", { code: "RECOVERY_REVISION_CONFLICT" }));
+    const { result } = await load();
+    act(() => result.current.handleSelect("q1-a"));
+    await act(async () => result.current.handleSaveAndLeave());
+    expect(result.current.saveState.status).toBe("error");
+    expect(result.current.saveErrorMessage).toContain("another tab");
+    expect(result.current.currentSelected).toEqual(["q1-a"]);
+    expect(result.current.canRetrySave).toBe(false);
+    act(() => result.current.retrySave());
+    await act(async () => result.current.handleSaveAndLeave());
+    expect(saveExamDraft).toHaveBeenCalledTimes(1);
+    expect(submitAnswer).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("treats a missing version acknowledgement as uncertain, without submitting or reloading", async () => {
+    persisted.recovery_revision = 0;
+    vi.mocked(saveExamDraft).mockResolvedValueOnce(confirmation("q1", ["q1-a"]));
+    const { result } = await load();
+    act(() => result.current.handleSelect("q1-a"));
+    act(() => result.current.handleSubmit());
+    await waitFor(() => expect(result.current.isSubmitting).toBe(false));
+    expect(result.current.saveState.status).toBe("error");
+    expect(result.current.canRetrySave).toBe(false);
+    expect(submitAnswer).not.toHaveBeenCalled();
+    expect(getExam).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not discard the current view when the revision changes before submission", async () => {
+    persisted.recovery_revision = 0;
+    vi.mocked(saveExamDraft).mockResolvedValueOnce({ ...confirmation("q1", ["q1-a"]), recovery_revision: 1 });
+    vi.mocked(submitAnswer).mockRejectedValueOnce(new ApiError(409, "Changed", { code: "RECOVERY_REVISION_CONFLICT" }));
+    const { result } = await load();
+    act(() => result.current.handleSelect("q1-a"));
+    act(() => result.current.handleSubmit());
+    await waitFor(() => expect(result.current.isSubmitting).toBe(false));
+    expect(result.current.submitError).toContain("another tab");
+    expect(result.current.isSubmitted).toBe(false);
+    expect(result.current.currentSelected).toEqual(["q1-a"]);
+    expect(getExam).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the loaded revision when finishing an already answered exam", async () => {
+    persisted.recovery_revision = 9;
+    for (const question of persisted.questions) {
+      question.response = {
+        question_version_id: question.id,
+        selected_option_ids: question.options.length ? [question.options[0].id] : null,
+        text_response: question.options.length ? null : "Answer",
+        is_submitted: true,
+        answered_at: timestamp,
+      };
+    }
+    vi.mocked(submitExam).mockResolvedValueOnce({
+      attempt_id: attemptId, status: "submitted", question_count: 3,
+      answered_count: 3, unanswered_count: 0, submitted_at: timestamp,
+      results_url: `/api/v1/exams/${attemptId}/results`, recovery_revision: 10,
+    });
+    const { result } = await load();
+    await act(async () => result.current.handleFinish());
+    expect(submitExam).toHaveBeenCalledExactlyOnceWith(attemptId, "token-a", 9);
+    expect(replace).toHaveBeenCalledExactlyOnceWith(`/exams/${attemptId}/results`);
+  });
+
+});

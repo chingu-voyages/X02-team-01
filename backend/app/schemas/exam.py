@@ -97,6 +97,7 @@ class ExamCreatedOut(BaseModel):
 class ExamResumedOut(BaseModel):
     """Existing attempt in its originally persisted question order."""
 
+    recovery_revision: int | None = None
     attempt_id: UUID
     certification_id: UUID
     status: Literal["in_progress", "submitted"]
@@ -129,6 +130,8 @@ class ResponseSaveRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    expected_revision: Annotated[int | None, Field(strict=True, ge=0)] = None
+
     selected_option_ids: Annotated[
         list[UUID] | None, Field(max_length=MAX_SELECTED_OPTIONS)
     ] = None
@@ -140,6 +143,7 @@ class ResponseSaveRequest(BaseModel):
 class ResponseSavedOut(BaseModel):
     """Confirmation for a saved (or cleared) answer."""
 
+    recovery_revision: int | None = None
     attempt_id: UUID
     question_version_id: UUID
     selected_option_ids: list[UUID] | None
@@ -157,10 +161,13 @@ class ProgressUpdateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    expected_revision: Annotated[int | None, Field(strict=True, ge=0)] = None
+
     current_position: Annotated[int, Field(strict=True, ge=1, le=MAX_EXAM_QUESTIONS)]
 
 
 class ProgressSavedOut(BaseModel):
+    recovery_revision: int | None = None
     attempt_id: UUID
     status: Literal["in_progress", "submitted"]
     current_position: int
@@ -182,6 +189,7 @@ class QuestionFeedbackOut(BaseModel):
     ids of the correct options for the submitted question.
     """
 
+    recovery_revision: int | None = None
     attempt_id: UUID
     question_version_id: UUID
     is_submitted: bool
@@ -192,9 +200,17 @@ class QuestionFeedbackOut(BaseModel):
     explanation: str | None = None
 
 
+class FinalSubmitRequest(BaseModel):
+    """Optional revision precondition for final submission."""
+
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: Annotated[int | None, Field(strict=True, ge=0)] = None
+
+
 class FinalSubmitOut(BaseModel):
     """Final submission confirmation (screen 07 — complete exam)."""
 
+    recovery_revision: int | None = None
     attempt_id: UUID
     status: Literal["submitted"]
     question_count: int

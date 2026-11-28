@@ -422,4 +422,54 @@ test.describe("JHEP-105 numbered exam navigation", () => {
     expect(writes.filter((write) => write.startsWith("POST "))).toEqual([]);
   });
 
+  test("JHEP-89: a stale mobile tab cannot overwrite another tab's saved draft", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const { attempt, readAttempt } = await startAttempt(page, "immediate");
+    const token = await page.evaluate(() => sessionStorage.getItem("jhep_auth_token"));
+    if (!token) throw new Error("Missing authenticated session");
+    const other = await page.context().newPage();
+    try {
+      await other.setViewportSize({ width: 390, height: 844 });
+      // Simulate a second tab using the same authenticated browser session.
+      await other.addInitScript((sessionToken) => {
+        sessionStorage.setItem("jhep_auth_token", sessionToken);
+      }, token);
+      await other.goto(`/exams/${attempt.attempt_id}`);
+      await expectQuestion(other, attempt, 1);
+      const original = await readAttempt();
+      expect(typeof original.recovery_revision).toBe("number");
+
+      await firstOption(page).click();
+      await expect(page.getByText("Progress saved", { exact: true })).toBeVisible();
+      const confirmed = await readAttempt();
+      expect(confirmed.recovery_revision).toBe((original.recovery_revision ?? -1) + 1);
+      expect(confirmed.questions[0].response).toMatchObject({
+        selected_option_ids: [attempt.questions[0].options[0].id], is_submitted: false,
+      });
+
+      const staleChoice = other.getByRole("radio").nth(1);
+      await staleChoice.click();
+      const alert = other.getByRole("alert").filter({ hasText: "Changes not saved" });
+      await expect(alert).toContainText("another tab");
+      await expect(staleChoice).toBeChecked();
+      await expect(staleChoice).toBeEnabled();
+      await expect(other.getByRole("button", { name: "Retry saving" })).toHaveCount(0);
+      await other.getByRole("button", { name: "Save and leave", exact: true }).click();
+      await expect(other.getByRole("alert").filter({ hasText: "Your changes are not saved yet" })).toBeVisible();
+      await expectQuestion(other, attempt, 1);
+      await expect(staleChoice).toBeChecked();
+      const unchanged = await readAttempt();
+      expect(unchanged.recovery_revision).toBe(confirmed.recovery_revision);
+      expect(unchanged.questions[0].response).toEqual(confirmed.questions[0].response);
+
+      await submitCurrentAnswer(page, attempt, 1);
+      expect((await readAttempt()).questions[0].response).toMatchObject({
+        selected_option_ids: [attempt.questions[0].options[0].id], is_submitted: true,
+      });
+      expect(await other.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    } finally {
+      await other.close();
+    }
+  });
+
 });

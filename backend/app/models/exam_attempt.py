@@ -29,6 +29,10 @@ class ExamAttempt(SQLModel, table=True):
             name="ck_exam_attempts_current_position",
         ),
         CheckConstraint(
+            "recovery_revision >= 0",
+            name="ck_exam_attempts_recovery_revision",
+        ),
+        CheckConstraint(
             "passing_threshold_pct BETWEEN 0 AND 100",
             name="ck_exam_attempts_passing_threshold",
         ),
@@ -109,6 +113,13 @@ class ExamAttempt(SQLModel, table=True):
         default=1,
         nullable=False,
         sa_column_kwargs={"server_default": text("1")},
+    )
+
+    # Monotonic revision for answers and position. Legacy writers also bump it.
+    recovery_revision: int = Field(
+        default=0,
+        nullable=False,
+        sa_column_kwargs={"server_default": text("0")},
     )
 
     started_at: datetime = Field(

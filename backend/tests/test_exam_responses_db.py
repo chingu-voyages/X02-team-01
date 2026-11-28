@@ -32,6 +32,7 @@ from app.services.exam_attempt_service import (
     ExamAttemptService,
     InvalidResponseContentError,
     QuestionAlreadyLockedError,
+    RecoveryRevisionConflictError,
 )
 from app.services.exam_service import ExamService
 from app.services.grading_service import GradingService
@@ -611,3 +612,243 @@ def test_question_flags_are_independent_of_answers(postgres_session, feedback_mo
         service.set_question_flag(next_attempt, pinned_id, flagged_for_review=True)
     assert service.resolve_question(attempt.id, pinned_id).flagged_for_review is True
     assert session.get(QuestionVersion, first_version).is_flagged is False
+
+
+def test_recovery_revision_rejects_stale_draft_progress_and_submission(
+    postgres_session,
+):
+    session = postgres_session
+    bank = SeededAttempt(session)
+    question_id, version_id, options = bank.add_question(correct_positions=(1,))
+    second_id, second_version, _ = bank.add_question(correct_positions=(1,))
+    created = bank.create_attempt(
+        [(question_id, version_id), (second_id, second_version)]
+    )
+    service = ExamAttemptService(session)
+    attempt = service.get_owned_attempt(
+        attempt_id=created.attempt_id, learner_id=bank.learner.id
+    )
+    assert attempt.recovery_revision == 0
+    saved = service.save_response(
+        attempt,
+        version_id,
+        selected_option_ids=[options[0]],
+        text_response=None,
+        expected_revision=0,
+    )
+    assert saved.selected_option_ids == [str(options[0])]
+    assert service.last_saved_revision == 1
+
+    with pytest.raises(RecoveryRevisionConflictError):
+        service.save_response(
+            attempt,
+            version_id,
+            selected_option_ids=None,
+            text_response=None,
+            expected_revision=0,
+        )
+    with pytest.raises(RecoveryRevisionConflictError):
+        service.apply_progress(attempt, 2, expected_revision=0)
+    with pytest.raises(RecoveryRevisionConflictError):
+        service.submit_question(
+            attempt,
+            version_id,
+            selected_option_ids=[options[1]],
+            text_response=None,
+            expected_revision=0,
+        )
+    with pytest.raises(RecoveryRevisionConflictError):
+        service.final_submit(attempt, expected_revision=0)
+    assert service.response_blocks(attempt)[version_id]["selected_option_ids"] == [
+        options[0]
+    ]
+    assert attempt.current_position == 1
+    assert attempt.status == "in_progress"
+    assert attempt.recovery_revision == 1
+
+    service.apply_progress(attempt, 2, expected_revision=1)
+    assert service.last_saved_revision == 2
+    service.submit_question(
+        attempt,
+        version_id,
+        selected_option_ids=[options[0]],
+        text_response=None,
+        expected_revision=2,
+    )
+    assert service.last_saved_revision == 3
+    assert service.response_blocks(attempt)[version_id]["is_submitted"] is True
+    with pytest.raises(QuestionAlreadyLockedError):
+        service.save_response(
+            attempt,
+            version_id,
+            selected_option_ids=[options[1]],
+            text_response=None,
+        )
+    assert attempt.recovery_revision == 3
+    assert service.response_blocks(attempt)[version_id]["selected_option_ids"] == [
+        options[0]
+    ]
+    assert second_version not in service.response_blocks(attempt)
+    service.final_submit(attempt, expected_revision=3)
+    assert service.last_saved_revision == 4
+    assert attempt.status == "submitted"
+    with pytest.raises(AttemptAlreadySubmittedError):
+        service.apply_progress(attempt, 1)
+
+
+def test_clear_and_legacy_writes_advance_revision_but_invalid_writes_do_not(
+    postgres_session,
+):
+    session = postgres_session
+    bank = SeededAttempt(session)
+    question_id, version_id, options = bank.add_question(correct_positions=(1,))
+    created = bank.create_attempt([(question_id, version_id)])
+    service = ExamAttemptService(session)
+    attempt = service.get_owned_attempt(
+        attempt_id=created.attempt_id, learner_id=bank.learner.id
+    )
+    with pytest.raises(InvalidResponseContentError):
+        service.save_response(
+            attempt,
+            version_id,
+            selected_option_ids=[uuid4()],
+            text_response=None,
+            expected_revision=0,
+        )
+    assert attempt.recovery_revision == 0
+    service.save_response(
+        attempt, version_id, selected_option_ids=[options[0]], text_response=None
+    )
+    assert service.last_saved_revision == 1
+    service.save_response(
+        attempt,
+        version_id,
+        selected_option_ids=None,
+        text_response=None,
+        expected_revision=1,
+    )
+    assert service.last_saved_revision == 2
+    assert service.response_blocks(attempt) == {}
+    with pytest.raises(RecoveryRevisionConflictError):
+        service.save_response(
+            attempt,
+            version_id,
+            selected_option_ids=[options[0]],
+            text_response=None,
+            expected_revision=0,
+        )
+    assert service.response_blocks(attempt) == {}
+    service.set_question_flag(attempt, version_id, flagged_for_review=True)
+    assert attempt.recovery_revision == 2
+    service.apply_progress(attempt, 1)
+    assert service.last_saved_revision == 3
+
+
+@pytest.fixture
+def revision_engine():
+    """Committed isolated schema for genuine two-connection race tests."""
+    if os.getenv("RUN_DB_INTEGRATION") != "1":
+        pytest.skip("PostgreSQL integration tests are opt-in")
+    if engine.url.get_backend_name() != "postgresql" or engine.url.host not in {
+        "localhost",
+        "127.0.0.1",
+        None,
+    }:
+        pytest.fail("Recovery race tests require local PostgreSQL")
+    schema = f"jhep89_race_{uuid4().hex[:12]}"
+    scoped = engine.execution_options(schema_translate_map={None: schema})
+    with scoped.begin() as connection:
+        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+        SQLModel.metadata.create_all(connection)
+    try:
+        yield scoped
+    finally:
+        with engine.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+
+
+@pytest.mark.parametrize("submit_first", [False, True])
+def test_concurrent_stale_writer_cannot_replace_saved_or_locked_answer(
+    revision_engine, submit_first
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    with Session(revision_engine) as seed:
+        bank = SeededAttempt(seed)
+        question_id, version_id, options = bank.add_question(correct_positions=(1,))
+        created = bank.create_attempt([(question_id, version_id)])
+        attempt_id = created.attempt_id
+        learner_id = bank.learner.id
+
+    ready = Event()
+
+    def competing_write():
+        with Session(revision_engine) as second:
+            second.exec(text("SET LOCAL lock_timeout = '8s'"))
+            service = ExamAttemptService(second)
+            stale = service.get_owned_attempt(
+                attempt_id=attempt_id, learner_id=learner_id
+            )
+            assert stale.recovery_revision == 0
+            ready.set()
+            try:
+                service.save_response(
+                    stale,
+                    version_id,
+                    selected_option_ids=[options[1]],
+                    text_response=None,
+                    # Also test an older client that has no revision support.
+                    expected_revision=None if submit_first else 0,
+                )
+            except (RecoveryRevisionConflictError, QuestionAlreadyLockedError) as exc:
+                return type(exc)
+            return None
+
+    with Session(revision_engine) as first:
+        # Hold the same row lock that the production mutation uses, then let
+        # the second session observe the earlier committed revision.
+        attempt = first.exec(
+            select(ExamAttempt).where(ExamAttempt.id == attempt_id).with_for_update()
+        ).one()
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(competing_write)
+            try:
+                assert ready.wait(5), (
+                    "The competing connection did not read its snapshot"
+                )
+                service = ExamAttemptService(first)
+                if submit_first:
+                    service.submit_question(
+                        attempt,
+                        version_id,
+                        selected_option_ids=[options[0]],
+                        text_response=None,
+                        expected_revision=0,
+                    )
+                else:
+                    service.save_response(
+                        attempt,
+                        version_id,
+                        selected_option_ids=[options[0]],
+                        text_response=None,
+                        expected_revision=0,
+                    )
+            finally:
+                # Release the lock even when an assertion or mutation fails.
+                first.rollback()
+            assert future.result(timeout=12) is (
+                QuestionAlreadyLockedError
+                if submit_first
+                else RecoveryRevisionConflictError
+            )
+
+    with Session(revision_engine) as check:
+        service = ExamAttemptService(check)
+        attempt = service.get_owned_attempt(
+            attempt_id=attempt_id, learner_id=learner_id
+        )
+        saved = service.response_blocks(attempt)[version_id]
+        assert saved["selected_option_ids"] == [options[0]]
+        assert saved["is_submitted"] is submit_first
+        assert attempt.recovery_revision == 1

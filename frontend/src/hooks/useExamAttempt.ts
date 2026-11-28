@@ -4,6 +4,7 @@ import { useDemoSession } from "@/features/auth/AuthProvider";
 import { ApiError } from "@/lib/api-client";
 import { getExam, setQuestionFlag, submitAnswer } from "@/lib/exam-api";
 import { saveExamDraft, saveExamPosition } from "@/lib/exam-recovery-api";
+import { createRecoveryRevision, isRecoveryRevisionConflict, recoveryConflictMessage } from "@/lib/exam-recovery-revision";
 import { createExamSaveQueue, type ExamSaveState } from "@/lib/exam-save-queue";
 import { submitExam } from "@/lib/exam-submission";
 import { deriveQuestionStates } from "@/lib/question-states";
@@ -25,7 +26,7 @@ type LoadScope = {
   status: ExamAttempt["status"] | null;
 };
 type SaveQueue = ReturnType<typeof createExamSaveQueue>;
-type ScopedQueue = { id: string; token: string; reloadKey: number; queue: SaveQueue };
+type ScopedQueue = { id: string; token: string; reloadKey: number; queue: SaveQueue; revision: ReturnType<typeof createRecoveryRevision> };
 const idleSave: ExamSaveState = { status: "idle", pendingCount: 0, error: null };
 
 export function useExamAttempt(attemptId: string) {
@@ -125,10 +126,20 @@ export function useExamAttempt(attemptId: string) {
         // Construct the queue only AFTER the authenticated GET succeeds.
         // Hydration itself does not send any draft/position writes.
         if (data.status === "in_progress") {
+          const revision = createRecoveryRevision(data.recovery_revision);
           const queue = createExamSaveQueue(
-            (operation, signal) => operation.kind === "draft"
-              ? saveExamDraft(attemptId, operation.questionVersionId, operation.answer, token, signal)
-              : saveExamPosition(attemptId, operation.currentPosition, token, signal),
+            async (operation, signal) => {
+              const expected = revision.current();
+              // Only the queue's confirmed response can advance this cursor.
+              const saved = operation.kind === "draft"
+                ? await (expected === undefined
+                    ? saveExamDraft(attemptId, operation.questionVersionId, operation.answer, token, signal)
+                    : saveExamDraft(attemptId, operation.questionVersionId, operation.answer, token, signal, expected))
+                : await (expected === undefined
+                    ? saveExamPosition(attemptId, operation.currentPosition, token, signal)
+                    : saveExamPosition(attemptId, operation.currentPosition, token, signal, expected));
+              revision.confirm(expected, saved?.recovery_revision);
+            },
             {
               onStateChange: (next) => {
                 if (cancelled) return;
@@ -137,7 +148,7 @@ export function useExamAttempt(attemptId: string) {
               },
             },
           );
-          scopedQueue = { id: attemptId, token, reloadKey, queue };
+          scopedQueue = { id: attemptId, token, reloadKey, queue, revision };
           queueRef.current = scopedQueue;
           document.addEventListener("visibilitychange", flushWhenHidden);
           window.addEventListener("pagehide", flushOnPageHide);
@@ -244,7 +255,9 @@ export function useExamAttempt(attemptId: string) {
   const activeSaveState = isCurrentLoad ? saveState : idleSave;
   const saveErrorStatus = activeSaveState.error instanceof ApiError ? activeSaveState.error.status : null;
   const canRetrySave = isActive && activeSaveState.status === "error" && ![401, 403, 404, 409].includes(saveErrorStatus ?? 0);
-  const saveErrorMessage = saveErrorStatus === 401
+  const saveErrorMessage = isRecoveryRevisionConflict(activeSaveState.error)
+    ? recoveryConflictMessage
+    : saveErrorStatus === 401
     ? "Your session expired. Keep this page open and copy any unsaved text before signing in again."
     : saveErrorStatus === 403 || saveErrorStatus === 404
       ? "This exam is no longer available to save. Keep this page open and copy any unsaved text."
@@ -362,8 +375,12 @@ export function useExamAttempt(attemptId: string) {
           return;
         }
         if (!stillCurrent(queue)) return;
-        const feedback = await submitAnswer(attemptId, questionId, answer, token);
+        const revision = queueRef.current?.revision;
+        const expected = revision?.current();
+        const feedback = await submitAnswer(attemptId, questionId,
+          expected === undefined ? answer : { ...answer, expected_revision: expected }, token);
         if (!stillCurrent(queue)) return;
+        revision?.confirm(expected, feedback.recovery_revision);
         setFeedbackMap((previous) => ({ ...previous, [questionId]: {
           feedback_released: feedback.feedback_released,
           is_correct: feedback.feedback_released && typeof feedback.is_correct === "boolean" ? feedback.is_correct : null,
@@ -376,6 +393,10 @@ export function useExamAttempt(attemptId: string) {
         if (!stillCurrent(queue)) return;
         if (error instanceof ApiError && error.status === 401) {
           handleError(error);
+          return;
+        }
+        if (isRecoveryRevisionConflict(error)) {
+          setSubmitError(recoveryConflictMessage);
           return;
         }
         if (error instanceof ApiError && error.status === 409) {
@@ -408,8 +429,11 @@ export function useExamAttempt(attemptId: string) {
         return;
       }
       if (!stillCurrent(queue)) return;
-      const response = await submitExam(attemptId, token);
+      const revision = queueRef.current?.revision;
+      const expected = revision?.current();
+      const response = await (expected === undefined ? submitExam(attemptId, token) : submitExam(attemptId, token, expected));
       if (!stillCurrent(queue)) return;
+      revision?.confirm(expected, response.recovery_revision);
       if (response.status !== "submitted" || response.attempt_id !== attemptId) throw new Error("Unexpected final submission response.");
       navigating = true;
       // Keep the finish action locked until the results route unmounts us.
@@ -418,6 +442,10 @@ export function useExamAttempt(attemptId: string) {
       if (!stillCurrent(queue)) return;
       if (error instanceof ApiError && error.status === 401) {
         handleError(error);
+        return;
+      }
+      if (isRecoveryRevisionConflict(error)) {
+        setFinishError(recoveryConflictMessage);
         return;
       }
       if (error instanceof ApiError && error.status === 409) {

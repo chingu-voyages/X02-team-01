@@ -7,6 +7,7 @@ export type ExamDraftAnswer = {
 };
 
 export type ExamDraftSaved = {
+  recovery_revision?: number;
   attempt_id: string;
   question_version_id: string;
   selected_option_ids?: string[] | null;
@@ -19,6 +20,7 @@ export type ExamDraftSaved = {
 };
 
 export type ExamPositionSaved = {
+  recovery_revision?: number;
   attempt_id: string;
   status: "in_progress" | "submitted";
   current_position: number;
@@ -41,6 +43,7 @@ export async function saveExamDraft(
   answer: ExamDraftAnswer,
   token: string,
   signal?: AbortSignal,
+  expectedRevision?: number,
 ): Promise<ExamDraftSaved> {
   // Do not accidentally turn an incomplete object into a destructive clear.
   if (
@@ -61,7 +64,8 @@ export async function saveExamDraft(
     token,
     {
       method: "PUT",
-      body: JSON.stringify({ selected_option_ids: selections, text_response: text }),
+      body: JSON.stringify({ selected_option_ids: selections, text_response: text,
+        ...(expectedRevision === undefined ? {} : { expected_revision: expectedRevision }) }),
       ...(signal ? { signal } : {}),
     },
   );
@@ -93,6 +97,7 @@ export async function saveExamPosition(
   currentPosition: number,
   token: string,
   signal?: AbortSignal,
+  expectedRevision?: number,
 ): Promise<ExamPositionSaved> {
   if (!Number.isInteger(currentPosition) || currentPosition < 1) {
     throw new RangeError("The saved question position must be a positive integer.");
@@ -103,7 +108,8 @@ export async function saveExamPosition(
     token,
     {
       method: "PATCH",
-      body: JSON.stringify({ current_position: currentPosition }),
+      body: JSON.stringify({ current_position: currentPosition,
+        ...(expectedRevision === undefined ? {} : { expected_revision: expectedRevision }) }),
       ...(signal ? { signal } : {}),
     },
   );
