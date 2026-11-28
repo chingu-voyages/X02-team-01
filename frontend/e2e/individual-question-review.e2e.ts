@@ -356,14 +356,14 @@ test.describe("JHEP-72 individual completed question review", () => {
     await page.goto(urls(attempt).detail(original));
     await assertDetail(page, detail);
     const before = await snapshot(page, attempt, headers);
-    const { replacement_id } = localFixture<{ replacement_id: string }>("--attempt-id", attempt.attempt_id, "--replace-version", original);
-    expect(replacement_id).not.toBe(original);
+    const { replacement_id: replacementId } = localFixture<{ replacement_id: string }>("--attempt-id", attempt.attempt_id, "--replace-version", original);
+    expect(replacementId).not.toBe(original);
     const after = await detailApi(page, attempt, original, headers);
     expect(after).toEqual(detail);
     await page.reload();
     await assertDetail(page, detail);
     await expect(page.getByText(/JHEP72-REPLACEMENT/).filter({ visible: true })).toHaveCount(0);
-    const denied = await page.request.get(urls(attempt).detailApi(replacement_id), { headers });
+    const denied = await page.request.get(urls(attempt).detailApi(replacementId), { headers });
     expect(denied.status()).toBe(404);
     expect(await snapshot(page, attempt, headers)).toEqual(before);
   });
