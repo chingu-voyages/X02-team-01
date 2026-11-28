@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { mobileNavigation } from "./helpers/exam-navigation";
 import { expect, test, type Page } from "@playwright/test";
 import type {
   ExamAttempt,
@@ -108,8 +109,9 @@ async function setFlag(
   keyboard = false,
 ) {
   const button = page.getByRole("button", {
-    name: flagged ? "Flag for Review" : "Remove Flag",
+    name: flagged ? "Flag for Review" : "Flagged for Review",
     exact: true,
+    pressed: !flagged,
   });
   await expect(button).toBeEnabled();
   const responsePromise = page.waitForResponse((response) =>
@@ -132,7 +134,7 @@ async function setFlag(
     flagged_for_review: flagged,
   });
   await expect(page.getByRole("button", {
-    name: flagged ? "Remove Flag" : "Flag for Review", exact: true,
+    name: flagged ? "Flagged for Review" : "Flag for Review", exact: true, pressed: flagged,
   })).toBeEnabled();
 }
 
@@ -244,57 +246,56 @@ test.describe("JHEP-104 flag and unflag questions", () => {
     });
   });
 
-  test("mobile: flags survive popup navigation, failed saves and deferred submission", async ({ page }) => {
+  test("mobile: flags survive paginated navigation, failed saves and deferred submission", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const { attempt, writes, readAttempt } = await startAttempt(page, "deferred");
     expect(attempt.questions).toHaveLength(40);
-    const trigger = page.locator('button[aria-haspopup="dialog"]').filter({ hasText: "Question Navigation" });
-    const dialog = page.getByRole("dialog", { name: "Question Navigation", exact: true });
-    await expect(trigger).toBeVisible();
-    await expect(page.getByRole("button", { name: "Flag for Review", exact: true })).toBeVisible();
+    const nav = mobileNavigation(page);
+    await expect(nav.trigger).toBeVisible();
+    await nav.expectClosed();
+    await expect(page.getByRole("button", { name: "Flag for Review", exact: true, pressed: false })).toBeVisible();
     await firstOption(page).click();
     await setFlag(page, attempt, 1, true);
-    await trigger.click();
-    await expect(dialog).toBeVisible();
+    await nav.open();
     await expect(questionButton(page, 1, true)).toHaveAttribute("aria-current", "step");
+    await nav.goToLastSet();
     await questionButton(page, 40).click();
-    await expect(dialog).toBeHidden();
-    await expect(trigger).toBeFocused();
+    await nav.expectClosed();
     await expectQuestion(page, attempt, 40);
+    await nav.expectQuestionFocus(40);
     await setFlag(page, attempt, 40, true);
-    await trigger.click();
+    await nav.open();
     await expect(questionButton(page, 40, true)).toHaveAttribute("aria-current", "step");
+    await nav.goToFirstSet();
     await questionButton(page, 1, true).click();
     await expectQuestion(page, attempt, 1);
     await expect(firstOption(page)).toBeChecked();
     expect(writes).toEqual([`PUT ${flagPath(attempt, 1)}`, `PUT ${flagPath(attempt, 40)}`]);
 
-    // Fail just one write before it reaches the server. The next retry is real.
+    // Fail exactly one write before it reaches the server. The next retry is real.
     const endpoint = `**${flagPath(attempt, 1)}`;
     await page.route(endpoint, async (route) => {
       await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Unable to save review flag" }) });
     }, { times: 1 });
-    await page.getByRole("button", { name: "Remove Flag", exact: true }).click();
-    await expect(
-      page.getByRole("alert").filter({
-        hasText: "Unable to save review flag",
-      }),
-    ).toHaveText("Unable to save review flag");
-    await expect(page.getByRole("button", { name: "Remove Flag", exact: true })).toBeEnabled();
+    const flaggedButton = page.getByRole("button", { name: "Flagged for Review", exact: true, pressed: true });
+    await flaggedButton.click();
+    const flagError = page.getByRole("alert").filter({ hasText: "Unable to save review flag" });
+    await expect(flagError).toHaveText("Unable to save review flag");
+    await expect(flaggedButton).toBeEnabled();
     expect((await readAttempt()).questions[0].flagged_for_review).toBe(true);
     await setFlag(page, attempt, 1, false);
-    await expect(
-        page.getByRole("alert").filter({
-          hasText: "Unable to save review flag",
-        }),
-      ).toHaveCount(0);
+    await expect(flagError).toHaveCount(0);
     await expect(firstOption(page)).toBeChecked();
-    await trigger.click();
+
+    await nav.open();
     await expect(questionButton(page, 1)).toHaveAttribute("aria-current", "step");
+    await nav.goToLastSet();
     await expect(questionButton(page, 40, true)).not.toHaveAttribute("aria-current", "step");
-    await page.keyboard.press("Escape");
-    await expect(dialog).toBeHidden();
-    await expect(trigger).toBeFocused();
+    await questionButton(page, 40, true).press("Escape");
+    await nav.expectClosed();
+    await expect(nav.trigger).toBeFocused();
+    await expectQuestion(page, attempt, 1);
+
     const deferred = await submitCurrentAnswer(page, attempt, 1);
     expect(deferred.feedback_released).toBe(false);
     expect(deferred.is_correct ?? null).toBeNull();
@@ -304,12 +305,14 @@ test.describe("JHEP-104 flag and unflag questions", () => {
     await expect(firstOption(page)).toBeDisabled();
     await expect(firstOption(page)).toBeChecked();
     await expectNoFeedback(page);
-    await trigger.click();
+    await nav.open();
     await expect(questionButton(page, 1, true)).toHaveAttribute("aria-current", "step");
+    await nav.goToLastSet();
     await expect(questionButton(page, 40, true)).toBeEnabled();
     await questionButton(page, 40, true).click();
     await expectQuestion(page, attempt, 40);
-    await trigger.click();
+    await nav.open();
+    await nav.goToFirstSet();
     await questionButton(page, 1, true).click();
     await expectQuestion(page, attempt, 1);
     await expect(firstOption(page)).toBeDisabled();
