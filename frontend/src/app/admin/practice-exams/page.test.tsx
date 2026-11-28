@@ -1,4 +1,6 @@
+import { Activity } from "react";
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -263,6 +265,65 @@ describe("JHEP-126 administrator practice exam publishing UI", () => {
     expect(screen.getByText(/was created as a Draft/)).toBeTruthy();
     expect(mockPublication).not.toHaveBeenCalled();
   });
+
+  it.each(["success", "failure"] as const)(
+    "keeps a newly created draft selected when a cached route's older list request completes (%s)",
+    async (outcome) => {
+      const existing = { ...blockedExam, name: "BIG" };
+      setup([existing]);
+      mockCreate.mockResolvedValue(readyExam);
+      mockPublication.mockResolvedValue({ ...readyExam, status: "published" });
+      const user = userEvent.setup();
+      const { rerender } = render(
+        <Activity mode="visible"><AdminPracticeExamsPage /></Activity>,
+      );
+      await screen.findByRole("heading", { name: "BIG" });
+
+      // Next can preserve the prior route's React state while hiding it.
+      // Reopening runs the loading effect again. Keep its old snapshot in
+      // flight until the draft POST has been acknowledged and rendered.
+      let finishOldList!: () => void;
+      mockGet.mockImplementationOnce(() => new Promise<AdminPracticeExam[]>((resolve, reject) => {
+        finishOldList = () => {
+          if (outcome === "success") resolve([existing]);
+          else reject(new ApiError(503, "Old list request failed"));
+        };
+      }));
+      rerender(<Activity mode="hidden"><AdminPracticeExamsPage /></Activity>);
+      rerender(<Activity mode="visible"><AdminPracticeExamsPage /></Activity>);
+      await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2));
+
+      await user.click(screen.getByRole("button", { name: "New exam" }));
+      await user.type(screen.getByLabelText("Exam name"), readyExam.name);
+      await user.selectOptions(screen.getByLabelText("Category"), category.id);
+      await user.clear(screen.getByLabelText("Question count (1–100)"));
+      await user.type(screen.getByLabelText("Question count (1–100)"), "2");
+      await user.click(screen.getByRole("button", { name: "Create draft" }));
+      await screen.findByRole("heading", { name: readyExam.name });
+      expect(await screen.findByText(/was created as a Draft/)).toBeInTheDocument();
+      expect(mockCreate).toHaveBeenCalledExactlyOnceWith("admin-token", {
+        name: readyExam.name,
+        certification_id: certification.id,
+        category_id: category.id,
+        question_count: 2,
+      });
+
+      // Before the fix this either replaces the new exam with BIG, or hides
+      // the page behind an old load error. Neither may happen after saving.
+      await act(async () => { finishOldList(); });
+      expect(screen.getByRole("heading", { name: readyExam.name })).toBeVisible();
+      expect(screen.getByRole("button", { name: `Manage ${readyExam.name}` })).toHaveAttribute("aria-current", "true");
+      expect(screen.getByRole("button", { name: "Manage BIG" })).not.toHaveAttribute("aria-current");
+      expect(screen.queryByText("Old list request failed")).not.toBeInTheDocument();
+
+      // Do not merely keep a success message: ensure subsequent publication
+      // targets the exact new record, never the previously selected exam.
+      await user.click(screen.getByRole("button", { name: "Publish exam" }));
+      await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm publish" }));
+      await waitFor(() => expect(mockPublication).toHaveBeenCalledExactlyOnceWith("admin-token", readyExam.id, true));
+      expect(await screen.findByRole("button", { name: "Unpublish exam" })).toBeEnabled();
+    },
+  );
 
   it("refreshes exam readiness without publishing", async () => {
     setup([blockedExam]);
