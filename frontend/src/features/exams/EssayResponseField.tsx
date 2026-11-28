@@ -7,7 +7,7 @@ import {
 } from "@/lib/essay-response";
 
 export type EssaySubmissionState = "draft" | "submitting" | "submitted";
-export type EssayFeedbackState = "pending" | "unavailable";
+export type EssayFeedbackState = "pending" | "unavailable" | "results";
 
 export interface EssayResponseFieldProps {
   /** Controlled by the attempt's question-version-keyed draft state. */
@@ -61,9 +61,11 @@ export default function EssayResponseField({
     .join(" ");
 
   const statusText = isSubmitted
-    ? feedbackState === "unavailable"
-      ? "Answer submitted. Unable to grade."
-      : "Answer submitted. Pending feedback."
+    ? feedbackState === "results"
+      ? "Answer submitted. View results for feedback."
+      : feedbackState === "unavailable"
+        ? "Answer submitted. Unable to grade."
+        : "Answer submitted. Pending feedback."
     : isSubmitting
       ? "Submitting your answer…"
       : "Draft — not submitted.";
@@ -76,8 +78,10 @@ export default function EssayResponseField({
 
       <p id={hintId} className="text-sm leading-6 text-brand-text/80">
         {isSubmitted
-          ? "Your submitted response is read-only. You can still select and copy it."
-          : "You can edit your response until you select Submit answer. Submitting locks this answer."}
+          ? feedbackState === "results"
+            ? "Your submitted response is read-only. You can still select and copy it. View results for the current grading status."
+            : "Your submitted response is read-only. You can still select and copy it. Finish the exam to send essays for review."
+          : "You can edit your response until you select Submit answer. Submitting locks this answer. Drafts stay here while you navigate this open exam; submit before refreshing or leaving."}
       </p>
 
       <textarea

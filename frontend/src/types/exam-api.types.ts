@@ -1,37 +1,35 @@
-// Matches JHEP-29 ExamCreateRequest / ExamCreatedOut after the image checkpoint.
+// Matches the learner exam API, including JHEP-120's distinct essay type.
 // Images are nullable when a media delivery base URL has not been configured.
 export type ExamCreateRequest = {
-  certification_id: string; // UUID
-  category_id?: string; // UUID
-  practice_exam_id?: string; // UUID; JHEP-126 published exam
-  question_count: number; // positive integer, capped by backend config (max 100)
+  certification_id: string;
+  category_id?: string;
+  practice_exam_id?: string;
+  question_count: number;
 };
 
 export type ExamOption = {
-  id: string; // UUID
+  id: string;
   position: number;
   option_text: string;
 };
 
 export type ExamImage = {
-  id: string; // UUID
+  id: string;
   position: number;
   alt_text: string;
   media_type: "image/png" | "image/jpeg" | "image/webp";
-  url: string | null; // null => display text fallback
+  url: string | null;
 };
 
 export type ExamQuestion = {
-  id: string; // question VERSION ID, not parent question ID
-  position: number; // 1-based order within attempt
+  id: string; // Question VERSION ID, not parent question ID.
+  position: number;
   question_text: string;
-  question_type: "multiple_choice" | "short_answer";
+  question_type: "multiple_choice" | "short_answer" | "essay";
   allows_multiple_answers: boolean;
   difficulty: "easy" | "medium" | "hard";
   options: ExamOption[];
   images: ExamImage[];
-  // JHEP-104: older fixtures and API deployments omit this field.
-  // Only an explicit true means flagged.
   flagged_for_review?: boolean;
 };
 
@@ -42,8 +40,8 @@ export type QuestionFlagSaved = {
 };
 
 export type ExamCreatedResponse = {
-  attempt_id: string; // UUID
-  certification_id: string; // UUID
+  attempt_id: string;
+  certification_id: string;
   status: "in_progress";
   question_count: number;
   questions: ExamQuestion[];
@@ -157,26 +155,23 @@ export type ManualGradeSubmitResponse = {
   action: "graded" | "revised";
 };
 
-// --- JHEP-99: live exam interface (resume + per-question feedback) ---
-
 export type ResponseBlock = {
   question_version_id: string;
   selected_option_ids: string[] | null;
   text_response: string | null;
   is_submitted: boolean;
   answered_at: string;
-  // Present only after grading released it (immediate mode or a graded
-  // attempt); its absence must never be read as a wrong answer.
-  is_correct?: boolean;
+  // Null/absent is unknown, never an incorrect answer.
+  is_correct?: boolean | null;
 };
 
 export type ExamQuestionWithResponse = ExamQuestion & {
-  response?: ResponseBlock;
+  response?: ResponseBlock | null;
 };
 
 export type ExamAttempt = {
-  attempt_id: string; // UUID
-  certification_id: string; // UUID
+  attempt_id: string;
+  certification_id: string;
   status: "in_progress" | "submitted";
   question_count: number;
   current_position: number;
@@ -184,13 +179,15 @@ export type ExamAttempt = {
 };
 
 export type QuestionFeedback = {
-  question_version_id: string; // UUID
+  // Optional for compatibility with existing fixtures; the current API sends it.
+  attempt_id?: string;
+  question_version_id: string;
   is_submitted: true;
-  question_submitted_at?: string;
+  question_submitted_at?: string | null;
   feedback_released: boolean;
-  is_correct?: boolean;
-  correct_option_ids?: string[];
-  explanation?: string;
+  is_correct?: boolean | null;
+  correct_option_ids?: string[] | null;
+  explanation?: string | null;
 };
 
 export type AnswerSubmission = {
