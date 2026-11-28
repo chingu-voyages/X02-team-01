@@ -1403,3 +1403,51 @@ score, rubric ceiling and human feedback. While any submitted written answer
 awaits grading, `grading_complete` is `false` and `passed` is `null`; the UI
 must not present a provisional score as a final pass/fail result. Unavailable
 or ungraded responses are never auto-failed.
+
+---
+
+# 19. Administrator dashboard overview (JHEP-115)
+
+One read-only aggregate, Administrator-only (401 anonymous / 403 for every
+other role):
+
+```
+GET /api/v1/admin/dashboard/overview
+    ?period=7|30|90|all|custom
+    &from=YYYY-MM-DD&to=YYYY-MM-DD   # required when period=custom
+    &exam_id=<uuid>                  # optional exam scope
+```
+
+**Payload**
+
+```json
+{
+  "registered_learners": 12,
+  "completed_attempts": 34,
+  "participating_learners": 9,
+  "pending_question_reviews": 5,
+  "review_breakdown": { "submitted": 3, "in_review": 2 },
+  "attempts_by_exam": [
+    { "exam_id": "<uuid>", "title": "Scrum Master Practice", "count": 20 },
+    { "exam_id": null, "title": "Legacy (earlier exams)", "count": 14 }
+  ],
+  "filters": { "period": "30", "from": null, "to": null, "exam_id": null },
+  "generated_at": "2026-01-01T00:00:00Z"
+}
+```
+
+**Semantics (AC2–AC7)**
+
+| Field | Definition |
+|---|---|
+| `registered_learners` | **Current snapshot** — all-time accounts with role `learner` or `contributor` (unverified/inactive included; administrators excluded). Unaffected by filters. |
+| `completed_attempts` | **Filtered** — `exam_attempts` with `status='submitted'` whose `submitted_at` (UTC) falls in the inclusive window, optionally scoped to `exam_id`. Each attempt row counts once (retakes = separate rows; duplicate final submits are rejected by JHEP-34 and never re-write the row). |
+| `participating_learners` | Distinct `user_id` in the filtered completed-attempt set. |
+| `pending_question_reviews` | **Current snapshot** — distinct questions whose latest version's `review_status` is `submitted` or `in_review`. Unaffected by filters. |
+| `review_breakdown` | `{submitted, in_review}` — always sums to `pending_question_reviews` (AC5). |
+| `attempts_by_exam` | The filtered set grouped by `practice_exam_id` → `practice_exams.name`, highest count first; rows sum to `completed_attempts` (AC6). Attempts whose exam id is `NULL` (JHEP-203 legacy rows) group under the `Legacy (earlier exams)` row. |
+
+Invalid periods/dates → `422 {detail:{code:"INVALID_PERIOD"}}` with an
+actionable message (inverted custom range included). The UI marks the two
+snapshot KPIs as current and renders real zeros/empty tables; missing exam
+titles show `Unavailable`, never a fabricated zero (AC8).

@@ -5,6 +5,7 @@ from app.api.v1.endpoints import (
     admin_practice_exams,
     auth,
     categories,
+    dashboard,
     exams,
     learner_practice_exams,
     manual_grading,
@@ -73,4 +74,9 @@ api_router.include_router(
     question_import_actions.router,
     prefix="/admin/question-imports",
     tags=["admin", "question-imports"],
+)
+
+api_router.include_router(
+    dashboard.router,
+    tags=["admin", "dashboard"],
 )

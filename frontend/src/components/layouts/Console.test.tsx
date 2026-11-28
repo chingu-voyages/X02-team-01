@@ -244,10 +244,12 @@ describe("Console layout shell", () => {
       </Console>,
     );
 
-    const dashboardItem = screen.getByText("Dashboard").closest("div");
-    const myAccountItem = screen.getByText("My Account").closest("div");
+    // JHEP-115: the Dashboard item is now enabled and navigates to the
+    // overview; the remaining placeholder items stay disabled.
+    const dashboardLink = screen.getByRole("link", { name: "Dashboard" });
+    expect(dashboardLink.getAttribute("href")).toBe("/admin");
 
-    expect(dashboardItem?.getAttribute("aria-disabled")).toBe("true");
+    const myAccountItem = screen.getByText("My Account").closest("div");
     expect(myAccountItem?.getAttribute("aria-disabled")).toBe("true");
   });
 

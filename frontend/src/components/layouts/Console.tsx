@@ -44,9 +44,9 @@ const navSections: NavSection[] = [
     items: [
       {
         label: "Dashboard",
+        href: "/admin",
         icon: LayoutGrid,
         roles: ["contributor", "administrator"],
-        disabled: true,
       },
     ],
   },
