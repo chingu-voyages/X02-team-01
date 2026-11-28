@@ -342,7 +342,40 @@ test.describe("JHEP-201 practice exam publishing journey", () => {
       });
       const draft = await test.step("Create a draft through the UI; learner catalog remains unchanged", async () => {
         const record = await createDraft(page, fixture, fixture.question_count);
-        await expect(page.getByRole("button", { name: `Manage ${fixture.exam_name}`, exact: true })).toContainText("Draft");
+        const details = page.getByRole("region", {
+              name: fixture.exam_name,
+              exact: true,
+            });
+
+            await expect(details).toBeVisible();
+            await expect(
+              details.getByText("Draft", { exact: true }),
+            ).toBeVisible();
+
+            const back = page.getByRole("button", {
+              name: "Back to exam list",
+              exact: true,
+            });
+
+            const usesSinglePanel = await back.isVisible();
+
+            if (usesSinglePanel) {
+              await back.click();
+            }
+
+            const examRow = page.getByRole("button", {
+              name: `Manage ${fixture.exam_name}`,
+              exact: true,
+            });
+
+            await expect(examRow).toBeVisible();
+            await expect(examRow).toContainText("Draft");
+
+            if (usesSinglePanel) {
+              await examRow.click();
+            }
+
+            await expect(details).toBeVisible();
         await expect(page.getByRole("button", { name: "Publish exam", exact: true })).toBeEnabled();
         await checkLearnerCatalog(learner, fixture, false);
         return record;
