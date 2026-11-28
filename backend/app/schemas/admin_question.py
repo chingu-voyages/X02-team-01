@@ -43,6 +43,7 @@ class _QuestionDraftContent(BaseModel):
     question_type: Literal[
         "multiple_choice",
         "short_answer",
+        "essay",
     ]
 
     allows_multiple_answers: bool = False
@@ -121,13 +122,17 @@ class _QuestionDraftContent(BaseModel):
             return self
 
         if self.allows_multiple_answers:
-            raise ValueError("short_answer questions cannot allow multiple answers")
+            raise ValueError(
+                f"{self.question_type} questions cannot allow multiple answers"
+            )
 
         if self.options:
-            raise ValueError("short_answer questions cannot define answer options")
+            raise ValueError(
+                f"{self.question_type} questions cannot define answer options"
+            )
 
         if self.expected_answer is None:
-            raise ValueError("short_answer questions require expected_answer")
+            raise ValueError(f"{self.question_type} questions require expected_answer")
 
         return self
 
@@ -217,6 +222,7 @@ class QuestionBankItem(BaseModel):
     question_type: Literal[
         "multiple_choice",
         "short_answer",
+        "essay",
     ]
 
     review_status: Literal[
@@ -300,6 +306,7 @@ class QuestionBankDetail(BaseModel):
     question_type: Literal[
         "multiple_choice",
         "short_answer",
+        "essay",
     ]
 
     allows_multiple_answers: bool

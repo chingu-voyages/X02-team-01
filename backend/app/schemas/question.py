@@ -63,7 +63,7 @@ class QuestionOut(BaseModel):
 
     id: str
     question_text: str
-    question_type: Literal["multiple_choice", "short_answer"]
+    question_type: Literal["multiple_choice", "short_answer", "essay"]
     allows_multiple_answers: bool = False
     difficulty: Literal["easy", "medium", "hard"]
     options: list[QuestionOptionOut]

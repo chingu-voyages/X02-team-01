@@ -35,7 +35,7 @@ class QuestionVersion(SQLModel, table=True):
         ),
         # Supported MVP question formats
         CheckConstraint(
-            "question_type IN ('multiple_choice', 'short_answer')",
+            "question_type IN ('multiple_choice', 'short_answer', 'essay')",
             name="ck_question_versions_type",
         ),
         # Multi-select applies only to multiple-choice

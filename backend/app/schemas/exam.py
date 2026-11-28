@@ -75,7 +75,7 @@ class ExamQuestionOut(BaseModel):
     id: UUID  # Version ID, not the parent question ID
     position: int
     question_text: str
-    question_type: Literal["multiple_choice", "short_answer"]
+    question_type: Literal["multiple_choice", "short_answer", "essay"]
     allows_multiple_answers: bool
     difficulty: Literal["easy", "medium", "hard"]
     options: list[ExamOptionOut]

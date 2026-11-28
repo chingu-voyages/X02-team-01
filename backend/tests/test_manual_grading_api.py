@@ -41,7 +41,6 @@ from app.models import (
     TextAnswerKey,
     User,
 )
-from app.services import manual_grading_service
 
 pytestmark = pytest.mark.usefixtures("isolated_mfa_configuration")
 
@@ -87,7 +86,7 @@ def _sqlite_compat(dbapi_connection, _connection_record) -> None:
 class GradingHarness:
     """A submitted short answer with three reviewer identities."""
 
-    def __init__(self) -> None:
+    def __init__(self, question_type: str = "short_answer") -> None:
         self.engine = create_engine(
             "sqlite://",
             connect_args={"check_same_thread": False},
@@ -150,7 +149,7 @@ class GradingHarness:
             question_id=question.id,
             version_number=1,
             question_text="Explain the difference between the two concepts.",
-            question_type="short_answer",
+            question_type=question_type,
             submitted_by_id=self.admin.id,
         )
         self.session.add(version)
@@ -543,14 +542,13 @@ def test_learner_results_wait_for_the_human_grade() -> None:
         harness.close()
 
 
-def test_essay_gate_follows_the_response_type(monkeypatch) -> None:
-    harness = GradingHarness()
+def test_essay_gate_follows_the_response_type() -> None:
+    harness = GradingHarness(question_type="essay")
     try:
-        monkeypatch.setattr(
-            manual_grading_service,
-            "_response_type_of",
-            lambda _version: "essay",
-        )
+        queue = "/api/v1/admin/grading/pending?response_type=essay"
+        denied_queue = harness.client.get(queue, headers=harness.contributor_headers)
+        assert denied_queue.status_code == 403, denied_queue.text
+        assert denied_queue.json()["detail"]["code"] == "GRADING_PERMISSION_DENIED"
 
         denied_detail = harness.client.get(
             harness.detail_path, headers=harness.contributor_headers
@@ -568,6 +566,10 @@ def test_essay_gate_follows_the_response_type(monkeypatch) -> None:
         )
         assert allowed.status_code == 200, allowed.text
         assert allowed.json()["response_type"] == "essay"
+        allowed_queue = harness.client.get(queue, headers=harness.contributor_headers)
+        assert allowed_queue.status_code == 200, allowed_queue.text
+        assert len(allowed_queue.json()["items"]) == 1
+        assert allowed_queue.json()["items"][0]["response_type"] == "essay"
 
         graded = harness.grade(harness.contributor_headers, 1)
         assert graded.status_code == 200, graded.text

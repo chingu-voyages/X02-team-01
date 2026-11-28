@@ -5,9 +5,9 @@ route checks it per request (AC2/AC3: viewing AND grading are gated;
 unauthorized direct requests fail safely with 403).
 
 The flow (AC1–AC8):
-- `pending_responses`: submitted text responses (short answers —
-  essays join when JHEP-120 introduces the type) whose grade row is
-  still `ungraded`, filtered to the reviewer's permitted type.
+- `pending_responses`: submitted short answers and essays whose grade row
+  is still `ungraded`, filtered to the reviewer's permitted type. Essays
+  join the queue after final exam submission.
 - `response_detail`: the saved learner response, the pinned question
   version, the answer key + rubric max, and the current grade state.
 - `submit_final_grade`: score validation (0..rubric max), FOR UPDATE
