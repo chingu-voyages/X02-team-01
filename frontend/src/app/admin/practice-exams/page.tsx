@@ -281,6 +281,10 @@ export default function AdminPracticeExamsPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [loadError, setLoadError] = useState("");
   const [exams, setExams] = useState<AdminPracticeExam[]>([]);
+  // A cached route can revalidate while an administrator creates or edits an
+  // exam. Only the latest list request may replace the list, and a confirmed
+  // record change invalidates all list snapshots requested before it.
+  const examListRevisionRef = useRef(0);
   const [certifications, setCertifications] = useState<AdminCertification[]>([]);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -387,6 +391,7 @@ export default function AdminPracticeExamsPage() {
   useEffect(() => {
     if (!ready || !token || role !== "administrator") return;
     let cancelled = false;
+    const revision = ++examListRevisionRef.current;
 
     Promise.all([
       getAdminPracticeExams(token),
@@ -394,7 +399,7 @@ export default function AdminPracticeExamsPage() {
       getAdminCategories(token),
     ])
       .then(([allExams, allCertifications, allCategories]) => {
-        if (cancelled) return;
+        if (cancelled || revision !== examListRevisionRef.current) return;
         setExams(allExams);
         setCertifications(allCertifications);
         setCategories(allCategories);
@@ -408,7 +413,7 @@ export default function AdminPracticeExamsPage() {
         setLoadState("ready");
       })
       .catch((error: unknown) => {
-        if (cancelled) return;
+        if (cancelled || revision !== examListRevisionRef.current) return;
         if (error instanceof ApiError && error.status === 401) {
           handleError(error);
           return;
@@ -503,6 +508,8 @@ export default function AdminPracticeExamsPage() {
   }
 
   function upsertExam(exam: AdminPracticeExam) {
+    // Invalidate a list response that predates this acknowledged record.
+    examListRevisionRef.current += 1;
     setExams((existing) => {
       const found = existing.some((item) => item.id === exam.id);
       return found
@@ -513,11 +520,13 @@ export default function AdminPracticeExamsPage() {
 
   async function refreshList() {
     if (!token || controlsLocked) return;
+    const revision = ++examListRevisionRef.current;
     setRefreshing(true);
     setActionError(null);
     setDeletionNotice("");
     try {
       const results = await getAdminPracticeExams(token);
+      if (revision !== examListRevisionRef.current) return;
       setExams(results);
       setSelectedId((current) =>
         current && results.some((exam) => exam.id === current)
@@ -527,6 +536,7 @@ export default function AdminPracticeExamsPage() {
       setLoadError("");
       setLoadState("ready");
     } catch (error: unknown) {
+      if (revision !== examListRevisionRef.current) return;
       if (error instanceof ApiError && error.status === 401) {
         handleError(error);
         return;
@@ -732,6 +742,8 @@ export default function AdminPracticeExamsPage() {
     setDeletionNotice("");
     try {
       await deleteAdminPracticeExam(token, target.id);
+      // A list request started before deletion must not resurrect this exam.
+      examListRevisionRef.current += 1;
       // Remove only the exact exam acknowledged by the server. Preserve filters.
       setExams((current) => current.filter((exam) => exam.id !== target.id));
       setSelectedId((current) => current === target.id ? null : current);

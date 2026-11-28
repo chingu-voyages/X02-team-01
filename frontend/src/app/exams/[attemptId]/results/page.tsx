@@ -38,7 +38,9 @@ function ResultsPageContent() {
     >
       <div className="mx-auto max-w-7xl">
         <ExamResultsScreen
+          key={attemptId}
           attemptId={attemptId}
+          reviewHref={`/exams/${encodeURIComponent(attemptId)}/review`}
           accessToken={token}
         />
       </div>

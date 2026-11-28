@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     admin_promotion,
     auth,
     categories,
+    exam_question_review,
     exams,
     learner_practice_exams,
     manual_grading,
@@ -43,6 +44,12 @@ api_router.include_router(
 
 api_router.include_router(
     exams.router,
+    prefix="/exams",
+    tags=["exams"],
+)
+
+api_router.include_router(
+    exam_question_review.router,
     prefix="/exams",
     tags=["exams"],
 )
