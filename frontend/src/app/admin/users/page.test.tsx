@@ -53,6 +53,7 @@ vi.mock("@/features/auth/AuthProvider", () => ({
 vi.mock("@/lib/admin-users-api", () => ({
   getAdminUsers: vi.fn(),
   changeAdminUserRole: vi.fn(),
+  updateGradingPermissions: vi.fn(),
 }));
 
 const mockedGet = vi.mocked(getAdminUsers);

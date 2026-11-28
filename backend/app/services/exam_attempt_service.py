@@ -29,6 +29,7 @@ from app.models import (
     ExamResponse,
     ExamResult,
     QuestionVersion,
+    TextAnswerKey,
 )
 from app.services.grading_service import (
     AttemptNotSubmittedError,
@@ -567,14 +568,87 @@ class ExamAttemptService:
         if result is None:
             raise AttemptNotSubmittedError("Attempt must be submitted first")
 
+        grades = self._session.exec(
+            select(ExamQuestionGrade).where(ExamQuestionGrade.attempt_id == attempt.id)
+        ).all()
         counts = defaultdict(int)
-        for outcome in self._session.exec(
-            select(ExamQuestionGrade.outcome).where(
-                ExamQuestionGrade.attempt_id == attempt.id
-            )
-        ).all():
-            counts[outcome] += 1
+        for grade in grades:
+            counts[grade.outcome] += 1
 
+        responses = {
+            response.question_version_id: response
+            for response in self._session.exec(
+                select(ExamResponse).where(ExamResponse.attempt_id == attempt.id)
+            ).all()
+        }
+        pinned_positions = {
+            item.question_version_id: item.position
+            for item in self._session.exec(
+                select(ExamAttemptQuestion).where(
+                    ExamAttemptQuestion.attempt_id == attempt.id
+                )
+            ).all()
+        }
+
+        questions: list[dict] = []
+        pending_count = 0
+        for grade in grades:
+            version = self._session.get(QuestionVersion, grade.question_version_id)
+            if version is None:
+                continue
+            response = responses.get(grade.question_version_id)
+            written = version.question_type != MC_TYPE
+            pending = (
+                grade.outcome == "ungraded"
+                and written
+                and response is not None
+                and response.is_submitted
+                and bool(response.text_response)
+            )
+            if pending:
+                pending_count += 1
+
+            max_points = grade.max_points if grade.outcome == "manually_graded" else 1
+            if pending:
+                key = self._session.exec(
+                    select(TextAnswerKey).where(
+                        TextAnswerKey.question_version_id == version.id
+                    )
+                ).first()
+                if key is not None:
+                    max_points = key.max_points
+
+            if grade.outcome in ("ungradable", "ungraded") and not pending:
+                status = "unavailable"
+            elif pending:
+                status = "pending_manual_grading"
+            else:
+                status = "graded"
+
+            questions.append(
+                {
+                    "attempt_id": attempt.id,
+                    "question_version_id": grade.question_version_id,
+                    "position": pinned_positions.get(
+                        grade.question_version_id,
+                        response.position if response is not None else 0,
+                    ),
+                    "question_text": version.question_text,
+                    "response_type": version.question_type,
+                    "outcome": grade.outcome,
+                    "status": status,
+                    "points_earned": grade.points_earned,
+                    "max_points": max_points,
+                    "feedback": grade.feedback
+                    if grade.outcome == "manually_graded"
+                    else None,
+                    "learner_response": response.text_response
+                    if written and response is not None
+                    else None,
+                }
+            )
+
+        grading_complete = pending_count == 0
         answered, unanswered = self.answer_counts(attempt)
         return {
             "attempt_id": attempt.id,
@@ -591,7 +665,8 @@ class ExamAttemptService:
             # Gradables: everything except excluded (ungraded/ungradable).
             "graded_count": counts["correct"]
             + counts["incorrect"]
-            + counts["unanswered"],
+            + counts["unanswered"]
+            + counts["manually_graded"],
             "points_earned": result.points_earned,
             "points_possible": result.points_possible,
             "score_percent": float(result.score_pct)
@@ -599,8 +674,10 @@ class ExamAttemptService:
             else None,
             "score_basis": "graded_questions_only",
             "passing_score_percent": attempt.passing_threshold_pct,
-            "passed": result.passed,
-            "grading_complete": True,
+            "passed": result.passed if grading_complete else None,
+            "grading_complete": grading_complete,
+            "pending_manual_grading_count": pending_count,
+            "questions": sorted(questions, key=lambda item: item["position"]),
             "submitted_at": attempt.submitted_at,
             "graded_at": result.graded_at,
         }

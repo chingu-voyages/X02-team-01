@@ -35,7 +35,12 @@ from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from app.api.deps import bearer_scheme, get_current_mfa_user, get_current_subject
+from app.api.deps import (
+    bearer_scheme,
+    get_current_mfa_user,
+    get_current_subject,
+    require_contributor_or_administrator,
+)
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
@@ -54,7 +59,9 @@ from app.schemas.auth import (
     ResendVerificationIn,
     UserRegistrationIn,
 )
+from app.schemas.manual_grading import GradingPermissionsOut
 from app.services import mfa_service
+from app.services.admin_user_service import can_grade_response_type
 from app.services.mfa_service import (
     ChallengeLockedError,
     EnrollmentNotAllowedError,
@@ -555,3 +562,18 @@ def mfa_status(
         "mandatory": current_user.role in mfa_service.MFA_MANDATORY_ROLES,
         "enrolled": current_user.mfa_enrolled_at is not None,
     }
+
+
+@router.get("/grading-permissions", response_model=GradingPermissionsOut)
+def grading_permissions(
+    actor: Annotated[User, Depends(require_contributor_or_administrator)],
+) -> GradingPermissionsOut:
+    """JHEP-192/JHEP-122: the signed-in reviewer's own permitted types.
+
+    Flags are read from the database row on every request, so a revocation
+    takes effect immediately without a token refresh (AC8).
+    """
+    return GradingPermissionsOut(
+        short_answer=can_grade_response_type(actor, "short_answer"),
+        essay=can_grade_response_type(actor, "essay"),
+    )

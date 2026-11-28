@@ -1,5 +1,10 @@
 # JHEP — Current API Contract and Mock JSON Responses
 
+> **Manual grading integration (JHEP-122):** Retains the JHEP-207 security
+> contract and includes the manual-grading routes and learner results
+> changes from `dev` at `8231527fd287`. Combined runtime verification
+> remains required. See section 17 and [grading.md](grading.md).
+
 <!-- JHEP-207 checkpoint 6F -->
 > **Security update (JHEP-207):** Authentication, session revocation, MFA enrollment and Users & Access reviewed against commit `a727cd045112` (27 November 2026). See [Administrator security and onboarding](administrator-security.md). Earlier non-security sections retain their stated baselines. Local regression evidence does not certify a deployed environment.
 
@@ -177,6 +182,7 @@ Bulk-imported questions begin as `pending / draft`, so they are not learner-visi
 | POST | `/api/v1/auth/mfa/enroll/setup` | CURRENT (JHEP-109) | Full or enrollment token |
 | POST | `/api/v1/auth/mfa/enroll/verify` | CURRENT (JHEP-109) | Full or enrollment token |
 | POST | `/api/v1/auth/mfa/verify` | CURRENT (JHEP-109) | Challenge token |
+| GET | `/api/v1/auth/grading-permissions` | CURRENT (JHEP-122/192) | Contributor/Admin, full session |
 
 
 ## 2.2 Learner discovery and delivery
@@ -265,6 +271,16 @@ Bulk-imported questions begin as `pending / draft`, so they are not learner-visi
 | PATCH | `/api/v1/admin/users/{user_id}/grading-permissions` | CURRENT (JHEP-192) | Admin |
 | GET | `/api/v1/admin/users/{user_id}/administrator-promotion` | CURRENT (JHEP-207) | Admin |
 | POST | `/api/v1/admin/users/{user_id}/administrator-promotion` | CURRENT (JHEP-207) | Admin + recent MFA sign-in |
+
+## 2.6A Admin — manual grading (JHEP-122)
+
+| Method | Route | Status | Roles |
+|---|---|---|---|
+| GET | `/api/v1/admin/grading/permissions` | CURRENT | Contributor/Admin |
+| GET | `/api/v1/admin/grading/pending?response_type=` | CURRENT | Contributor/Admin, permitted response types |
+| GET | `/api/v1/admin/grading/responses/{attempt_id}/{question_version_id}` | CURRENT | Contributor/Admin, permitted response type |
+| GET | `/api/v1/admin/grading/responses/{attempt_id}/{question_version_id}/history` | CURRENT | Contributor/Admin, permitted response type |
+| POST | `/api/v1/admin/grading/responses/{attempt_id}/{question_version_id}/grade` | CURRENT | Contributor/Admin, permitted response type |
 
 ## 2.7 Operational
 
@@ -625,7 +641,11 @@ POST /api/v1/exams/{attempt_id}/submit
 GET  /api/v1/exams/{attempt_id}/results
 ```
 
-The server-provided `passed` value is authoritative. Short-answer questions may remain ungraded.
+The server-provided `passed` value is authoritative. Submitted written answers
+may await manual grading. While grading is pending, `grading_complete` is
+`false` and `passed` is `null`; a provisional score is not a final result.
+Authorized human grading and grade revisions update the stored result.
+See section 17 for the per-question breakdown. Answer keys are not returned.
 Configuration changes and unpublishing do not invalidate previously persisted results.
 The completed-answer review endpoint is deferred separately under JHEP-207.
 
@@ -1850,3 +1870,44 @@ Admin:        pending/draft --publish directly--> approved + active (JHEP-159's 
   `review_note`). The current detail response exposes status, feedback, creator/
   submitter IDs and `last_updated`; reviewer ID and review timestamp are not
   separate detail response fields.
+
+---
+
+# 17. Manual grading of written responses — CURRENT (JHEP-122)
+
+Written submissions stay `ungraded` after exam submission until an authorized
+human records a final grade. All routes below require a full authenticated
+Contributor or Administrator session (the JHEP-207 MFA and revocation rules
+apply). Review routes re-check JHEP-192 grading permissions per response type
+on every request (`view`, `history` and `grade` are equally gated).
+
+| Route | Behaviour |
+|---|---|
+| `GET /api/v1/auth/grading-permissions` | Caller's effective `{short_answer, essay}` flags (Contributor/Administrator only) |
+| `GET /api/v1/admin/grading/permissions` | Reviewer's own effective flags |
+| `GET /api/v1/admin/grading/pending?response_type=short_answer|essay` | Submitted written responses with no final grade, filtered to permitted types; `{items, count}` |
+| `GET /api/v1/admin/grading/responses/{attempt_id}/{question_version_id}` | Saved response, pinned question/rubric ceiling, expected answer, current grade, history, labelled provisional AI context |
+| `GET /api/v1/admin/grading/responses/{attempt_id}/{question_version_id}/history` | Dedicated history view: `{items, count}` |
+| `POST /api/v1/admin/grading/responses/{attempt_id}/{question_version_id}/grade` | Final grade/revision; body `{score: int >= 0, feedback?: string <= 5000}` |
+
+`score` must be a whole number within the pinned rubric's `max_points`;
+out-of-range values return `422 {detail:{code:"INVALID_SCORE"}}`.
+Permission denials return `403 {detail:{code:"GRADING_PERMISSION_DENIED"}}`;
+missing responses return `404 RESPONSE_NOT_FOUND`, and responses that are not
+submitted written answers return `409 RESPONSE_NOT_GRADABLE`.
+
+Each accepted action writes one `manual_grade_history` row with actor id/role,
+action (`graded`/`revised`), score, rubric ceiling, feedback and timestamp.
+Only the latest grade counts; a revision atomically updates the grade row,
+attempt result, saved response state and history. `provisional_ai_feedback` is
+always labelled `Provisional AI feedback — context only, not a final grade`.
+The current provisional AI field is a placeholder (`available: false`);
+this merge does not implement automatic AI grading.
+
+`GET /api/v1/exams/{attempt_id}/results` now also returns
+`pending_manual_grading_count` and a `questions[]` breakdown with
+`status` = `graded` / `pending_manual_grading` / `unavailable`, per-question
+score, rubric ceiling and human feedback. While any submitted written answer
+awaits grading, `grading_complete` is `false` and `passed` is `null`; the UI
+must not present a provisional score as a final pass/fail result. Unavailable
+or ungraded responses are never auto-failed.

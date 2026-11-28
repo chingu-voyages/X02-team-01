@@ -8,6 +8,7 @@ import { ApiError } from "@/lib/api-client";
 import {
   changeAdminUserRole,
   getAdminUsers,
+  updateGradingPermissions,
   type AdminUserItem,
 } from "@/lib/admin-users-api";
 
@@ -19,6 +20,7 @@ vi.mock("@/features/auth/AuthProvider", () => ({
 vi.mock("@/lib/admin-users-api", () => ({
   getAdminUsers: vi.fn(),
   changeAdminUserRole: vi.fn(),
+  updateGradingPermissions: vi.fn(),
 }));
 
 const mockHandleError = vi.fn();
@@ -228,6 +230,55 @@ describe("AdminUsersPage", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("sends the toggled permission values when saving grading permissions", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getAdminUsers).mockResolvedValueOnce({
+      items: sampleUsers,
+      total: 2,
+      limit: 20,
+      offset: 0,
+    });
+
+    vi.mocked(updateGradingPermissions).mockResolvedValueOnce({
+      role_before: "contributor",
+      role_after: "contributor",
+      changed_at: "2026-01-04T00:00:00Z",
+      user: { ...sampleUsers[1], grade_short_answers: true },
+    } as never);
+
+    render(<AdminUsersPage />);
+
+    await screen.findByText("Katherine Johnson");
+
+    await user.click(screen.getAllByRole("button", { name: "Grading Permissions" })[0]);
+
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    // Both checkboxes start unchecked; toggle short answers on and save.
+    const shortAnswers = screen.getByRole("checkbox", {
+      name: /Grade short answers/i,
+    });
+    await user.click(shortAnswers);
+
+    await user.click(
+      screen.getByRole("button", { name: "Save permissions" }),
+    );
+
+    // The PUT payload must carry the NEW toggled values, not the stale
+    // originals (regression: permissions silently saved unchanged).
+    expect(updateGradingPermissions).toHaveBeenCalledWith(
+      "admin-token",
+      "u-2",
+      { grade_short_answers: true, grade_essays: false },
+    );
+    expect(
+      await screen.findByText(
+        "Katherine Johnson's grading permissions were saved.",
+      ),
+    ).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
