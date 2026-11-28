@@ -8,6 +8,7 @@ import {
   startPublishedPracticeExam,
 } from "@/lib/practice-exam-api";
 import { ApiError } from "@/lib/api-client";
+import { getUnfinishedExamAttempts, type UnfinishedExam } from "@/lib/unfinished-exams-api";
 import type { ExamCreatedResponse } from "@/types/exam-api.types";
 import type { PublishedPracticeExam } from "@/types/practice-exam-api.types";
 
@@ -26,6 +27,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mockPush }) }));
 vi.mock("@/features/auth/AuthProvider", () => ({
   useDemoSession: () => mockSession,
 }));
+vi.mock("@/lib/unfinished-exams-api", () => ({ getUnfinishedExamAttempts: vi.fn() }));
 vi.mock("@/lib/practice-exam-api", () => ({
   getPublishedPracticeExams: vi.fn(),
   startPublishedPracticeExam: vi.fn(),
@@ -88,6 +90,7 @@ async function startFirstExam() {
 describe("PracticeExamsScreen — published exam selection and isolation", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.mocked(getUnfinishedExamAttempts).mockResolvedValue([]);
     mockSession = { token: "demo-token", ready: true, handleError: mockHandleError };
     mockedGet.mockResolvedValue([exam]);
     mockedStart.mockResolvedValue({
@@ -277,8 +280,118 @@ describe("PracticeExamsScreen — published exam selection and isolation", () =>
     mockSession = { ...mockSession, token: "other-token" };
     rerender(<PracticeExamsScreen />);
     await waitFor(() => expect(mockedGet).toHaveBeenLastCalledWith("other-token"));
+    await screen.findByRole("button", { name: `Start exam — ${exam.name}` });
     expect(screen.queryByRole("button", { name: /Continue exam/ })).toBeNull();
     expect(startButton(exam)).toBeTruthy();
     expect(mockPush).not.toHaveBeenCalled();
+  });
+});
+
+function savedAttempt(overrides: Partial<UnfinishedExam> = {}): UnfinishedExam {
+  return {
+    attempt_id: existingAttemptId,
+    practice_exam_id: exam.id,
+    certification_name: exam.certification_name,
+    category_name: exam.category_name,
+    name: exam.name,
+    question_count: 5,
+    submitted_count: 2,
+    current_position: 4,
+    started_at: "2026-11-27T20:00:00Z",
+    ...overrides,
+  };
+}
+
+describe("JHEP-89 recovery discovery", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mockSession = { token: "demo-token", ready: true, handleError: mockHandleError };
+    mockedGet.mockResolvedValue([exam, otherExam]);
+    vi.mocked(getUnfinishedExamAttempts).mockResolvedValue([savedAttempt()]);
+  });
+  afterEach(cleanup);
+
+  it("shows the original count, submitted progress and position before any Start request", async () => {
+    const user = userEvent.setup();
+    render(<PracticeExamsScreen />);
+    const region = await screen.findByRole("region", { name: "Continue learning" });
+    const card = within(region).getByRole("article", { name: exam.name });
+    expect(within(card).getByText("2 of 5 questions submitted")).toBeVisible();
+    expect(within(card).getByRole("progressbar")).toHaveAttribute("aria-valuetext", "2 of 5 questions submitted");
+    expect(within(card).getByText("Resume at question 4")).toBeVisible();
+    expect(screen.queryByRole("button", { name: `Start exam — ${exam.name}` })).not.toBeInTheDocument();
+    expect(startButton(otherExam)).toBeEnabled();
+    const resume = within(card).getByRole("button", { name: `Continue exam — ${exam.name}` });
+    resume.focus();
+    await user.keyboard("{Enter}");
+    expect(mockPush).toHaveBeenCalledExactlyOnceWith(`/exams/${existingAttemptId}`);
+    expect(mockedStart).not.toHaveBeenCalled();
+  });
+
+  it("recovers unpublished and historical attempts even with an empty published catalog", async () => {
+    mockedGet.mockResolvedValue([]);
+    vi.mocked(getUnfinishedExamAttempts).mockResolvedValue([
+      savedAttempt(), savedAttempt({ attempt_id: otherAttemptId, practice_exam_id: null, name: null, category_name: null, certification_name: "Historical" }),
+    ]);
+    render(<PracticeExamsScreen />);
+    const region = await screen.findByRole("region", { name: "Continue learning" });
+    expect(within(region).getAllByRole("article")).toHaveLength(2);
+    expect(within(region).getByRole("button", { name: "Continue exam — Historical practice exam" })).toBeVisible();
+    expect(screen.getByText("No published practice exams are currently available.")).toBeVisible();
+  });
+
+  it("keeps unfinished exams visible while filtering available new exams", async () => {
+    const user = userEvent.setup();
+    mockedGet.mockResolvedValue([exam, otherExam, differentCert]);
+    render(<PracticeExamsScreen />);
+    const region = await screen.findByRole("region", { name: "Continue learning" });
+    await user.selectOptions(screen.getByLabelText("Certification or topic"), differentCert.certification_id);
+    expect(within(region).getByRole("button", { name: `Continue exam — ${exam.name}` })).toBeVisible();
+    expect(startButton(differentCert)).toBeVisible();
+    expect(screen.queryByRole("button", { name: `Start exam — ${otherExam.name}` })).toBeNull();
+  });
+
+  it("shows a retryable discovery failure without falsely declaring there are no saved attempts", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getUnfinishedExamAttempts).mockRejectedValueOnce(new Error("Offline"));
+    render(<PracticeExamsScreen />);
+    const retry = await screen.findByRole("button", { name: "Retry loading unfinished exams" });
+    expect(screen.getByRole("alert")).toHaveTextContent("We could not load your unfinished exams");
+    expect(startButton(exam)).toBeEnabled();
+    await user.click(retry);
+    await screen.findByRole("region", { name: "Continue learning" });
+    expect(screen.queryByRole("button", { name: "Retry loading unfinished exams" })).toBeNull();
+    expect(screen.queryByRole("button", { name: `Start exam — ${exam.name}` })).toBeNull();
+  });
+
+  it("does not hide recoverable attempts if loading the published catalog fails", async () => {
+    mockedGet.mockRejectedValueOnce(new Error("Catalog unavailable"));
+    render(<PracticeExamsScreen />);
+    expect(await screen.findByRole("region", { name: "Continue learning" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry loading practice exams" })).toBeVisible();
+  });
+
+  it("hides another account's recovery data immediately and ignores a late list response", async () => {
+    let release!: (value: UnfinishedExam[]) => void;
+    vi.mocked(getUnfinishedExamAttempts).mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const { rerender } = render(<PracticeExamsScreen />);
+    await waitFor(() => expect(getUnfinishedExamAttempts).toHaveBeenCalledWith("demo-token"));
+    vi.mocked(getUnfinishedExamAttempts).mockResolvedValue([]);
+    mockSession = { ...mockSession, token: "other-token" };
+    rerender(<PracticeExamsScreen />);
+    await screen.findByRole("button", { name: `Start exam — ${exam.name}` });
+    await act(async () => release([savedAttempt()]));
+    expect(screen.queryByRole("region", { name: "Continue learning" })).toBeNull();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("offers Finish guidance at 100% without claiming the exam is submitted", async () => {
+    mockedGet.mockResolvedValue([exam]);
+    vi.mocked(getUnfinishedExamAttempts).mockResolvedValue([savedAttempt({ submitted_count: 5 })]);
+    render(<PracticeExamsScreen />);
+    const region = await screen.findByRole("region", { name: "Continue learning" });
+    expect(within(region).getByText("All answers submitted. Finish your exam.")).toBeVisible();
+    expect(screen.getByText("You have unfinished attempts for all currently available practice exams.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^Start exam/ })).toBeNull();
   });
 });

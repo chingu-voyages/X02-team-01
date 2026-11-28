@@ -109,7 +109,7 @@ async function authenticatedGet<T>(page: Page, pathname: string): Promise<T> {
 }
 
 function examCard(page: Page, fixture: PublicationFixture) {
-  return page.getByRole("article", { name: fixture.exam_name, exact: true });
+  return page.getByRole("region", { name: "Available practice exams" }).getByRole("article", { name: fixture.exam_name, exact: true });
 }
 
 function startButton(page: Page, fixture: PublicationFixture) {
@@ -146,12 +146,13 @@ async function checkLearnerCatalog(
   await expect(page.getByRole("heading", { name: "Select a practice exam", exact: true })).toBeVisible();
   const list = page.getByRole("region", { name: "Available practice exams" });
   const empty = page.getByText("No published practice exams are currently available.", { exact: true });
-  await expect(list.or(empty)).toBeVisible();
+  const allInProgress = page.getByText("You have unfinished attempts for all currently available practice exams.", { exact: true });
+  await expect(list.or(empty).or(allInProgress)).toBeVisible();
 
   const body = await authenticatedGet<PublishedPracticeExamListResponse>(page, learnerCatalogPath);
   const matches = body.exams.filter((exam) => exam.certification_id === fixture.certification_id);
   if (body.exams.length > 0) {
-    await expect(list).toBeVisible();
+    await expect(list.or(allInProgress)).toBeVisible();
   } else {
     await expect(empty).toBeVisible();
   }
@@ -342,8 +343,31 @@ test.describe("JHEP-201 practice exam publishing journey", () => {
       });
       const draft = await test.step("Create a draft through the UI; learner catalog remains unchanged", async () => {
         const record = await createDraft(page, fixture, fixture.question_count);
-        await expect(page.getByRole("button", { name: `Manage ${fixture.exam_name}`, exact: true })).toContainText("Draft");
-        await expect(page.getByRole("button", { name: "Publish exam", exact: true })).toBeEnabled();
+        // Creation opens the details panel. The list may be hidden in the
+        // single-panel layout, so verify the selected draft before switching.
+        const details = page.locator('section[aria-labelledby="exam-details-heading"]:visible');
+        const detailsHeading = details.locator("#exam-details-heading");
+        await expect(detailsHeading).toBeVisible();
+        await expect(detailsHeading).toHaveText(fixture.exam_name);
+        await expect(details.getByText("Draft", { exact: true })).toBeVisible();
+
+        const backToList = details.getByRole("button", { name: "Back to exam list", exact: true });
+        const usesSinglePanel = await backToList.isVisible();
+        if (usesSinglePanel) {
+          await backToList.click();
+          await expect(page.getByRole("heading", { name: "All practice exams", exact: true })).toBeVisible();
+        }
+
+        const examRow = page.getByRole("button", { name: `Manage ${fixture.exam_name}`, exact: true });
+        await expect(examRow).toBeVisible();
+        await expect(examRow).toContainText("Draft");
+
+        if (usesSinglePanel) {
+          await examRow.click();
+        }
+        await expect(detailsHeading).toBeVisible();
+        await expect(detailsHeading).toHaveText(fixture.exam_name);
+        await expect(details.getByRole("button", { name: "Publish exam", exact: true })).toBeEnabled();
         await checkLearnerCatalog(learner, fixture, false);
         return record;
       });
@@ -357,7 +381,10 @@ test.describe("JHEP-201 practice exam publishing journey", () => {
       const unpublished = await test.step("Unpublish through the UI; hide the exam without losing the existing attempt", async () => {
         const record = await changePublication(page, draft.id, false);
         await checkLearnerCatalog(learner, fixture, false);
-        await learner.goto(`/exams/${attempt.attempt_id}`);
+        const recoveryCard = learner.getByRole("region", { name: "Continue learning" }).getByRole("article", { name: fixture.exam_name, exact: true });
+        await expect(recoveryCard.getByText("In progress", { exact: true })).toBeVisible();
+        await recoveryCard.getByRole("button", { name: `Continue exam — ${fixture.exam_name}`, exact: true }).click();
+        await expect(learner).toHaveURL(new RegExp(`/exams/${attempt.attempt_id}/?$`));
         await expect(learner.locator("#question-heading:visible")).toHaveText(attempt.questions[0].question_text);
         const resumed = await authenticatedGet<ExamAttempt>(learner, `/api/v1/exams/${attempt.attempt_id}`);
         expect(resumed).toMatchObject({ attempt_id: attempt.attempt_id, status: "in_progress", question_count: fixture.question_count });
@@ -488,7 +515,11 @@ test.describe("JHEP-107 configurable exam length and responsive UX", () => {
         ]);
         expect(submitted.status()).toBe(200);
         await expect(option).toBeDisabled();
+        await learner.route("**/api/v1/exams/unfinished", (route) => route.fulfill({
+          status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Recovery temporarily unavailable" }),
+        }), { times: 1 });
         await checkLearnerCatalog(learner, fixture, true, draft.id, 1);
+        await expect(learner.getByRole("button", { name: "Retry loading unfinished exams" })).toBeVisible();
       });
       const savedAttempt = await authenticatedGet<ExamAttempt>(learner, `/api/v1/exams/${original.attempt_id}`);
       expect(savedAttempt.questions[0].response?.is_submitted).toBe(true);
@@ -522,21 +553,20 @@ test.describe("JHEP-107 configurable exam length and responsive UX", () => {
         await expect(startButton(learner, fixture)).toBeDisabled();
         await expectNoHorizontalOverflow(learner);
         await card.getByRole("button", { name: "Reload exams", exact: true }).click();
-        await expectCardCount(learner, fixture, 2);
+        const refreshed = await authenticatedGet<PublishedPracticeExamListResponse>(learner, learnerCatalogPath);
+        expect(refreshed.exams.find((exam) => exam.id === draft.id)?.question_count).toBe(2);
+        const recovery = learner.getByRole("region", { name: "Continue learning" });
+        await expect(recovery.getByText("1 of 1 questions submitted", { exact: true })).toBeVisible();
+        await expect(startButton(learner, fixture)).toHaveCount(0);
+        await expect(learner.getByRole("button", { name: "Retry loading unfinished exams" })).toHaveCount(0);
         await expect(card.getByRole("alert")).toHaveCount(0);
         await expect(learner).toHaveURL(/\/categories\/?$/);
       });
 
       await test.step("Continue the original attempt, preserving its count and submitted response", async () => {
-        const [conflict] = await Promise.all([
-          waitForApi(learner, "/api/v1/exams", "POST"),
-          startButton(learner, fixture).click(),
-        ]);
-        expect(conflict.status()).toBe(409);
-        expect(await conflict.json()).toMatchObject({ detail: { code: "ATTEMPT_IN_PROGRESS", attempt_id: original.attempt_id } });
-        const card = examCard(learner, fixture);
-        await expect(card.getByText("Current length for new attempts", { exact: true })).toBeVisible();
-        await expect(card.getByText(/existing attempt keeps its original question count and order/)).toBeVisible();
+        const card = learner.getByRole("region", { name: "Continue learning" }).getByRole("article", { name: fixture.exam_name, exact: true });
+        await expect(card.getByText("1 of 1 questions submitted", { exact: true })).toBeVisible();
+        await expect(card.getByText("All answers submitted. Finish your exam.")).toBeVisible();
         await card.getByRole("button", { name: `Continue exam — ${fixture.exam_name}`, exact: true }).click();
         await expect(learner).toHaveURL(new RegExp(`/exams/${original.attempt_id}/?$`));
         await expect(learner.locator("#question-heading:visible")).toHaveText(original.questions[0].question_text);

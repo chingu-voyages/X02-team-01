@@ -51,6 +51,11 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     retrySave,
     isAttemptSubmitted,
     viewResults,
+    isLeaving,
+    canSaveAndLeave,
+    handleSaveAndLeave,
+    leaveError,
+    backToPracticeExams,
   } = useExamAttempt(attemptId);
 
   if (!ready || !token) {
@@ -82,6 +87,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
             >
               Retry
             </Button>
+            <Button type="button" variant="outline" onClick={backToPracticeExams} className="mt-2 min-h-11 w-full sm:mt-0 sm:ml-2 sm:w-auto">Back to practice exams</Button>
           </>
         )}
       </section>
@@ -93,7 +99,10 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
       <section className="space-y-3 rounded-xl border border-brand-border bg-white p-4 text-brand-text sm:p-6">
         <h1 className="text-xl font-bold">This exam is already submitted</h1>
         <p className="text-sm">Your submitted answers are locked. You can view the results of this attempt.</p>
-        <Button type="button" onClick={viewResults} className="min-h-11 w-full sm:w-auto">View results</Button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button type="button" onClick={viewResults} className="min-h-11 w-full sm:w-auto">View results</Button>
+          <Button type="button" variant="outline" onClick={backToPracticeExams} className="min-h-11 w-full sm:w-auto">Back to practice exams</Button>
+        </div>
       </section>
     );
   }
@@ -129,7 +138,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         isFlagged={isFlagged}
         isSavingFlag={isSavingFlag}
         canToggleFlag={canToggleFlag}
-        disabled={isSubmitting || isFinishing}
+        disabled={isSubmitting || isFinishing || isLeaving}
         flagError={flagError}
         onToggleFlag={handleToggleFlag}
       />
@@ -138,8 +147,12 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         state={saveState}
         errorMessage={saveErrorMessage}
         canRetry={canRetrySave}
-        disabled={isSubmitting || isFinishing}
+        disabled={isSubmitting || isFinishing || isLeaving}
         onRetry={retrySave}
+        onLeave={isAttemptSubmitted ? undefined : handleSaveAndLeave}
+        canLeave={canSaveAndLeave}
+        isLeaving={isLeaving}
+        leaveError={leaveError}
       />
 
       <ExamSidebar
@@ -152,6 +165,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         isSubmitted={isSubmitted}
         isSubmitting={isSubmitting}
         isFinishing={isFinishing || isAttemptSubmitted}
+        isLeaving={isLeaving}
         isSavingFlag={isSavingFlag}
         allQuestionsSubmitted={allQuestionsSubmitted}
         finishError={finishError}
@@ -168,7 +182,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
             textValue={textValue}
             isSubmitted={isSubmitted}
             isSubmitting={isSubmitting}
-            isFinishing={isFinishing || isAttemptSubmitted}
+            isFinishing={isFinishing || isAttemptSubmitted || isLeaving}
             submitError={submitError}
             feedback={currentFeedback}
             onSelectOption={handleSelect}
@@ -181,7 +195,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
             selectedCount={selectedCount}
             isSubmitted={isSubmitted}
             isSubmitting={isSubmitting}
-            isFinishing={isFinishing || isAttemptSubmitted}
+            isFinishing={isFinishing || isAttemptSubmitted || isLeaving}
             isSavingFlag={isSavingFlag}
             allQuestionsSubmitted={allQuestionsSubmitted}
             firstUnsubmittedIndex={firstUnsubmittedIndex}
@@ -202,6 +216,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           isSubmitted={isSubmitted}
           isSubmitting={isSubmitting}
           isFinishing={isFinishing || isAttemptSubmitted}
+          isLeaving={isLeaving}
           isSavingFlag={isSavingFlag}
           allQuestionsSubmitted={allQuestionsSubmitted}
           finishError={finishError}

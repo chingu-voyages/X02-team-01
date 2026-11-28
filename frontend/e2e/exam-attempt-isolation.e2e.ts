@@ -83,21 +83,29 @@ async function resume(
   attempt: ExamCreatedResponse,
   position: number,
 ) {
-  const response = await selectAndStart(page, fixture, exam);
-  expect(response.status(), `resume ${exam.name}`).toBe(409);
-  expect(await response.json()).toMatchObject({
-    detail: { code: "ATTEMPT_IN_PROGRESS", attempt_id: attempt.attempt_id },
-  });
-  const card = page.getByRole("article", { name: exam.name, exact: true });
-  await expect(card.getByText("In progress", { exact: true })).toBeVisible();
-  await expect(card.getByText(`You have an unfinished attempt for ${exam.name}.`, { exact: true })).toBeVisible();
-  await expect(card.getByRole("button", { name: `Start exam — ${exam.name}`, exact: true })).toHaveCount(0);
-  // The sibling stays independently startable, even after a resume conflict.
-  const sibling = fixture.exams.find((item) => item.id !== exam.id);
-  if (!sibling) throw new Error("Missing sibling practice exam fixture");
-  await expect(page.getByRole("button", { name: `Start exam — ${sibling.name}`, exact: true })).toBeEnabled();
-  await card.getByRole("button", { name: `Continue exam — ${exam.name}`, exact: true }).click();
-  await expectQuestion(page, attempt, position);
+  const creates: string[] = [];
+  const recordCreate = (request: import("@playwright/test").Request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/v1/exams") creates.push(request.url());
+  };
+  page.on("request", recordCreate);
+  try {
+    await page.goto("/categories");
+    const recovery = page.getByRole("region", { name: "Continue learning" });
+    const card = recovery.getByRole("article", { name: exam.name, exact: true });
+    await expect(card.getByText("In progress", { exact: true })).toBeVisible();
+    await expect(card.getByText(`Resume at question ${position}`, { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: `Start exam — ${exam.name}`, exact: true })).toHaveCount(0);
+    // Sibling attempt remains independent, whether startable or resumable.
+    const sibling = fixture.exams.find((item) => item.id !== exam.id);
+    if (!sibling) throw new Error("Missing sibling practice exam fixture");
+    await expect(page.getByRole("button", { name: `Continue exam — ${sibling.name}`, exact: true })
+      .or(page.getByRole("button", { name: `Start exam — ${sibling.name}`, exact: true }))).toBeEnabled();
+    await card.getByRole("button", { name: `Continue exam — ${exam.name}`, exact: true }).click();
+    await expectQuestion(page, attempt, position);
+    expect(creates).toEqual([]);
+  } finally {
+    page.off("request", recordCreate);
+  }
 }
 
 async function expectQuestion(page: Page, attempt: ExamCreatedResponse, number: number) {
@@ -229,8 +237,8 @@ test("JHEP-203: identical published exam configurations keep independent attempt
   await navigate(page, programming, 3);
   await expectSavedPosition(page, headers, programming, 3);
 
-  // Recover Data by starting the same published exam again. The API must
-  // return Data's attempt ID and the browser must use that exact ID.
+  // Recover Data directly from the learner-owned unfinished list.
+  // No new attempt creation request should be made.
   await resume(page, fixture, dataExam, data, 2);
   const dataSaved = await readAttempt(page, headers, data);
   expect(dataSaved.status).toBe("in_progress");

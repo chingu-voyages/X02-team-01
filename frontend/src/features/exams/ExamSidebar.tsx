@@ -19,6 +19,7 @@ interface ExamSidebarProps {
   isSubmitted: boolean;
   isSubmitting: boolean;
   isFinishing: boolean;
+  isLeaving?: boolean;
   isSavingFlag?: boolean;
   allQuestionsSubmitted: boolean;
   finishError: string;
@@ -36,6 +37,7 @@ export default function ExamSidebar({
   isSubmitted,
   isSubmitting,
   isFinishing,
+  isLeaving = false,
   isSavingFlag = false,
   allQuestionsSubmitted,
   finishError,
@@ -49,7 +51,7 @@ export default function ExamSidebar({
   const mobileTriggerRef = useRef<HTMLButtonElement>(null);
 
   const isLastQuestion = currentQuestionIndex >= totalQuestions - 1;
-  const navigationDisabled = isSubmitting || isFinishing;
+  const navigationDisabled = isSubmitting || isFinishing || isLeaving;
 
   function closeMobileNavigation() {
     // Return focus before removing the selected tile. ExamHeader moves focus
@@ -66,7 +68,7 @@ export default function ExamSidebar({
         <Button
           type="button"
           onClick={onFinish}
-          disabled={isFinishing || isSubmitting || isSavingFlag}
+          disabled={isFinishing || isSubmitting || isSavingFlag || isLeaving}
           className="min-h-11 w-full cursor-pointer rounded-xl bg-brand-primary px-5 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-brand-primary-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isFinishing ? "Finishing exam..." : "Finish Exam"}

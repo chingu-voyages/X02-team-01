@@ -41,3 +41,25 @@ describe("ExamSaveStatus", () => {
     expect(screen.getByRole("button", { name: "Retry saving" })).toBeDisabled();
   });
 });
+
+describe("Save and leave action", () => {
+  it("supports keyboard activation and distinguishes leaving from submission", async () => {
+    const user = userEvent.setup();
+    const onLeave = vi.fn();
+    render(<ExamSaveStatus state={state("idle")} errorMessage="" canRetry={false} disabled={false} onRetry={vi.fn()} onLeave={onLeave} canLeave />);
+    expect(screen.getByText("Take a break and continue later without submitting your exam.")).toBeVisible();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Save and leave" })).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(onLeave).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the leave action while leaving or submitting and announces failure", () => {
+    const props = { state: state("saving", 1), errorMessage: "", canRetry: false, onRetry: vi.fn(), onLeave: vi.fn() };
+    const { rerender } = render(<ExamSaveStatus {...props} disabled={false} canLeave={false} isLeaving />);
+    expect(screen.getByRole("button", { name: "Saving and leaving…" })).toBeDisabled();
+    rerender(<ExamSaveStatus {...props} disabled canLeave leaveError="Your changes are not saved yet." />);
+    expect(screen.getByRole("button", { name: "Save and leave" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent("Your changes are not saved yet.");
+  });
+});

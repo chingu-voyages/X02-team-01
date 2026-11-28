@@ -316,7 +316,7 @@ test.describe("JHEP-105 numbered exam navigation", () => {
     await page.close();
 
     // A new context has no sessionStorage or cookies from the original page.
-    // Re-authenticate as the same learner, then resume the exact attempt URL.
+    // Re-authenticate as the same learner and discover the exact saved attempt.
     const context = await browser.newContext({ baseURL: "http://localhost:3030", viewport: { width: 390, height: 844 } });
     try {
       const returned = await context.newPage();
@@ -329,7 +329,12 @@ test.describe("JHEP-105 numbered exam navigation", () => {
       returned.on("request", (request) => {
         if (request.method() === "POST" && new URL(request.url()).pathname === "/api/v1/exams") creates.push(request.url());
       });
-      await returned.goto(`/exams/${attempt.attempt_id}`);
+      const recovered = returned.getByRole("region", { name: "Continue learning" });
+      const continueButton = recovered.getByRole("button", { name: /^Continue exam/ });
+      await expect(continueButton).toHaveCount(1);
+      await expect(recovered.getByText("1 of 3 questions submitted", { exact: true })).toBeVisible();
+      await expect(recovered.getByText("Resume at question 2", { exact: true })).toBeVisible();
+      await continueButton.click();
       await expectQuestion(returned, attempt, 2);
       await expect(firstOption(returned)).toBeChecked();
       await expect(firstOption(returned)).toBeEnabled();
@@ -366,6 +371,14 @@ test.describe("JHEP-105 numbered exam navigation", () => {
     await expect(firstOption(page)).toBeEnabled();
     expect((await readAttempt()).questions[0].response ?? null).toBeNull();
     await expect(page.getByText("Progress saved", { exact: true })).toHaveCount(0);
+    // Explicit leave must not discard a draft. Fail its automatic retry too.
+    await page.route(`**${endpoint}`, async (route) => {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Save temporarily unavailable" }) });
+    }, { times: 1 });
+    await page.getByRole("button", { name: "Save and leave", exact: true }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "Your changes are not saved yet" })).toBeVisible();
+    await expectQuestion(page, attempt, 1);
+    await expect(firstOption(page)).toBeChecked();
     const retry = page.getByRole("button", { name: "Retry saving" });
     await expect(retry).toBeVisible();
     await retry.focus();
@@ -379,6 +392,34 @@ test.describe("JHEP-105 numbered exam navigation", () => {
     await expectQuestion(page, attempt, 1);
     await expect(firstOption(page)).toBeChecked();
     await expect(firstOption(page)).toBeEnabled();
+  });
+
+  test("JHEP-89: save and leave on mobile flushes drafts, then resumes the same attempt", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const { attempt, readAttempt, writes } = await startAttempt(page, "immediate");
+    const nav = mobileNavigation(page);
+    await nav.open();
+    await questionButton(page, 2).click();
+    await expectQuestion(page, attempt, 2);
+    await firstOption(page).click();
+    const leave = page.getByRole("button", { name: "Save and leave", exact: true });
+    await expect(leave).toBeVisible();
+    await leave.focus();
+    await leave.press("Enter");
+    await expect(page).toHaveURL(/\/categories\/?$/);
+    const recovered = page.getByRole("region", { name: "Continue learning" });
+    await expect(recovered.getByText("0 of 3 questions submitted", { exact: true })).toBeVisible();
+    await expect(recovered.getByText("Resume at question 2", { exact: true })).toBeVisible();
+    const saved = await readAttempt();
+    expect(saved.current_position).toBe(2);
+    expect(saved.questions[1].response).toMatchObject({ is_submitted: false, selected_option_ids: [attempt.questions[1].options[0].id] });
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    expect(overflow).toBe(false);
+    await recovered.getByRole("button", { name: /^Continue exam/ }).click();
+    await expectQuestion(page, attempt, 2);
+    await expect(firstOption(page)).toBeChecked();
+    await expect(firstOption(page)).toBeEnabled();
+    expect(writes.filter((write) => write.startsWith("POST "))).toEqual([]);
   });
 
 });

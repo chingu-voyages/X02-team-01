@@ -58,6 +58,8 @@ export function useExamAttempt(attemptId: string) {
   const [isFinishing, setIsFinishing] = useState(false);
   const [finishError, setFinishError] = useState("");
   const finishingRef = useRef(false);
+  const [isLeaving, setIsLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState("");
   const [pendingFlag, setPendingFlag] = useState<FlagRequest | null>(null);
   const [flagErrors, setFlagErrors] = useState<Record<string, string>>({});
   const flagRequestRef = useRef<FlagRequest | null>(null);
@@ -152,6 +154,8 @@ export function useExamAttempt(attemptId: string) {
         setCurrentQuestionIndex(restoredPosition);
         setIsSubmitting(false);
         setIsFinishing(false);
+        setIsLeaving(false);
+        setLeaveError("");
         setSubmitError("");
         setFinishError("");
         setLoadError("");
@@ -191,14 +195,14 @@ export function useExamAttempt(attemptId: string) {
   // Submission and flag operations may still be in flight after the draft
   // queue has become empty. Protect that interval too.
   useEffect(() => {
-    if (!isCurrentLoad || !(isSubmitting || isFinishing || pendingFlag)) return;
+    if (!isCurrentLoad || !(isSubmitting || isFinishing || isLeaving || pendingFlag)) return;
     function warn(event: BeforeUnloadEvent) {
       event.preventDefault();
       event.returnValue = "";
     }
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [isCurrentLoad, isSubmitting, isFinishing, pendingFlag]);
+  }, [isCurrentLoad, isSubmitting, isFinishing, isLeaving, pendingFlag]);
 
   function getQueue(): SaveQueue | null {
     const scoped = queueRef.current;
@@ -235,7 +239,7 @@ export function useExamAttempt(attemptId: string) {
   const flagPendingQuestionId = isCurrentLoad && pendingFlag?.attemptId === attemptId ? pendingFlag.questionId : null;
   const isSavingFlag = flagPendingQuestionId !== null;
   const flagError = flagErrors[questionId] ?? "";
-  const canToggleFlag = Boolean(isActive && currentQuestion && !isSavingFlag && !isSubmitting && !isFinishing);
+  const canToggleFlag = Boolean(isActive && currentQuestion && !isSavingFlag && !isSubmitting && !isFinishing && !isLeaving);
 
   const activeSaveState = isCurrentLoad ? saveState : idleSave;
   const saveErrorStatus = activeSaveState.error instanceof ApiError ? activeSaveState.error.status : null;
@@ -252,7 +256,10 @@ export function useExamAttempt(attemptId: string) {
 
   function retrySave() {
     const queue = getQueue();
-    if (queue && canRetrySave && !submittingRef.current && !finishingRef.current) void queue.retry();
+    if (queue && canRetrySave && !submittingRef.current && !finishingRef.current) {
+      setLeaveError("");
+      void queue.retry();
+    }
   }
 
   function goToQuestion(index: number): boolean {
@@ -441,6 +448,43 @@ export function useExamAttempt(attemptId: string) {
     }
   }
 
+  const canSaveAndLeave = isActive && !isSubmitting && !isFinishing && !isSavingFlag && !isLeaving;
+
+  // Leaving is not final submission. Freeze all exam edits while flushing,
+  // and navigate only after the server acknowledges every pending write.
+  async function handleSaveAndLeave() {
+    const queue = getQueue();
+    if (!queue || !canSaveAndLeave || submittingRef.current || finishingRef.current || flagRequestRef.current) return;
+    finishingRef.current = true;
+    setIsLeaving(true);
+    setLeaveError("");
+    let navigating = false;
+    try {
+      const state = queue.getState();
+      const saved = state.status === "error" && canRetrySave ? await queue.retry() : await queue.flush();
+      if (!stillCurrent(queue)) return;
+      if (!saved || queue.getState().pendingCount > 0) {
+        setLeaveError("Your changes are not saved yet. Stay here and resolve the save issue before leaving.");
+        return;
+      }
+      router.replace("/categories");
+      navigating = true;
+    } catch {
+      if (stillCurrent(queue)) setLeaveError("Unable to leave safely. Please try again.");
+    } finally {
+      if (!navigating && stillCurrent(queue)) {
+        finishingRef.current = false;
+        setIsLeaving(false);
+      }
+    }
+  }
+
+  function backToPracticeExams() {
+    if (loadStatus === "error" || (isAttemptSubmitted && saveState.pendingCount === 0)) {
+      router.replace("/categories");
+    }
+  }
+
   function viewResults() {
     if (isAttemptSubmitted && saveState.pendingCount === 0) router.replace(`/exams/${encodeURIComponent(attemptId)}/results`);
   }
@@ -453,5 +497,6 @@ export function useExamAttempt(attemptId: string) {
     flagPendingQuestionId, isSavingFlag, flagError, canToggleFlag, handleToggleFlag, handleSelect,
     handleTextChange, handleSubmit, handleFinish, saveState: isCurrentLoad ? saveState : idleSave,
     canRetrySave, saveErrorMessage, retrySave, isAttemptSubmitted, viewResults,
+    isLeaving, canSaveAndLeave, handleSaveAndLeave, leaveError, backToPracticeExams,
   };
 }

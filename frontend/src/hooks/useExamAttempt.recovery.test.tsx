@@ -315,3 +315,66 @@ describe("JHEP-89 exam recovery integration", () => {
     expect(saveExamPosition).not.toHaveBeenCalled();
   });
 });
+
+describe("JHEP-89 save and leave", () => {
+  it("waits for the last draft before leaving and never submits", async () => {
+    let release!: (value: ExamDraftSaved) => void;
+    vi.mocked(saveExamDraft).mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const { result } = await load();
+    act(() => result.current.handleSelect("q1-a"));
+    act(() => { void result.current.handleSaveAndLeave(); void result.current.handleSaveAndLeave(); });
+    expect(result.current.isLeaving).toBe(true);
+    expect(result.current.canSaveAndLeave).toBe(false);
+    expect(replace).not.toHaveBeenCalled();
+    act(() => {
+      result.current.handleSelect("q1-b");
+      result.current.handleSubmit();
+      expect(result.current.goToQuestion(1)).toBe(false);
+    });
+    expect(result.current.currentSelected).toEqual(["q1-a"]);
+    await act(async () => release(confirmation("q1", ["q1-a"])));
+    await waitFor(() => expect(replace).toHaveBeenCalledExactlyOnceWith("/categories"));
+    expect(submitAnswer).not.toHaveBeenCalled();
+    expect(submitExam).not.toHaveBeenCalled();
+  });
+
+  it("stays on the exam after a failed save and supports save-and-leave retry", async () => {
+    vi.mocked(saveExamDraft).mockRejectedValueOnce(new ApiError(503, "Offline"));
+    const { result } = await load();
+    act(() => result.current.handleSelect("q1-a"));
+    await act(async () => result.current.handleSaveAndLeave());
+    expect(result.current.isLeaving).toBe(false);
+    expect(result.current.leaveError).toContain("not saved yet");
+    expect(result.current.currentSelected).toEqual(["q1-a"]);
+    expect(replace).not.toHaveBeenCalled();
+    await act(async () => result.current.handleSaveAndLeave());
+    expect(replace).toHaveBeenCalledExactlyOnceWith("/categories");
+    expect(persisted.questions[0].response?.is_submitted).toBe(false);
+  });
+
+  it("never retries an authorization failure or leaves with unsaved work", async () => {
+    vi.mocked(saveExamDraft).mockRejectedValueOnce(new ApiError(401, "Expired"));
+    const { result } = await load();
+    act(() => result.current.handleSelect("q1-a"));
+    await act(async () => result.current.handleSaveAndLeave());
+    await act(async () => result.current.handleSaveAndLeave());
+    expect(saveExamDraft).toHaveBeenCalledTimes(1);
+    expect(result.current.currentSelected).toEqual(["q1-a"]);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("ignores a late leave confirmation from an old session", async () => {
+    let release!: (value: ExamDraftSaved) => void;
+    vi.mocked(saveExamDraft).mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const hook = await load();
+    act(() => hook.result.current.handleSelect("q1-a"));
+    act(() => { void hook.result.current.handleSaveAndLeave(); });
+    session.token = "token-b";
+    persisted = fixture("attempt-b");
+    hook.rerender({ attempt: "attempt-b" });
+    await waitFor(() => expect(hook.result.current.loadStatus).toBe("ready"));
+    await act(async () => release(confirmation("q1", ["q1-a"])));
+    expect(replace).not.toHaveBeenCalled();
+    expect(hook.result.current.isLeaving).toBe(false);
+  });
+});
