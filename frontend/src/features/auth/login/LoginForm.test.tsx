@@ -374,3 +374,24 @@ describe("LoginForm Component", () => {
     },
   );
 });
+
+it("routes an enrollment-only administrator to Account Security", async () => {
+  mockSetToken.mockClear();
+  const mockFetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      access_token: "restricted-token",
+      token_type: "bearer",
+      mfa_enrollment_required: true,
+      mfa_required: false,
+      learner: { role: "administrator" },
+    }),
+  });
+  global.fetch = mockFetch;
+  render(<LoginForm />);
+  await userEvent.type(screen.getByLabelText(/email address/i), "admin@example.com");
+  await userEvent.type(screen.getByLabelText(/^password$/i), "AdminPassword123!");
+  await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
+  await waitFor(() => expect(mockSetToken).toHaveBeenCalledWith("restricted-token", "/account/security"));
+  expect(mockFetch).toHaveBeenCalledTimes(1);
+});

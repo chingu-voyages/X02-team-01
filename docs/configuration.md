@@ -344,7 +344,9 @@ source .venv/bin/activate
 python -m scripts.seed_demo_admin --confirm-local
 ```
 
-Current demo admin credentials are printed by the script.
+Current demo admin credentials are printed by the script. It refreshes the local demo password and preserves MFA fields. An unenrolled administrator can only complete Account Security setup until MFA is confirmed and a fresh sign-in succeeds. Configure a local `MFA_ENCRYPTION_KEY` first; preserve the existing key if accounts are already enrolled.
+
+To create missing local team administrator accounts instead, use `python -m scripts.seed_local_admins --confirm-local` from `backend/`. This prompts for a password and preserves matching existing accounts. See [Administrator security and onboarding](administrator-security.md#5-local-development-only).
 
 Seed the local demo learner/certification content:
 
@@ -439,6 +441,13 @@ Database settings are supplied through the Render database binding.
 
 `JWT_SECRET_KEY` is generated/configured by Render.
 
+`MFA_ENCRYPTION_KEY` must be configured as a stable backend secret before
+releasing mandatory administrator MFA. It is not declared in the reviewed
+`render.yaml`; verify the dashboard/environment configuration. Never replace
+an existing working key during routine deployment. Verify at least one
+authorized administrator can sign in with MFA, and verify the deployed email
+transport and verification/reset link targets before release.
+
 `FRONTEND_BASE_URL` should point to the deployed frontend.
 
 `MEDIA_BASE_URL` can be non-secret public configuration.
@@ -506,30 +515,45 @@ Production transports fail startup validation when required credentials are abse
 ---
 
 
-# Multi-factor authentication — JHEP-109
+# Multi-factor authentication — JHEP-109 / JHEP-207
 
-MFA is optional at application startup. Without `MFA_ENCRYPTION_KEY`, the MFA
-endpoints return `503 MFA_NOT_CONFIGURED`, while the rest of the application
-continues to operate.
+Administrator MFA is mandatory. The application can start without
+`MFA_ENCRYPTION_KEY`, but MFA setup returns `503 MFA_NOT_CONFIGURED`,
+administrator promotion requires configured and usable MFA, and already
+enrolled accounts still require their second factor at login. A missing
+key is not an administrator-access bypass.
 
 | Variable | Purpose |
 |---|---|
-| `MFA_ENCRYPTION_KEY` | Long random value used to encrypt TOTP secrets at rest. Generate once per deployment with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
-| `MFA_CHALLENGE_MINUTES` | Sign-in challenge lifetime after the password stage; default 5 minutes. |
-| `MFA_MAX_ATTEMPTS` | Failed codes permitted before a challenge locks; default 5. |
-| `MFA_RECOVERY_CODE_COUNT` | Single-use recovery codes issued during enrollment; default 8. |
+| `MFA_ENCRYPTION_KEY` | Stable backend-only secret used to encrypt TOTP secrets at rest. For a fresh environment only, generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
+| `MFA_CHALLENGE_MINUTES` | Sign-in challenge lifetime, default 5 minutes. |
+| `MFA_MAX_ATTEMPTS` | Failed codes permitted before a challenge locks, default 5. |
+| `MFA_RECOVERY_CODE_COUNT` | Single-use recovery codes issued at enrollment, default 8. |
+| `LEARNER_ACCESS_TOKEN_HOURS` | Full login session lifetime for all roles, default 12 hours. |
+
+The 15-minute administrator enrollment-only token and 300-second
+administrator promotion freshness window are fixed by the implementation;
+they are not additional environment switches.
 
 Role policy:
 
-```text
-Administrators MUST enroll
-Contributors MAY enroll
-Learners are not offered enrollment
-```
+- Administrators must enroll and sign in with MFA before administrative access.
+- Contributors may enroll; confirmed enrollment then requires MFA at login.
+- Learners cannot begin new enrollment; existing enrollment survives role changes.
 
-Enrollment is available through `/account/security`. Un-enrolled
-Administrators receive a forced enrollment prompt after sign-in. Lost-device
-recovery uses the single-use recovery codes displayed during enrollment.
+Enrollment is available through `/account/security`. After confirmation,
+save the one-time recovery codes and sign in again. Confirmed enrollment
+cannot be overwritten via setup. Password resets do not disable MFA.
+
+Keep the existing encryption key stable across redeploys and replicas of the
+same environment; losing or replacing it can render stored secrets unusable.
+Use independent keys for independent environments and never share the
+database with a different key. No automatic key rotation or self-service
+authenticator reset is implemented. Store a protected recovery backup of the
+key. Never expose it to the frontend or commit it.
+
+See [Administrator security and onboarding](administrator-security.md) for
+production preflight, local account setup, promotion, and recovery limits.
 
 ---
 

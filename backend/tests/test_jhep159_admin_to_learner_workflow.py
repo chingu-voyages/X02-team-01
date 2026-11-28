@@ -2,6 +2,7 @@ from collections.abc import Iterator
 from uuid import uuid4
 
 import sqlalchemy as sa
+from admin_auth_fixtures import sign_in_administrator
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import (
@@ -19,6 +20,8 @@ from app.models import (
     Certification,
     ExamAttempt,
     ExamAttemptQuestion,
+    MfaLoginChallenge,
+    MfaRecoveryCode,
     PracticeExam,
     Question,
     QuestionImage,
@@ -71,7 +74,7 @@ def enable_sqlite_foreign_keys(
         cursor.close()
 
 
-def test_full_admin_to_learner_publication_workflow():
+def test_full_admin_to_learner_publication_workflow(isolated_mfa_configuration):
     engine = create_engine(
         "sqlite://",
         connect_args={
@@ -84,6 +87,8 @@ def test_full_admin_to_learner_publication_workflow():
         engine,
         tables=[
             User.__table__,
+            MfaLoginChallenge.__table__,
+            MfaRecoveryCode.__table__,
             Certification.__table__,
             Category.__table__,
             PracticeExam.__table__,
@@ -129,17 +134,9 @@ def test_full_admin_to_learner_publication_workflow():
                 # ---------------------------------------------
                 # Real administrator login.
                 # ---------------------------------------------
-                admin_login = client.post(
-                    "/api/v1/auth/login",
-                    json={
-                        "email": (administrator_email),
-                        "password": (administrator_password),
-                    },
+                admin_body = sign_in_administrator(
+                    client, administrator_email, administrator_password
                 )
-
-                assert admin_login.status_code == 200
-
-                admin_body = admin_login.json()
 
                 assert admin_body["learner"]["role"] == "administrator"
 

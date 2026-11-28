@@ -90,23 +90,22 @@ class MfaHarness:
 from collections.abc import Iterator  # noqa: E402
 
 
-def test_login_response_is_byte_identical_for_non_enrolled_accounts(
-    mfa_env, monkeypatch
-) -> None:
-    """The dormant-by-default proof: an MFA-mandatory role that has not
-    enrolled gets the exact same login response as before the feature."""
+def test_unenrolled_administrator_has_only_enrollment_access(mfa_env, monkeypatch):
+    """Password verification grants only a restricted enrollment session."""
     harness = MfaHarness(monkeypatch)
     try:
         harness.create_user(email="admin@example.test", role="administrator")
         body = harness.login("admin@example.test")
+        assert body["mfa_enrollment_required"] is True
         assert body["mfa_required"] is False
-        assert body["challenge_id"] is None  # the dormant default
-        # the token is a REAL session — it works on protected routes
-        probe = harness.client.get(
-            "/api/v1/admin/users",
-            headers={"Authorization": f"Bearer {body['access_token']}"},
-        )
-        assert probe.status_code == 200
+        assert body["challenge_id"] is None
+        headers = {"Authorization": f"Bearer {body['access_token']}"}
+        probe = harness.client.get("/api/v1/admin/users", headers=headers)
+        assert probe.status_code == 403
+        assert probe.json()["detail"]["code"] == "MFA_ENROLLMENT_REQUIRED"
+        status = harness.client.get("/api/v1/auth/mfa/status", headers=headers)
+        assert status.status_code == 200
+        assert status.json()["enrolled"] is False
     finally:
         harness.close()
 

@@ -6,13 +6,13 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from learner_auth_fixtures import issue_learner_token
 from sqlalchemy import text
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app import models  # noqa: F401
 from app.api.v1.endpoints.exams import get_exam_service
-from app.core.security import create_access_token
 from app.main import app
 from app.models import (
     AnswerOption,
@@ -34,7 +34,7 @@ EXAMS_URL = "/api/v1/exams"
 
 
 def _headers(learner_id: UUID) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token(str(learner_id))}"}
+    return {"Authorization": f"Bearer {issue_learner_token(str(learner_id))}"}
 
 
 def _add_multiple_choice(
@@ -236,7 +236,7 @@ class SpyExamService:
 
 
 @pytest.fixture
-def api_client():
+def api_client(stub_learner_database):
     learner_id = uuid4()
     certification_id = uuid4()
     category_id = uuid4()

@@ -15,6 +15,7 @@ from threading import Event
 from uuid import UUID, uuid4
 
 import pytest
+from admin_auth_fixtures import domain_access_token, make_domain_user
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
@@ -89,7 +90,7 @@ def pg_environment():
 
 def _seed_bank(session: Session, question_count: int = 2) -> dict:
     """Publish only question-bank content, NOT a practice exam."""
-    admin = User(
+    admin = make_domain_user(
         email=f"admin-{uuid4().hex}@example.test",
         role="administrator",
         is_verified=True,
@@ -163,6 +164,7 @@ def _seed_bank(session: Session, question_count: int = 2) -> dict:
 
     ids = {
         "admin_id": admin.id,
+        "admin_headers": {"Authorization": f"Bearer {domain_access_token(admin)}"},
         "learner_id": learner.id,
         "another_learner_id": another_learner.id,
         "certification_id": certification.id,
@@ -180,7 +182,7 @@ def _auth(user_id: UUID) -> dict[str, str]:
 def _create(client: TestClient, ids: dict, *, count: int = 2, name: str = "Demo"):
     return client.post(
         f"{API}/admin/practice-exams",
-        headers=_auth(ids["admin_id"]),
+        headers=ids["admin_headers"],
         json={
             "certification_id": str(ids["certification_id"]),
             "category_id": str(ids["category_id"]),
@@ -193,7 +195,7 @@ def _create(client: TestClient, ids: dict, *, count: int = 2, name: str = "Demo"
 def _publish(client: TestClient, ids: dict, exam_id: str, is_published: bool):
     return client.patch(
         f"{API}/admin/practice-exams/{exam_id}/publication",
-        headers=_auth(ids["admin_id"]),
+        headers=ids["admin_headers"],
         json={"is_published": is_published},
     )
 

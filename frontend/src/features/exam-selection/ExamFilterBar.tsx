@@ -25,13 +25,13 @@ export default function ExamFilterBar({
   const isAllSelected = selectedCertificationId === "all";
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-wrap items-center gap-2.5">
+    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+      <div className="flex min-w-0 flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
         <button
           type="button"
           aria-pressed={isAllSelected}
           onClick={onSelectAll}
-          className={`inline-flex h-10.5 cursor-pointer items-center gap-2 rounded-full border px-4.5 text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:outline-none ${
+          className={`inline-flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 rounded-full border px-4 text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto ${
             isAllSelected
               ? "border-[#18183e] bg-[#18183e] text-white"
               : "border-brand-border bg-white text-brand-text hover:border-brand-primary"
@@ -49,7 +49,7 @@ export default function ExamFilterBar({
           </span>
         </button>
 
-        <div className="relative inline-flex items-center">
+        <div className="relative inline-flex w-full min-w-0 items-center sm:w-auto sm:max-w-xs">
           <label htmlFor="certification-filter" className="sr-only">
             Certification or topic
           </label>
@@ -57,7 +57,7 @@ export default function ExamFilterBar({
             id="certification-filter"
             value={selectedCertificationId}
             onChange={(event) => onSelectCertification(event.target.value)}
-            className="h-10.5 max-w-full cursor-pointer appearance-none rounded-full border border-brand-border bg-white pl-4.5 pr-10 text-sm font-semibold text-brand-text transition-colors hover:border-brand-primary focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="min-h-11 w-full min-w-0 max-w-full cursor-pointer appearance-none truncate rounded-full border border-brand-border bg-white pl-4 pr-10 text-sm font-semibold text-brand-text transition-colors hover:border-brand-primary focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
           >
             <option value="all">Certification / topic</option>
             {certifications.map((certification) => (

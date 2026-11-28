@@ -61,6 +61,8 @@ def decode_access_token(token: str) -> str:
         options={"require": ["sub", "iat", "exp"]},
     )
 
+    if payload.get("mfa") in ("pending", "enrollment"):
+        raise jwt.InvalidTokenError("Restricted MFA tokens are not access tokens")
     return payload["sub"]
 
 
@@ -82,7 +84,12 @@ def decode_access_token_issued_at(token: str) -> tuple[str, datetime]:
     return payload["sub"], issued_at
 
 
-def create_access_token_for_learner(user) -> str:
+def create_access_token_for_learner(
+    user,
+    *,
+    authenticated_at: datetime | None = None,
+    mfa_verified_at: datetime | None = None,
+) -> str:
     """JHEP-25: learner-scoped token with the dedicated session TTL
     (`learner_access_token_hours`, default 12 h — the default 30-minute
     token expires mid-exam). The payload carries the subject and the
@@ -92,9 +99,14 @@ def create_access_token_for_learner(user) -> str:
     payload = {
         "sub": str(user.id),
         "role": user.role,
-        "iat": now,
+        # Preserve sub-second precision when comparing to the account's
+        # revocation cutoff. MFA sessions retain the password-challenge time,
+        # so completing an old challenge cannot mint a newer session.
+        "iat": (authenticated_at or now).timestamp(),
         "exp": now + timedelta(hours=settings.learner_access_token_hours),
     }
+    if mfa_verified_at is not None:
+        payload["mfa_verified_at"] = mfa_verified_at.timestamp()
 
     return jwt.encode(
         payload,

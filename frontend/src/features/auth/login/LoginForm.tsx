@@ -13,6 +13,7 @@ type UserRole =
 
 type LoginResponse = {
   mfa_required?: boolean;
+  mfa_enrollment_required?: boolean;
   challenge_id?: string;
   access_token: string;
   token_type: "bearer";
@@ -183,35 +184,11 @@ export default function LoginForm() {
           "administrator" ||
         loginData.learner.role === "contributor";
 
-      // JHEP-109 (PO decision): an Administrator who hasn't enrolled is
-      // routed to the Security page BEFORE the app — the mandatory
-      // enrollment prompt. The session token still works for the
-      // security page itself.
-      if (loginData.learner.role === "administrator") {
-        try {
-          const statusResponse = await fetch(
-            "/api/v1/auth/mfa/status",
-            {
-              headers: {
-                Authorization: `Bearer ${loginData.access_token}`,
-              },
-            },
-          );
-          const mfaStatus = (await statusResponse.json()) as {
-            mandatory?: boolean;
-            enrolled?: boolean;
-          };
-          if (mfaStatus.mandatory && mfaStatus.enrolled === false) {
-            setToken(
-              loginData.access_token,
-              "/account/security",
-            );
-            return;
-          }
-        } catch {
-          // the status probe failing must not block sign-in — the
-          // Security page re-checks anyway
-        }
+      // The login response declares the enrollment-only scope. A failed
+      // status probe must never turn restricted access into normal access.
+      if (loginData.mfa_enrollment_required) {
+        setToken(loginData.access_token, "/account/security");
+        return;
       }
 
       const destination = isStaff

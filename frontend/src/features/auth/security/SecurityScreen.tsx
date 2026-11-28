@@ -1,316 +1,253 @@
 "use client";
 
 import QRCode from "qrcode";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { CheckCircle2, ShieldCheck } from "lucide-react";
+import { useAuth, useDemoSession } from "@/features/auth/AuthProvider";
+import { isEnrollmentOnlyToken } from "@/features/auth/session-scope";
 
-import Navbar from "@/components/layouts/Navbar";
-import Card from "@/components/ui/Card";
-import FormInput from "@/components/ui/FormInput";
-import { useDemoSession } from "@/features/auth/AuthProvider";
-import { ApiError } from "@/lib/api-client";
-
-// JHEP-109: the Security page — the enrollment trigger (PO-confirmed)
-// plus the MFA posture for the signed-in account.
 type MfaStatus = {
   configured: boolean;
   available: boolean;
   mandatory: boolean;
   enrolled: boolean;
 };
+type SetupData = { otpauth_uri: string; secret: string };
+type Confirmation = { recovery_codes: string[] };
 
-type SetupData = {
-  otpauth_uri: string;
-  secret: string;
-};
+class SecurityRequestError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+  }
+}
 
-type EnrollmentState = "loading" | "ready" | "setup" | "done";
-
-export default function SecurityScreen() {
-  const { token, ready, handleError } = useDemoSession();
-  const [status, setStatus] = useState<EnrollmentState>("loading");
-  const [mfaStatus, setMfaStatus] = useState<MfaStatus | null>(null);
-  const [setupData, setSetupData] = useState<SetupData | null>(null);
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-  const [pageError, setPageError] = useState<string | null>(null);
-  const [code, setCode] = useState("");
-  const [confirming, setConfirming] = useState(false);
-  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
-
-  const loadStatus = useCallback(
-    async (activeToken: string) => {
-      try {
-        const response = await fetch("/api/v1/auth/mfa/status", {
-          headers: { Authorization: `Bearer ${activeToken}` },
-        });
-        if (!response.ok) {
-          throw new Error("Unable to load your security settings");
-        }
-        const data = (await response.json()) as MfaStatus;
-        setMfaStatus(data);
-        setStatus("ready");
-      } catch (error) {
-        if (error instanceof ApiError) {
-          handleError(error);
-          return;
-        }
-        setPageError(
-          error instanceof Error
-            ? error.message
-            : "Unable to load your security settings",
-        );
-        setStatus("ready");
-      }
+async function securityRequest<T>(token: string, path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`/api/v1/auth/mfa/${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
     },
-    [handleError],
-  );
+    cache: "no-store",
+  });
+  const data: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    let message = "Unable to complete the security request. Try again.";
+    if (response.status === 401) {
+      message = "Your security session has expired or changed. Sign in again to continue.";
+    } else if (data && typeof data === "object") {
+      if ("message" in data && typeof data.message === "string") message = data.message;
+      else if ("detail" in data && typeof data.detail === "string") message = data.detail;
+      else if ("detail" in data && data.detail && typeof data.detail === "object" && "message" in data.detail && typeof data.detail.message === "string") message = data.detail.message;
+    }
+    throw new SecurityRequestError(response.status, message);
+  }
+  return data as T;
+}
+
+const primary = "inline-flex min-h-11 w-full items-center justify-center rounded-md bg-brand-accent px-4 py-2 text-sm font-semibold text-brand-text hover:bg-brand-accent-tint focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto";
+const secondary = "inline-flex min-h-11 w-full items-center justify-center rounded-md border border-brand-border bg-white px-4 py-2 text-sm font-semibold text-brand-text hover:bg-brand-surface focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50 sm:w-auto";
+
+function SecurityWorkspace({ token, logout }: { token: string; logout: () => void }) {
+  const restricted = isEnrollmentOnlyToken(token);
+  const [status, setStatus] = useState<MfaStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [retryKey, setRetryKey] = useState(0);
+  const [error, setError] = useState("");
+  const [mustSignIn, setMustSignIn] = useState(false);
+  const [setup, setSetup] = useState<SetupData | null>(null);
+  const [qr, setQr] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [codeError, setCodeError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
+  const [saved, setSaved] = useState(false);
+  const inFlight = useRef(false);
+  const codeInput = useRef<HTMLInputElement>(null);
+  const recoveryHeading = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
-    if (!ready || !token) return;
-
-    let cancelled = false;
-
-    // state updates only after the await (no synchronous setState in
-    // the effect); explicit reloads stay in event handlers via loadStatus
-    fetch("/api/v1/auth/mfa/status", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(async (response) => {
-        if (cancelled) return;
-        if (!response.ok) {
-          throw new Error("Unable to load your security settings");
-        }
-        const data = (await response.json()) as MfaStatus;
-        setMfaStatus(data);
-        setStatus("ready");
+    const controller = new AbortController();
+    securityRequest<MfaStatus>(token, "status", { signal: controller.signal })
+      .then((next) => {
+        if (controller.signal.aborted) return;
+        setStatus(next);
+        setError("");
+        setMustSignIn(false);
       })
-      .catch(async (error: unknown) => {
-        if (cancelled) return;
-        if (error instanceof ApiError) {
-          handleError(error);
-          return;
-        }
-        setPageError(
-          error instanceof Error
-            ? error.message
-            : "Unable to load your security settings",
-        );
-        setStatus("ready");
-      });
+      .catch((caught: unknown) => {
+        if (controller.signal.aborted) return;
+        setError(caught instanceof Error ? caught.message : "Unable to load security settings.");
+        setMustSignIn(caught instanceof SecurityRequestError && [401, 403].includes(caught.status));
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [token, retryKey]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [ready, token, handleError]);
+  useEffect(() => {
+    if (recoveryCodes) recoveryHeading.current?.focus();
+  }, [recoveryCodes]);
 
-  const startSetup = useCallback(async () => {
-    if (!token) return;
+  function retryStatus() {
+    setLoading(true);
+    setError("");
+    setRetryKey((value) => value + 1);
+  }
+
+  function displayError(caught: unknown) {
+    setError(caught instanceof Error ? caught.message : "Network error. Try again.");
+    setMustSignIn(caught instanceof SecurityRequestError && [401, 403, 409].includes(caught.status));
+  }
+
+  async function startSetup() {
+    if (inFlight.current || !status?.configured || !status.available || status.enrolled) return;
+    inFlight.current = true;
+    setBusy(true);
+    setError("");
+    setCodeError("");
     try {
-      const response = await fetch("/api/v1/auth/mfa/enroll/setup", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = (await response.json()) as
-        | SetupData
-        | { message?: string };
-      if (!response.ok || !("otpauth_uri" in data)) {
-        const message =
-          "message" in data && typeof data.message === "string"
-            ? data.message
-            : "Unable to start enrollment";
-        setPageError(message);
-        return;
-      }
-      const setup = data as SetupData;
-      setSetupData(setup);
-      setQrDataUrl(
-        await QRCode.toDataURL(setup.otpauth_uri, {
-          width: 220,
-          margin: 1,
-        }),
-      );
-      setStatus("setup");
-    } catch {
-      setPageError("Unable to start enrollment");
-    }
-  }, [token]);
-
-  const confirmSetup = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!token || confirming) return;
-    setConfirming(true);
-    setPageError(null);
-    try {
-      const response = await fetch("/api/v1/auth/mfa/enroll/verify", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ code: code.trim() }),
-      });
-      const data = (await response.json()) as {
-        recovery_codes?: string[];
-        message?: string;
-      };
-      if (!response.ok || !data.recovery_codes) {
-        setPageError(
-          data.message ?? "That code didn't match. Try again.",
-        );
-        return;
-      }
-      setRecoveryCodes(data.recovery_codes);
-      setStatus("done");
-    } catch {
-      setPageError("Network error. Please try again.");
+      const result = await securityRequest<SetupData>(token, "enroll/setup", { method: "POST" });
+      setSetup(result);
+      setCode("");
+      // Manual setup remains available even if local QR rendering fails.
+      const image = await QRCode.toDataURL(result.otpauth_uri, { width: 220, margin: 2 }).catch(() => null);
+      setQr(image);
+    } catch (caught: unknown) {
+      displayError(caught);
     } finally {
-      setConfirming(false);
+      inFlight.current = false;
+      setBusy(false);
     }
-  };
+  }
 
-  if (!ready || !token || status === "loading") {
-    return (
-      <div className="min-h-screen bg-[#f3f4f5]">
-        <Navbar />
-        <p role="status" className="p-6">
-          Checking session...
-        </p>
-      </div>
-    );
+  async function confirmSetup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (inFlight.current || !setup || mustSignIn) return;
+    const normalized = code.trim();
+    if (!/^\d{6}$/.test(normalized)) {
+      setCodeError("Enter all six digits from your authenticator.");
+      codeInput.current?.focus();
+      return;
+    }
+    inFlight.current = true;
+    setBusy(true);
+    setError("");
+    setCodeError("");
+    try {
+      const result = await securityRequest<Confirmation>(token, "enroll/verify", {
+        method: "POST",
+        body: JSON.stringify({ code: normalized }),
+      });
+      // Confirmation invalidates this token. Keep the receipt in memory
+      // until the user explicitly finishes saving their recovery codes.
+      setRecoveryCodes(result.recovery_codes);
+      setSetup(null);
+      setQr(null);
+      setCode("");
+    } catch (caught: unknown) {
+      if (caught instanceof SecurityRequestError && caught.status === 400) {
+        setCodeError(caught.message);
+        codeInput.current?.focus();
+      } else displayError(caught);
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
   }
 
   return (
-    <div className="min-h-screen bg-[#f3f4f5]">
-      <Navbar />
-      <div className="mx-auto max-w-xl px-4 py-10 space-y-6">
-        <h1 className="text-2xl font-bold">Account security</h1>
+    <section className="mx-auto w-full min-w-0 max-w-2xl space-y-5 px-4 py-6 text-brand-text sm:px-6 sm:py-10">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-bold uppercase tracking-wide text-brand-text/65">The Job Hackers · Account</p>
+          <h1 className="mt-1 text-2xl font-bold sm:text-3xl">Account security</h1>
+          <p className="mt-2 text-sm text-brand-text/75">Protect your account with an authenticator app.</p>
+        </div>
+        {!recoveryCodes && <button type="button" className={secondary} onClick={logout} disabled={busy}>Sign out</button>}
+      </header>
 
-        {pageError && (
-          <p
-            role="alert"
-            className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-          >
-            {pageError}
-          </p>
-        )}
+      {restricted && !recoveryCodes && (
+        <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-950">
+          <ShieldCheck className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+          <div className="min-w-0 text-sm">
+            <p className="font-semibold">Administrator setup required</p>
+            <p className="mt-1">Complete two-factor enrollment and sign in again before using administrator features. This temporary setup session expires after 15 minutes.</p>
+          </div>
+        </div>
+      )}
 
-        <Card className="p-6">
-          <h2 className="font-bold text-lg">
-            Two-factor authentication (TOTP)
-          </h2>
-
-          {mfaStatus && !mfaStatus.configured && (
-            <p className="mt-3 text-sm text-gray-600">
-              MFA is not configured on this deployment yet. Ask the
-              platform administrator to set
-              <code className="mx-1">MFA_ENCRYPTION_KEY</code>.
-            </p>
-          )}
-
-          {mfaStatus?.enrolled ? (
-            <p role="status" className="mt-3 text-sm text-emerald-700">
-              ✓ Two-factor authentication is enabled on this account.
-              Your authenticator app generates your sign-in codes; your
-              recovery codes were shown at enrollment.
-            </p>
-          ) : mfaStatus && mfaStatus.available ? (
+      {recoveryCodes ? (
+        <div className="space-y-4 rounded-md border border-green-200 bg-white p-4 shadow-xs sm:p-6">
+          <CheckCircle2 className="size-7 text-green-700" aria-hidden="true" />
+          <h2 ref={recoveryHeading} tabIndex={-1} className="text-xl font-bold outline-none">Two-factor authentication enabled</h2>
+          <p className="text-sm">Save these recovery codes somewhere secure. Each works once and this is the only time they will be displayed.</p>
+          <ul aria-label="Recovery codes" className="grid min-w-0 gap-2 rounded-md border border-brand-border bg-brand-surface p-3 font-mono text-sm min-[360px]:grid-cols-2">
+            {recoveryCodes.map((value) => <li key={value} className="wrap-anywhere">{value}</li>)}
+          </ul>
+          <label className="flex min-h-11 items-start gap-3 text-sm font-medium">
+            <input type="checkbox" checked={saved} onChange={(event) => setSaved(event.target.checked)} className="mt-0.5 size-5 shrink-0 accent-brand-primary" />
+            I have saved my recovery codes securely.
+          </label>
+          <p className="text-sm text-brand-text/70">Your previous session has been invalidated. Sign in with your password and authenticator to continue.</p>
+          <button type="button" className={primary} disabled={!saved} onClick={logout}>Sign in again</button>
+        </div>
+      ) : (
+        <div className="min-w-0 space-y-4 rounded-md border border-brand-border bg-white p-4 shadow-xs sm:p-6" aria-busy={loading || busy}>
+          <h2 className="text-lg font-semibold">Two-factor authentication (TOTP)</h2>
+          {loading && <p role="status" className="text-sm text-brand-text/70">Checking security settings...</p>}
+          {error && <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800 wrap-anywhere">{error}</div>}
+          {mustSignIn ? (
+            <button type="button" className={primary} onClick={logout}>Sign in again</button>
+          ) : !loading && !status ? (
+            <button type="button" className={secondary} onClick={retryStatus}>Retry</button>
+          ) : !loading && status && (
             <>
-              <p className="mt-3 text-sm text-gray-600">
-                {mfaStatus.mandatory
-                  ? "Administrators are required to use two-factor authentication. Set it up below — you'll scan a QR code with an authenticator app (Google Authenticator, Authy, 1Password) and confirm a code."
-                  : "Add a second factor to your account: scan a QR code with an authenticator app and confirm a code."}
-              </p>
-              {status !== "setup" && status !== "done" && (
-                <button
-                  type="button"
-                  onClick={() => void startSetup()}
-                  className="mt-4 rounded-md bg-[#343a3e] px-4 py-2 text-sm font-semibold text-white hover:cursor-pointer hover:bg-[#22262a]"
-                >
-                  Set up two-factor authentication
-                </button>
+              {!status.configured && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">Two-factor authentication is not configured for this deployment. Contact the platform administrator to configure MFA before proceeding.</div>}
+              {status.enrolled ? (
+                <p role="status" className="flex items-start gap-2 text-sm text-green-800"><CheckCircle2 aria-hidden="true" className="size-5 shrink-0" /> Two-factor authentication is enabled. Your authenticator and unused recovery codes protect future sign-ins.</p>
+              ) : !status.available ? (
+                <p className="text-sm text-brand-text/70">Enrollment is not available for your current role.</p>
+              ) : !setup ? (
+                <>
+                  <p className="text-sm">{status.mandatory ? "Two-factor enrollment is required for administrators." : "Add a second factor to your account."} Use an authenticator app to generate your sign-in codes.</p>
+                  <button type="button" onClick={() => void startSetup()} disabled={busy || !status.configured} className={primary}>{busy ? "Preparing setup..." : "Set up two-factor authentication"}</button>
+                </>
+              ) : (
+                <div className="space-y-4">
+                  <h3 className="font-semibold">1. Add the account to your authenticator</h3>
+                  {qr && (
+                    // The QR is generated in memory from the account's enrollment URI.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={qr} alt="QR code containing your two-factor enrollment details" width={220} height={220} className="mx-auto h-auto max-w-full rounded-md border bg-white" />
+                  )}
+                  <details open={!qr} className="min-w-0 rounded-md border border-brand-border p-3">
+                    <summary className="cursor-pointer text-sm font-medium">Enter the setup key manually</summary>
+                    <code className="mt-2 block break-all rounded bg-brand-surface p-2 text-sm">{setup.secret}</code>
+                  </details>
+                  <p className="text-xs text-brand-text/70">Keep the setup key private. Anyone with it can generate your authenticator codes.</p>
+                  <h3 className="font-semibold">2. Verify your authenticator</h3>
+                  <form onSubmit={(event) => void confirmSetup(event)} noValidate className="space-y-3">
+                    <label className="block text-sm font-medium" htmlFor="enroll-code">Authenticator code</label>
+                    <input ref={codeInput} id="enroll-code" name="enroll-code" value={code} onChange={(event) => { setCode(event.target.value); setCodeError(""); }} inputMode="numeric" autoComplete="one-time-code" maxLength={6} disabled={busy} aria-invalid={Boolean(codeError)} aria-describedby={codeError ? "enroll-code-error" : undefined} className="min-h-11 w-full min-w-0 rounded-md border border-brand-border px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2" />
+                    {codeError && <p id="enroll-code-error" role="alert" className="text-sm text-red-700">{codeError}</p>}
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <button type="submit" className={primary} disabled={busy}>{busy ? "Verifying..." : "Confirm enrollment"}</button>
+                      <button type="button" className={secondary} disabled={busy} onClick={() => { setSetup(null); setQr(null); setCode(""); setCodeError(""); setError(""); }}>Cancel setup</button>
+                    </div>
+                  </form>
+                </div>
               )}
             </>
-          ) : (
-            mfaStatus && (
-              <p className="mt-3 text-sm text-gray-600">
-                Two-factor authentication is not available for this role.
-              </p>
-            )
           )}
-
-          {status === "setup" && setupData && qrDataUrl && (
-            <div className="mt-6 space-y-4">
-              <p className="text-sm font-semibold">
-                1. Scan this with your authenticator app
-              </p>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={qrDataUrl}
-                alt="QR code containing your two-factor enrollment details"
-                className="rounded-md border bg-white p-2"
-                width={220}
-                height={220}
-              />
-              <p className="text-sm text-gray-600">
-                Can&apos;t scan? Enter this secret manually:
-              </p>
-              <code className="block break-all rounded bg-[#e9ebed] px-3 py-2 text-xs">
-                {setupData.secret}
-              </code>
-
-              <p className="text-sm font-semibold">
-                2. Confirm a 6-digit code from the app
-              </p>
-              <form onSubmit={confirmSetup} className="space-y-3">
-                <FormInput
-                  label="Authenticator code"
-                  id="enroll-code"
-                  name="enroll-code"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  value={code}
-                  onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
-                    setCode(event.target.value)
-                  }
-                  required
-                />
-                <button
-                  type="submit"
-                  disabled={confirming}
-                  className="rounded-md bg-[#343a3e] px-4 py-2 text-sm font-semibold text-white hover:cursor-pointer hover:bg-[#22262a] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {confirming ? "Verifying..." : "Confirm enrollment"}
-                </button>
-              </form>
-            </div>
-          )}
-
-          {status === "done" && recoveryCodes && (
-            <div className="mt-6 space-y-3">
-              <p
-                role="alert"
-                className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
-              >
-                Two-factor authentication is now enabled. Store these
-                recovery codes safely — they are your way back in if you
-                lose your device, and they are shown{" "}
-                <strong>only this once</strong>.
-              </p>
-              <div className="grid grid-cols-2 gap-2 rounded-md border bg-white p-4 font-mono text-sm">
-                {recoveryCodes.map((recoveryCode) => (
-                  <span key={recoveryCode}>{recoveryCode}</span>
-                ))}
-              </div>
-              <p className="text-sm text-gray-600">
-                Each code works once at sign-in. Then{" "}
-                <a href="/login" className="text-primary underline">
-                  sign in
-                </a>{" "}
-                to try the full flow.
-              </p>
-            </div>
-          )}
-        </Card>
-      </div>
-    </div>
+        </div>
+      )}
+    </section>
   );
+}
+
+export default function SecurityScreen() {
+  const { token, ready } = useDemoSession();
+  const { logout } = useAuth();
+  if (!ready || !token) return <p role="status" className="p-6 text-sm">Checking session...</p>;
+  return <SecurityWorkspace key={token} token={token} logout={logout} />;
 }

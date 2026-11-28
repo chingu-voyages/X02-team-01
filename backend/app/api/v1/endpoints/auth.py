@@ -24,6 +24,7 @@ hashes and never leave the service; tokens are never logged by this
 module.
 """
 
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -36,8 +37,8 @@ from sqlmodel import Session, select
 
 from app.api.deps import (
     bearer_scheme,
+    get_current_mfa_user,
     get_current_subject,
-    get_current_user,
     require_contributor_or_administrator,
 )
 from app.core.config import settings
@@ -59,6 +60,7 @@ from app.schemas.auth import (
     UserRegistrationIn,
 )
 from app.schemas.manual_grading import GradingPermissionsOut
+from app.services import mfa_service
 from app.services.admin_user_service import can_grade_response_type
 from app.services.mfa_service import (
     ChallengeLockedError,
@@ -229,7 +231,10 @@ def login(
     distinct coded 403 guiding them to their pending verification email.
     """
     user = session.exec(
-        select(User).where(func.lower(User.email) == payload.email.lower().strip())
+        select(User)
+        .where(func.lower(User.email) == payload.email.lower().strip())
+        .with_for_update()
+        .execution_options(populate_existing=True)
     ).first()
 
     if user is None or user.hashed_password is None:
@@ -256,15 +261,32 @@ def login(
             },
         )
 
-    access_token = create_access_token_for_learner(user)
+    # JHEP-207: password authentication alone must never grant an
+    # unenrolled Administrator a normal access token. The scope is also
+    # enforced by the server; the response flag only drives navigation.
+    if mfa_service.administrator_requires_enrollment(user):
+        enrollment_token = create_access_token(
+            subject=str(user.id),
+            expires_delta=timedelta(minutes=15),
+            extra_claims={
+                "mfa": "enrollment",
+                "role": user.role,
+                "iat": datetime.now(UTC).timestamp(),
+            },
+        )
+        return AuthTokenOut(
+            access_token=enrollment_token,
+            token_type="bearer",
+            learner=_learner_out(user),
+            mfa_enrollment_required=True,
+            mfa_expires_in_seconds=900,
+        )
 
     # JHEP-109 AC2: an MFA-required account must complete the second
     # factor before ANY session is established — the challenge token
     # authorizes nothing but /auth/mfa/verify.
     if mfa_required_for(user):
         payload, challenge_id = begin_challenge(session, user=user)
-        from datetime import timedelta
-
         challenge_token = create_access_token(
             subject=str(user.id),
             expires_delta=timedelta(minutes=settings.mfa_challenge_minutes),
@@ -280,7 +302,7 @@ def login(
         )
 
     return AuthTokenOut(
-        access_token=access_token,
+        access_token=create_access_token_for_learner(user),
         token_type="bearer",
         learner=_learner_out(user),
     )
@@ -295,8 +317,6 @@ def logout(
     JWT expiry is the server-side bound for stale credentials; a
     server-side invalidation store is a documented follow-up.
     """
-    from datetime import UTC, datetime
-
     return {
         "message": "Logged out",
         "logged_out_at": datetime.now(UTC).isoformat(),
@@ -367,7 +387,7 @@ def get_mfa_context(
 
 @router.post("/mfa/enroll/setup", status_code=status.HTTP_200_OK)
 def mfa_enroll_setup(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_mfa_user)],
     session: Annotated[Session, Depends(get_session)],
 ) -> dict:
     """JHEP-109 AC1: start TOTP enrollment — the secret (encrypted at
@@ -376,6 +396,10 @@ def mfa_enroll_setup(
 
     try:
         setup = mfa_service.begin_enrollment(session, actor=current_user)
+    except MfaAlreadyEnrolledError as exc:
+        raise CodedAuthError(
+            status.HTTP_409_CONFLICT, "MFA_ALREADY_ENROLLED", str(exc)
+        ) from exc
     except EnrollmentNotAllowedError as exc:
         raise CodedAuthError(
             status.HTTP_403_FORBIDDEN, "MFA_NOT_AVAILABLE", str(exc)
@@ -395,7 +419,7 @@ def mfa_enroll_setup(
 @router.post("/mfa/enroll/verify", status_code=status.HTTP_200_OK)
 def mfa_enroll_verify(
     payload: dict,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_mfa_user)],
     session: Annotated[Session, Depends(get_session)],
 ) -> dict:
     """JHEP-109 AC1: confirm the enrollment with a live code; the
@@ -411,6 +435,10 @@ def mfa_enroll_verify(
         )
     try:
         result = mfa_service.confirm_enrollment(session, actor=current_user, code=code)
+    except EnrollmentNotAllowedError as exc:
+        raise CodedAuthError(
+            status.HTTP_403_FORBIDDEN, "MFA_NOT_AVAILABLE", str(exc)
+        ) from exc
     except MfaNotEnrolledError as exc:
         raise CodedAuthError(
             status.HTTP_409_CONFLICT, "MFA_NOT_ENROLLED", str(exc)
@@ -470,7 +498,15 @@ def mfa_verify(
             "Start again with your email and password",
         ) from exc
 
-    user = session.get(User, UUID(subject))
+    try:
+        user_id = UUID(subject)
+    except (TypeError, ValueError) as exc:
+        raise CodedAuthError(
+            status.HTTP_401_UNAUTHORIZED,
+            "INVALID_MFA_CHALLENGE",
+            "Start again with your email and password",
+        ) from exc
+    user = session.get(User, user_id)
     if user is None:
         raise CodedAuthError(
             status.HTTP_401_UNAUTHORIZED,
@@ -480,11 +516,11 @@ def mfa_verify(
 
     try:
         if use_recovery:
-            mfa_service.verify_recovery_code(
+            authenticated_at = mfa_service.verify_recovery_code(
                 session, user=user, challenge_id=challenge_id, code=code
             )
         else:
-            mfa_service.verify_challenge(
+            authenticated_at = mfa_service.verify_challenge(
                 session, user=user, challenge_id=challenge_id, code=code
             )
     except InvalidMfaCodeError as exc:
@@ -500,7 +536,11 @@ def mfa_verify(
             status.HTTP_409_CONFLICT, "MFA_NOT_AVAILABLE", str(exc)
         ) from exc
 
-    token = create_access_token_for_learner(user)
+    token = create_access_token_for_learner(
+        user,
+        authenticated_at=authenticated_at,
+        mfa_verified_at=datetime.now(UTC),
+    )
     return AuthTokenOut(
         access_token=token,
         token_type="bearer",
@@ -510,7 +550,7 @@ def mfa_verify(
 
 @router.get("/mfa/status", status_code=status.HTTP_200_OK)
 def mfa_status(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_mfa_user)],
 ) -> dict:
     """JHEP-109: the account's MFA posture — drives the Security page
     and the forced-enrollment prompt for mandatory roles."""

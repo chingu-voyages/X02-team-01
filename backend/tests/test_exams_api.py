@@ -4,9 +4,9 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from learner_auth_fixtures import issue_learner_token
 
 from app.api.v1.endpoints.exams import get_exam_service
-from app.core.security import create_access_token
 from app.main import app
 from app.services.exam_service import (
     AttemptInProgressError,
@@ -67,7 +67,7 @@ class StubExamService:
 
 
 @pytest.fixture
-def setup_api():
+def setup_api(stub_learner_database):
     stub = StubExamService()
     learner_id = uuid4()
     certification_id = uuid4()
@@ -78,7 +78,7 @@ def setup_api():
 
 
 def headers(learner_id: UUID | str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token(str(learner_id))}"}
+    return {"Authorization": f"Bearer {issue_learner_token(str(learner_id))}"}
 
 
 def payload(certification_id, question_count=1):

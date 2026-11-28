@@ -9,10 +9,10 @@ from uuid import UUID, uuid4
 import jwt
 import pytest
 from fastapi.testclient import TestClient
+from learner_auth_fixtures import issue_learner_token
 
 from app.api.v1.endpoints.exams import get_exam_service
 from app.core.config import settings
-from app.core.security import create_access_token
 from app.main import app
 from app.services.exam_service import (
     CreatedExam,
@@ -71,7 +71,7 @@ class HardeningExamService:
 
 
 @pytest.fixture
-def api_client():
+def api_client(stub_learner_database):
     """Ensure dependency overrides are removed after each test."""
     stub = HardeningExamService()
     learner_id, cert_id = uuid4(), uuid4()
@@ -84,7 +84,7 @@ def api_client():
 
 
 def auth(learner_id: UUID | str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token(str(learner_id))}"}
+    return {"Authorization": f"Bearer {issue_learner_token(str(learner_id))}"}
 
 
 def exam_payload(cert_id: UUID, count: int = 1) -> dict[str, str | int]:

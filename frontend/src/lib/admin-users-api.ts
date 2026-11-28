@@ -46,17 +46,19 @@ export interface AdminUserRoleChange {
 export async function getAdminUsers(
   token: string,
   query?: string,
+  pagination?: { limit: number; offset: number },
 ): Promise<AdminUsersPage> {
-  const search = query?.trim()
-    ? `?q=${encodeURIComponent(query.trim())}`
-    : "";
-
+  const params = new URLSearchParams();
+  if (query?.trim()) params.set("q", query.trim());
+  if (pagination) {
+    params.set("limit", String(pagination.limit));
+    params.set("offset", String(pagination.offset));
+  }
+  const search = params.toString();
   return apiRequest<AdminUsersPage>(
-    `/admin/users${search}`,
+    `/admin/users${search ? `?${search}` : ""}`,
     token,
-    {
-      method: "GET",
-    },
+    { method: "GET" },
   );
 }
 
@@ -68,13 +70,9 @@ export async function changeAdminUserRole(
   return apiRequest<AdminUserRoleChange>(
     `/admin/users/${encodeURIComponent(userId)}/role`,
     token,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ role }),
-    },
+    { method: "PATCH", body: JSON.stringify({ role }) },
   );
 }
-
 
 export async function updateGradingPermissions(
   token: string,
@@ -84,9 +82,6 @@ export async function updateGradingPermissions(
   return apiRequest<GradingPermissionsChange>(
     `/admin/users/${encodeURIComponent(userId)}/grading-permissions`,
     token,
-    {
-      method: "PATCH",
-      body: JSON.stringify(update),
-    },
+    { method: "PATCH", body: JSON.stringify(update) },
   );
 }

@@ -488,7 +488,7 @@ describe(
 
         expect(
           screen.getByText(
-            "The questions were submitted for Administrator review.",
+            "This import created drafts. Open the Question Bank to submit any remaining drafts for administrator review.",
             {
               exact:
                 true,

@@ -2,6 +2,7 @@ import { apiRequest } from "@/lib/api-client";
 
 import type {
   AdminPracticeExam,
+  AdminPracticeExamConfigurationUpdateRequest,
   AdminPracticeExamCreateRequest,
   AdminPracticeExamListResponse,
   PracticeExamNotReadyDetail,
@@ -43,6 +44,19 @@ export function createAdminPracticeExam(
   );
 }
 
+/** Update an existing draft, or the count of an unpublished exam. */
+export function updateAdminPracticeExam(
+  token: string,
+  examId: string,
+  payload: AdminPracticeExamConfigurationUpdateRequest,
+): Promise<AdminPracticeExam> {
+  return apiRequest<AdminPracticeExam>(
+    `/admin/practice-exams/${encodeURIComponent(examId)}`,
+    token,
+    { method: "PUT", body: JSON.stringify(payload) },
+  );
+}
+
 /** Idempotent publish/unpublish endpoint; server owns final validation. */
 export function setAdminPracticeExamPublication(
   token: string,
@@ -53,6 +67,18 @@ export function setAdminPracticeExamPublication(
     `/admin/practice-exams/${encodeURIComponent(examId)}/publication`,
     token,
     { method: "PATCH", body: JSON.stringify({ is_published: isPublished }) },
+  );
+}
+
+/** Delete only after explicit administrator confirmation; no request body. */
+export function deleteAdminPracticeExam(
+  token: string,
+  examId: string,
+): Promise<void> {
+  return apiRequest<void>(
+    `/admin/practice-exams/${encodeURIComponent(examId)}`,
+    token,
+    { method: "DELETE" },
   );
 }
 
