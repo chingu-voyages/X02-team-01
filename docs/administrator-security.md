@@ -110,4 +110,4 @@ npx playwright test e2e/admin-mfa-enrollment.e2e.ts \
   e2e/admin-promotion.e2e.ts --project=chromium --workers=1
 ```
 
-See the [API contract](CONTRACT_API_JSON.md#11-admin-users--access--current) for request/response formats and error codes. Final full-browser regression, manual responsive/accessibility inspection and deployment verification remain release gates. Review Answers is intentionally deferred pending its design decision.
+See the [API contract](CONTRACT_API_JSON.md#11-admin-users--access--current) for request/response formats and error codes. Final full-browser regression, manual responsive/accessibility inspection and deployment verification remain release gates. JHEP-37 subsequently implements the [completed-attempt review list](completed-exam-review.md); individual question detail remains JHEP-72 integration work.

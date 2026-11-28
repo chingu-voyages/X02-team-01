@@ -199,6 +199,7 @@ Bulk-imported questions begin as `pending / draft`, so they are not learner-visi
 | POST | `/api/v1/exams/{attempt_id}/responses/{question_id}/submit` | CURRENT | Bearer |
 | POST | `/api/v1/exams/{attempt_id}/submit` | CURRENT | Bearer |
 | GET | `/api/v1/exams/{attempt_id}/results` | CURRENT | Bearer |
+| GET | `/api/v1/exams/{attempt_id}/review` | CURRENT (JHEP-37; question list only) | Bearer, attempt owner |
 
 `{question_id}` on response routes accepts either the attempt-question addressing ID or the pinned `question_version_id`.
 
@@ -296,14 +297,13 @@ Bulk-imported questions begin as `pending / draft`, so they are not learner-visi
 
 ## 2.8 Not implemented
 
-The older proposed `/exam-catalog` and `/admin/exam-catalog` paths are not the active configuration API. Use `/exams/catalog` and `/admin/practice-exams` instead. Completed-answer review and attempt-history routes remain outside JHEP-107.
+The older proposed `/exam-catalog` and `/admin/exam-catalog` paths are not the active configuration API. Use `/exams/catalog` and `/admin/practice-exams` instead. The completed-attempt question list is implemented under JHEP-37 (see §6.3A); individual question detail (JHEP-72) and attempt history remain separate scope.
 
 | Method | Route | Status |
 |---|---|---|
 | GET | `/api/v1/exam-catalog` | PROPOSED |
 | GET | `/api/v1/exam-catalog/{catalog_id}` | PROPOSED |
 | PATCH | `/api/v1/admin/exam-catalog/{catalog_id}/settings` | PROPOSED |
-| GET | `/api/v1/exams/{attempt_id}/review` | PROPOSED |
 | GET | `/api/v1/me/exam-attempts` | PROPOSED |
 
 ---
@@ -647,7 +647,27 @@ may await manual grading. While grading is pending, `grading_complete` is
 Authorized human grading and grade revisions update the stored result.
 See section 17 for the per-question breakdown. Answer keys are not returned.
 Configuration changes and unpublishing do not invalidate previously persisted results.
-The completed-answer review endpoint is deferred separately under JHEP-207.
+The completed-attempt question list is available through the separate review endpoint below.
+
+## 6.3A Completed exam question list (JHEP-37)
+
+**GET** `/api/v1/exams/{attempt_id}/review` — authenticated attempt owner, submitted attempts only.
+
+A `200` returns `attempt_id`, `status: "submitted"`, `question_count`, and `questions[]`.
+Each question contains only `question_version_id`, original `position`, `preview` (up to 160 characters),
+and `status` (`correct`, `incorrect`, `unanswered`, `pending_manual_grading`, `manually_graded`,
+or `unavailable`). No answer options, learner responses, explanations, expected answers or feedback
+are included. Original pinned versions and positions define the list, including questions with missing
+grades. Review reads do not modify the attempt or calculate scores. A submitted attempt may still
+await manual grading. The response uses `Cache-Control: no-store`.
+
+Missing/invalid authentication returns `401`; unknown/foreign attempts return identical `404` responses;
+an owned unfinished attempt returns `409`. An empty historical list is supported.
+
+The learner route is `/exams/{attemptId}/review`, with return navigation to the same attempt's
+results. Individual question detail and its navigation remain JHEP-72 integration work.
+See [completed-exam-review.md](completed-exam-review.md) for a JSON example, status semantics,
+historical integrity and verification.
 
 ## 6.4 Administrator configuration (JHEP-107)
 
@@ -1763,7 +1783,6 @@ The legacy `exam-catalog` paths below are not the active configuration API; use 
 GET   /api/v1/exam-catalog
 GET   /api/v1/exam-catalog/{catalog_id}
 PATCH /api/v1/admin/exam-catalog/{catalog_id}/settings
-GET   /api/v1/exams/{attempt_id}/review
 GET   /api/v1/me/exam-attempts
 ```
 
@@ -1803,6 +1822,7 @@ backend/app/services/password_reset_service.py
 backend/app/schemas/category.py
 backend/app/schemas/question.py
 backend/app/schemas/exam.py
+backend/app/schemas/exam_review.py
 backend/app/schemas/admin_practice_exam.py
 backend/app/schemas/learner_practice_exam.py
 backend/app/schemas/admin_question.py
@@ -1819,6 +1839,7 @@ backend/app/services/admin_practice_exam_service.py
 backend/app/services/published_exam_service.py
 backend/app/services/exam_service.py
 backend/app/services/exam_attempt_service.py
+backend/app/services/exam_review_service.py
 backend/app/repositories/practice_exam_catalog_repository.py
 backend/app/services/admin_question_service.py
 backend/app/services/admin_question_bank_query_service.py
