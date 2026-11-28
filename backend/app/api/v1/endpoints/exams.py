@@ -9,6 +9,7 @@ Route surface:
 - POST   /exams/{attempt_id}/responses/{v_id}/submit — lock + feedback
 - POST   /exams/{attempt_id}/submit            — final submission + grading
 - GET    /exams/{attempt_id}/results           — score + Pass/Fail
+- GET    /exams/{attempt_id}/review            — completed question previews
 
 Absent and foreign attempts always answer with an identical 404 body so
 attempt ids cannot be probed. Correctness data never leaves the backend
@@ -19,7 +20,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlmodel import Session
 
 from app.api.deps import get_authenticated_subject
@@ -40,6 +41,7 @@ from app.schemas.exam import (
     ResponseSaveRequest,
     ResultsOut,
 )
+from app.schemas.exam_review import CompletedExamReviewOut
 from app.services.exam_attempt_service import (
     AttemptAlreadySubmittedError,
     AttemptNotGradableError,
@@ -49,6 +51,7 @@ from app.services.exam_attempt_service import (
     NoAnswerContentError,
     QuestionAlreadyLockedError,
 )
+from app.services.exam_review_service import completed_review_payload
 from app.services.exam_service import (
     AttemptInProgressError,
     CategoryUnavailableError,
@@ -575,3 +578,25 @@ def get_results(
         ) from exc
 
     return ResultsOut(**payload)
+
+
+@router.get("/{attempt_id}/review", response_model=CompletedExamReviewOut)
+def get_completed_review(
+    attempt_id: UUID,
+    response: Response,
+    subject: Annotated[str, Depends(get_authenticated_subject)],
+    service: Annotated[ExamService, Depends(get_exam_service)],
+    session: Annotated[Session, Depends(get_session)],
+) -> CompletedExamReviewOut:
+    """List original question previews only after final submission."""
+    attempt = _owned_attempt(attempt_id, _learner_id(subject), service)
+    try:
+        payload = completed_review_payload(session, attempt)
+    except AttemptNotSubmittedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Attempt has not been submitted",
+        ) from exc
+
+    response.headers["Cache-Control"] = "no-store"
+    return payload

@@ -611,3 +611,102 @@ def test_question_flags_are_independent_of_answers(postgres_session, feedback_mo
         service.set_question_flag(next_attempt, pinned_id, flagged_for_review=True)
     assert service.resolve_question(attempt.id, pinned_id).flagged_for_review is True
     assert session.get(QuestionVersion, first_version).is_flagged is False
+
+
+@pytest.mark.parametrize("feedback_mode", ["immediate", "deferred"])
+def test_completed_review_preserves_pins_and_outcomes(postgres_session, feedback_mode):
+    from app.services.exam_review_service import completed_review_payload
+    from app.services.grading_service import AttemptNotSubmittedError
+
+    session = postgres_session
+    bank = SeededAttempt(session)
+    bank.cert.feedback_mode = feedback_mode
+    correct = bank.add_question(correct_positions=(1,))
+    incorrect = bank.add_question(correct_positions=(1, 3))
+    draft = bank.add_question(correct_positions=(2,))
+    pending = bank.add_question(question_type="short_answer")
+    skipped = bank.add_question(question_type="short_answer")
+    missing_grade = bank.add_question(correct_positions=(1,))
+    questions = [correct, incorrect, draft, pending, skipped, missing_grade]
+    original = session.get(QuestionVersion, correct[1])
+    original.question_text = "Original pinned question. " + "Historical text " * 30
+    session.add(original)
+    session.flush()
+
+    created = bank.create_attempt([(q, v) for q, v, _ in questions])
+    service = ExamAttemptService(session)
+    attempt = service.get_owned_attempt(
+        attempt_id=created.attempt_id, learner_id=bank.learner.id
+    )
+    with pytest.raises(AttemptNotSubmittedError):
+        completed_review_payload(session, attempt)
+
+    for question in (correct, incorrect, draft, missing_grade):
+        service.save_response(
+            attempt,
+            question[1],
+            selected_option_ids=[question[2][0]],
+            text_response=None,
+            submit=question != draft,
+        )
+    service.save_response(
+        attempt,
+        pending[1],
+        selected_option_ids=None,
+        text_response="A submitted written answer",
+        submit=True,
+    )
+    service.final_submit(attempt)
+
+    # Retire the pinned version and publish a different version of the same
+    # question. Historical review must not re-resolve the current question.
+    original = session.get(QuestionVersion, correct[1])
+    original.publication_status = "retired"
+    session.add(original)
+    session.flush()
+    session.add(
+        QuestionVersion(
+            question_id=correct[0],
+            version_number=2,
+            question_text="Replacement question, not part of this attempt.",
+            question_type="multiple_choice",
+            allows_multiple_answers=False,
+            explanation="New explanation",
+            review_status="approved",
+            publication_status="active",
+            submitted_by_id=bank.learner.id,
+            reviewed_by_id=bank.learner.id,
+            reviewed_at=datetime.now(UTC),
+        )
+    )
+    # Simulate a legacy/incomplete grade record. The pinned question stays.
+    grade = session.exec(
+        select(ExamQuestionGrade).where(
+            ExamQuestionGrade.attempt_id == attempt.id,
+            ExamQuestionGrade.question_version_id == missing_grade[1],
+        )
+    ).one()
+    session.delete(grade)
+    session.commit()
+
+    review = completed_review_payload(session, attempt)
+    assert review.question_count == 6
+    assert [q.position for q in review.questions] == list(range(1, 7))
+    assert [q.question_version_id for q in review.questions] == [
+        question[1] for question in questions
+    ]
+    assert [q.status for q in review.questions] == [
+        "correct",
+        "incorrect",
+        "unanswered",
+        "pending_manual_grading",
+        "unanswered",
+        "unavailable",
+    ]
+    preview = review.questions[0].preview
+    assert preview.startswith("Original pinned question.")
+    assert len(preview) <= 160 and preview.endswith("…")
+    assert "Replacement question" not in review.model_dump_json()
+    assert "A submitted written answer" not in review.model_dump_json()
+    assert "Why it is so." not in review.model_dump_json()
+    assert completed_review_payload(session, attempt) == review
