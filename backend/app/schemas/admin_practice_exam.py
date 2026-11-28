@@ -1,4 +1,4 @@
-"""Administrator contracts for practice-exam publication (JHEP-126)."""
+"""Administrator contracts for practice-exam configuration and publication."""
 
 from uuid import UUID
 
@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PracticeExamCreate(BaseModel):
-    """Create a configured draft; JHEP-107 owns future count editing."""
+    """Create a draft; an incomplete draft may omit the question count."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -22,6 +22,12 @@ class PracticeExamCreate(BaseModel):
         if not name:
             raise ValueError("Exam name must not be blank")
         return name
+
+
+class PracticeExamConfigurationUpdate(PracticeExamCreate):
+    """Save configuration with an explicitly supplied, valid question count."""
+
+    question_count: int = Field(strict=True, ge=1, le=100)
 
 
 class PracticeExamPublicationUpdate(BaseModel):

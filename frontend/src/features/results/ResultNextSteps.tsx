@@ -1,3 +1,4 @@
+
 import Link from "next/link";
 import { ClipboardCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,7 +38,7 @@ export default function ResultNextSteps({
         </Button>
 
         <Link
-          href="/exams"
+          href="/categories"
           className="inline-flex min-h-11 items-center justify-center rounded-xl border border-brand-primary/35 bg-white px-5 text-sm font-semibold text-brand-primary shadow-2xs transition-colors hover:border-brand-primary hover:bg-brand-surface"
         >
           Back to practice exams

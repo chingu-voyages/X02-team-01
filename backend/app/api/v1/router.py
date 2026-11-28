@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     admin,
     admin_practice_exams,
+    admin_promotion,
     auth,
     categories,
     dashboard,
@@ -10,6 +11,7 @@ from app.api.v1.endpoints import (
     learner_practice_exams,
     manual_grading,
     question_import_actions,
+    question_import_catalog,
     question_imports,
     questions,
 )
@@ -74,6 +76,18 @@ api_router.include_router(
     question_import_actions.router,
     prefix="/admin/question-imports",
     tags=["admin", "question-imports"],
+)
+
+api_router.include_router(
+    question_import_catalog.router,
+    prefix="/admin/question-imports",
+    tags=["admin", "question-imports"],
+)
+
+api_router.include_router(
+    admin_promotion.router,
+    prefix="/admin/users",
+    tags=["admin", "users"],
 )
 
 api_router.include_router(

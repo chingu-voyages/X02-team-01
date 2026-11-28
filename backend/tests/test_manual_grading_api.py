@@ -12,7 +12,9 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
 import sqlalchemy as sa
+from admin_auth_fixtures import sign_in_administrator
 from fastapi.testclient import TestClient
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.compiler import compiles
@@ -31,13 +33,18 @@ from app.models import (
     ExamResponse,
     ExamResult,
     ManualGradeHistory,
+    MfaLoginChallenge,
+    MfaRecoveryCode,
     PracticeExam,
     Question,
     QuestionVersion,
+    RubricCriterion,
     TextAnswerKey,
     User,
 )
 from app.services import manual_grading_service
+
+pytestmark = pytest.mark.usefixtures("isolated_mfa_configuration")
 
 
 @compiles(JSONB, "sqlite")
@@ -91,12 +98,15 @@ class GradingHarness:
             self.engine,
             tables=[
                 User.__table__,
+                MfaLoginChallenge.__table__,
+                MfaRecoveryCode.__table__,
                 Certification.__table__,
                 Category.__table__,
                 PracticeExam.__table__,
                 Question.__table__,
                 QuestionVersion.__table__,
                 TextAnswerKey.__table__,
+                RubricCriterion.__table__,
                 ExamAttempt.__table__,
                 ExamAttemptQuestion.__table__,
                 ExamResponse.__table__,
@@ -215,7 +225,8 @@ class GradingHarness:
 
         app.dependency_overrides[get_session] = override_session
         self.client = TestClient(app)
-        self.admin_headers = self._login(self.admin.email, "Passw0rd!")
+        admin_login = sign_in_administrator(self.client, self.admin.email, "Passw0rd!")
+        self.admin_headers = {"Authorization": f"Bearer {admin_login['access_token']}"}
         self.contributor_headers = self._login(self.contributor.email, "Passw0rd!")
         self.unauthorized_headers = self._login(self.unauthorized.email, "Passw0rd!")
         self.learner_headers = self._login(self.learner.email, "Passw0rd!")

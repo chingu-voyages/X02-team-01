@@ -133,3 +133,12 @@ pytest -q          # grading matrix: tests/test_grading_service.py,
 - Results expose `grading_complete` and per-question statuses. While any
   submitted written answer awaits review, `passed` is `null` and the UI shows
   a pending-review state instead of a failed result.
+
+## 🔐 Model answers & rubrics (JHEP-121)
+
+Written questions carry a Markdown model answer (`text_answer_keys.expected_answer`)
+and a versioned scoring rubric (`rubric_criteria`, total = `max_points`). The
+pinned version's rubric is what JHEP-122 reviewers score against; published
+revisions copy the rubric so past grades are never re-interpreted. Learner
+contracts never expose the model answer or rubric. See `CONTRACT_API_JSON.md`
+§18 for the full data contract.

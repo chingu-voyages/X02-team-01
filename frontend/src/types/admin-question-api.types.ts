@@ -1,6 +1,7 @@
 export type AdminQuestionType =
   | "multiple_choice"
-  | "short_answer";
+  | "short_answer"
+  | "essay";
 
 export type AdminReviewStatus =
   | "pending"
@@ -64,6 +65,17 @@ export interface AdminAnswerOption {
   is_correct: boolean;
 }
 
+export interface AdminRubricCriterion {
+  position: number;
+  name: string;
+  points: number;
+}
+
+export interface AdminRubricCriterionInput {
+  name: string;
+  points: number;
+}
+
 export interface AdminQuestionImage {
   id: string;
   question_version_id: string;
@@ -112,6 +124,12 @@ export interface AdminQuestionDetail {
 
   expected_answer: string | null;
 
+  max_points: number | null;
+
+  criteria_markdown: string | null;
+
+  rubric: AdminRubricCriterion[] | null;
+
   images: AdminQuestionImage[];
 }
 
@@ -130,6 +148,9 @@ export interface AdminQuestionDraftCreateRequest {
   explanation: string | null;
   options: AdminAnswerOptionInput[];
   expected_answer: string | null;
+  rubric: AdminRubricCriterionInput[] | null;
+  max_points: number | null;
+  criteria_markdown: string | null;
 }
 
 export interface AdminQuestionDraftEditRequest {
@@ -141,6 +162,9 @@ export interface AdminQuestionDraftEditRequest {
   explanation: string | null;
   options: AdminAnswerOptionInput[];
   expected_answer: string | null;
+  rubric: AdminRubricCriterionInput[] | null;
+  max_points: number | null;
+  criteria_markdown: string | null;
 }
 
 export interface AdminQuestionDraftCreated {

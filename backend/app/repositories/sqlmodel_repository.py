@@ -32,12 +32,15 @@ class SQLModelQuestionRepository:
         self._session = session
 
     def list_eligible(self) -> list[Question]:
+        # JHEP-121: essays are authorable now but JHEP-120 owns the
+        # learner-facing essay entry, so essays are not delivered yet.
         versions = self._session.exec(
             select(QuestionVersion)
             .where(
                 QuestionVersion.review_status == "approved",
                 QuestionVersion.publication_status == "active",
                 QuestionVersion.is_flagged.is_(False),
+                QuestionVersion.question_type != "essay",
             )
             .order_by(QuestionVersion.question_id, QuestionVersion.version_number)
         ).all()

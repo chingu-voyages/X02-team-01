@@ -32,6 +32,7 @@ from app.models import (
     ExamResponse,
     ManualGradeHistory,
     QuestionVersion,
+    RubricCriterion,
     TextAnswerKey,
     User,
 )
@@ -149,6 +150,17 @@ def _max_points(session: Session, version: QuestionVersion) -> int:
     return key.max_points if key else 1
 
 
+def _rubric_criteria(session: Session, version_id) -> list:
+    """JHEP-121 AC7: the pinned version's rubric criteria for reviewers."""
+    return list(
+        session.exec(
+            select(RubricCriterion)
+            .where(RubricCriterion.question_version_id == version_id)
+            .order_by(RubricCriterion.position)
+        )
+    )
+
+
 def response_detail(
     session: Session,
     *,
@@ -204,6 +216,15 @@ def response_detail(
         "learner_response": response.text_response,
         "expected_answer": key.expected_answer if key else None,
         "max_points": key.max_points if key else 1,
+        "criteria_markdown": key.criteria_markdown if key else None,
+        "rubric": [
+            {
+                "position": criterion.position,
+                "name": criterion.name,
+                "points": criterion.points,
+            }
+            for criterion in _rubric_criteria(session, question_version_id)
+        ],
         "current_grade": {
             "outcome": grade.outcome if grade else None,
             "points_earned": grade.points_earned if grade else None,

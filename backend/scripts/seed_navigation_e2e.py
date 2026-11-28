@@ -1,7 +1,7 @@
 """Prepare isolated, local-only JHEP-105 browser test fixtures.
 
-Run from backend/ with --confirm-local. Fixed fixture catalog rows are reused;
-new learners are generated for each run to avoid active-attempt conflicts.
+Run from backend/ with --confirm-local. Each run creates a fresh catalog,
+question bank, published exam, fixture author and verified learner.
 No existing user, question, attempt, or credential is changed or deleted.
 The JSON output is consumed by Playwright, not a production login utility.
 """
@@ -33,10 +33,6 @@ from scripts.seed_demo_exams import demo_uuid, ensure_row, require_safe_local_da
 COUNTS = {"immediate": 3, "deferred": 40}
 
 
-def fixture_id(name: str) -> UUID:
-    return demo_uuid(f"jhep-105/navigation-e2e/v1/{name}")
-
-
 def seed_navigation_fixture(mode: str) -> dict[str, str | int]:
     require_safe_local_database()
     count = COUNTS[mode]
@@ -45,6 +41,11 @@ def seed_navigation_fixture(mode: str) -> dict[str, str | int]:
             f"This fixture requires MAX_EXAM_QUESTIONS >= {count}. "
             "Use the disposable local test configuration."
         )
+
+    run_id = uuid4().hex[:12]
+
+    def fixture_id(name: str) -> UUID:
+        return demo_uuid(f"jhep-105/navigation-e2e/v2/{run_id}/{name}")
 
     author_id = fixture_id("fixture-author")
     certification_id = fixture_id(f"{mode}/certification")
@@ -60,7 +61,7 @@ def seed_navigation_fixture(mode: str) -> dict[str, str | int]:
             session,
             User(
                 id=author_id,
-                email="jhep105-fixture-author@example.test",
+                email=f"jhep105-fixture-{run_id}@example.test",
                 full_name="JHEP-105 Fixture Author",
                 role="learner",
                 is_verified=False,
@@ -71,8 +72,8 @@ def seed_navigation_fixture(mode: str) -> dict[str, str | int]:
             session,
             Certification(
                 id=certification_id,
-                code=f"JHEP105-E2E-{mode.upper()}",
-                name=f"JHEP-105 E2E ({mode} feedback)",
+                code=f"JHEP105-E2E-{mode.upper()}-{run_id.upper()}",
+                name=f"JHEP-105 E2E ({mode} feedback) {run_id}",
                 feedback_mode=mode,
                 passing_threshold_pct=65,
                 is_published=True,
@@ -152,7 +153,7 @@ def seed_navigation_fixture(mode: str) -> dict[str, str | int]:
                 id=practice_exam_id,
                 certification_id=certification_id,
                 category_id=category_id,
-                name=f"Navigation {mode} test",
+                name=f"Navigation {mode} test {run_id}",
                 question_count=count,
                 status="published",
             ),

@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import sqlalchemy as sa
+from admin_auth_fixtures import domain_access_token, make_domain_user
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
@@ -15,7 +16,6 @@ from sqlmodel import (
 
 from app.api.v1.endpoints import question_imports
 from app.core.roles import UserRole
-from app.core.security import create_access_token
 from app.db.session import get_session
 from app.models.answer_option import AnswerOption
 from app.models.category import Category
@@ -26,6 +26,7 @@ from app.models.question_import_asset import QuestionImportAsset
 from app.models.question_import_batch import QuestionImportBatch
 from app.models.question_import_row import QuestionImportRow
 from app.models.question_version import QuestionVersion
+from app.models.rubric_criterion import RubricCriterion
 from app.models.text_answer_key import TextAnswerKey
 from app.models.user import User
 from app.services.question_import_validation_service import (
@@ -72,6 +73,7 @@ def engine():
             QuestionVersion.__table__,
             AnswerOption.__table__,
             TextAnswerKey.__table__,
+            RubricCriterion.__table__,
             QuestionImage.__table__,
             QuestionImportBatch.__table__,
             QuestionImportAsset.__table__,
@@ -115,7 +117,7 @@ def create_user(
     session: Session,
     role: UserRole,
 ) -> User:
-    user = User(
+    user = make_domain_user(
         email=(f"{uuid4()}@example.test"),
         role=role,
     )
@@ -129,7 +131,7 @@ def create_user(
 def auth_header(
     user: User,
 ) -> dict[str, str]:
-    return {"Authorization": ("Bearer " + create_access_token(str(user.id)))}
+    return {"Authorization": ("Bearer " + domain_access_token(user))}
 
 
 def seed_catalog(

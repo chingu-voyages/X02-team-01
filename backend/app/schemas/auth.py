@@ -109,6 +109,9 @@ class AuthTokenOut(BaseModel):
     # 5-minute challenge token that authorizes nothing but
     # /auth/mfa/verify.
     mfa_required: bool = False
+    # A password-verified administrator who has not enrolled receives a
+    # short-lived token for the three MFA enrollment/status endpoints only.
+    mfa_enrollment_required: bool = False
     challenge_id: str | None = None
     mfa_expires_in_seconds: int | None = None
 

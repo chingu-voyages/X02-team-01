@@ -79,33 +79,36 @@ def create_category(
     payload: CategoryCreate,
 ) -> AdminCategoryRecord:
     """Create an unpublished category under an existing certification."""
-    certification = session.get(
-        Certification,
-        payload.certification_id,
-    )
-
-    if certification is None:
-        raise (CategoryCertificationNotFoundError("Certification not found"))
-
-    existing = session.exec(
-        select(Category).where(
-            Category.certification_id == payload.certification_id,
-            func.lower(Category.name) == payload.name.lower(),
-        )
-    ).first()
-
-    if existing is not None:
-        raise CategoryNameConflictError(
-            "A category with this name already exists for this certification"
-        )
-
-    category = Category(
-        certification_id=(payload.certification_id),
-        name=payload.name,
-        is_published=False,
-    )
-
     try:
+        # JHEP-207: share the parent-row lock with import catalog resolution
+        # so manual creation cannot race its case-insensitive name checks.
+        certification = session.exec(
+            select(Certification)
+            .where(Certification.id == payload.certification_id)
+            .with_for_update()
+        ).first()
+
+        if certification is None:
+            raise CategoryCertificationNotFoundError("Certification not found")
+
+        existing_names = session.exec(
+            select(Category.name).where(
+                Category.certification_id == payload.certification_id,
+            )
+        ).all()
+        if any(
+            name.strip().casefold() == payload.name.casefold()
+            for name in existing_names
+        ):
+            raise CategoryNameConflictError(
+                "A category with this name already exists for this certification"
+            )
+
+        category = Category(
+            certification_id=(payload.certification_id),
+            name=payload.name,
+            is_published=False,
+        )
         session.add(category)
         session.commit()
         session.refresh(category)
@@ -129,13 +132,10 @@ def set_category_publication(
     is_published: bool,
 ) -> AdminCategoryRecord:
     """Publish or unpublish a category."""
-    category = session.get(
-        Category,
-        category_id,
-    )
+    category = session.get(Category, category_id)
 
     if category is None:
-        raise AdminCategoryNotFoundError("Category not found")
+        raise (AdminCategoryNotFoundError("Category not found"))
 
     certification = session.get(
         Certification,

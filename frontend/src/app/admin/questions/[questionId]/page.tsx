@@ -14,9 +14,7 @@ import {
 import {
   ArrowLeft,
   Check,
-  CircleAlert,
   FileImage,
-  X,
 } from "lucide-react";
 
 import {
@@ -29,12 +27,9 @@ import {
 
 import {
   getManagedQuestion,
-  publishManagedQuestion,
-  startQuestionReview,
-  submitManagedQuestion,
-  rejectManagedQuestion,
-  retireManagedQuestion,
 } from "@/lib/admin-question-api";
+
+import QuestionReviewActions from "@/features/questions/QuestionReviewActions";
 
 import type {
   AdminQuestionDetail,
@@ -53,16 +48,6 @@ type SessionRole =
   | "administrator";
 
 
-function shortQuestionId(
-  id: string,
-) {
-  return `Q-${id
-    .replace(/-/g, "")
-    .slice(0, 8)
-    .toUpperCase()}`;
-}
-
-
 function questionTypeLabel(
   type:
     AdminQuestionDetail[
@@ -76,38 +61,14 @@ function questionTypeLabel(
 }
 
 
-function publicationLabel(
-  question:
-    AdminQuestionDetail,
-) {
-  if (
-    question.publication_status ===
-    "retired"
-  ) {
-    return "Retired";
-  }
-
-  if (
-    question.publication_status ===
-    "active"
-  ) {
-    return "Published";
-  }
-
-  if (
-    question.review_status ===
-    "rejected"
-  ) {
-    return "Rejected";
-  }
-
-  if (
-    question.review_status ===
-    "pending"
-  ) {
-    return "Pending Review";
-  }
-
+function publicationLabel(question: AdminQuestionDetail) {
+  if (question.publication_status === "retired") return "Retired";
+  if (question.review_status === "rejected") return "Rejected";
+  if (question.publication_status === "inactive") return "Inactive";
+  if (question.publication_status === "active") return "Published";
+  if (question.review_status === "submitted") return "Submitted";
+  if (question.review_status === "in_review") return "In Review";
+  if (question.review_status === "pending" && question.review_note) return "Changes Requested";
   return "Draft";
 }
 
@@ -168,19 +129,6 @@ function roleFromToken(
 }
 
 
-export default function AdminQuestionDetailPage() {
-  const params =
-    useParams<{
-      questionId: string;
-    }>();
-
-  const {
-    token,
-    ready,
-    handleError,
-  } =
-    useDemoSession();
-
 function userIdFromToken(
   token: string | null,
 ): string | null {
@@ -213,6 +161,21 @@ function userIdFromToken(
     return null;
   }
 }
+
+
+export default function AdminQuestionDetailPage() {
+  const params =
+    useParams<{
+      questionId: string;
+    }>();
+
+  const {
+    token,
+    ready,
+    handleError,
+  } =
+    useDemoSession();
+
 
 
   const questionId =
@@ -257,68 +220,6 @@ function userIdFromToken(
     setReloadKey,
   ] =
     useState(0);
-
-  const [
-    publishing,
-    setPublishing,
-  ] =
-    useState(false);
-
-  const [
-    reviewError,
-    setReviewError,
-  ] =
-    useState("");
-
-  // JHEP-119: the submit-for-review / start-review transition state
-  const [
-    submitting,
-    setSubmitting,
-  ] =
-    useState(false);
-
-  const [
-    showRejectModal,
-    setShowRejectModal,
-  ] =
-    useState(false);
-
-  const [
-    rejectNote,
-    setRejectNote,
-  ] =
-    useState("");
-
-  const [
-    rejectError,
-    setRejectError,
-  ] =
-    useState("");
-
-  const [
-    rejecting,
-    setRejecting,
-  ] =
-    useState(false);
-
-  const [
-    showRetireModal,
-    setShowRetireModal,
-  ] =
-    useState(false);
-
-  const [
-    retiring,
-    setRetiring,
-  ] =
-    useState(false);
-
-  const [
-    retireError,
-    setRetireError,
-  ] =
-    useState("");
-
 
   const loadQuestion =
     useCallback(() => {
@@ -424,340 +325,6 @@ function userIdFromToken(
   ]);
 
 
-  async function refreshQuestion() {
-    if (
-      !token ||
-      !question
-    ) {
-      return;
-    }
-
-    const refreshed =
-      await getManagedQuestion(
-        token,
-        question.question_id,
-      );
-
-    setQuestion(
-      refreshed,
-    );
-  }
-
-
-  async function submitQuestion() {
-    if (
-      !token ||
-      !question ||
-      submitting
-    ) {
-      return;
-    }
-
-    setSubmitting(true);
-    setReviewError("");
-
-    try {
-      await submitManagedQuestion(token, question.question_id);
-      await refreshQuestion();
-    } catch (error: unknown) {
-      if (error instanceof ApiError) {
-        setReviewError(error.message);
-      } else {
-        setReviewError("Unable to submit the question for review.");
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function startReview() {
-    if (!isAdministrator || !token || !question || submitting) {
-      return;
-    }
-
-    setSubmitting(true);
-    setReviewError("");
-
-    try {
-      await startQuestionReview(token, question.question_id);
-      await refreshQuestion();
-    } catch (error: unknown) {
-      if (error instanceof ApiError) {
-        setReviewError(error.message);
-      } else {
-        setReviewError("Unable to start the review.");
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function publishQuestion() {
-    if (
-      !isAdministrator ||
-      !token ||
-      !question ||
-      publishing
-    ) {
-      return;
-    }
-
-    setPublishing(
-      true,
-    );
-
-    setReviewError(
-      "",
-    );
-
-    try {
-      await publishManagedQuestion(
-        token,
-        question.question_id,
-      );
-
-      await refreshQuestion();
-
-    } catch (
-      error: unknown
-    ) {
-      if (
-        error instanceof
-          ApiError &&
-        error.status ===
-          401
-      ) {
-        handleError(
-          error,
-        );
-
-        return;
-      }
-
-      if (
-        error instanceof
-          ApiError &&
-        error.status ===
-          403
-      ) {
-        setReviewError(
-          "Only Administrators can approve and publish questions.",
-        );
-
-      } else if (
-        error instanceof
-          ApiError &&
-        error.status ===
-          409
-      ) {
-        setReviewError(
-          "This question cannot be published in its current state.",
-        );
-
-      } else {
-        setReviewError(
-          "Unable to publish this question. Please try again.",
-        );
-      }
-
-    } finally {
-      setPublishing(
-        false,
-      );
-    }
-  }
-
-
-  async function confirmRejection() {
-    if (
-      !isAdministrator ||
-      !token ||
-      !question ||
-      rejecting
-    ) {
-      return;
-    }
-
-    const note =
-      rejectNote.trim();
-
-    if (!note) {
-      setRejectError(
-        "Enter a reason for rejecting this question.",
-      );
-
-      return;
-    }
-
-    setRejecting(
-      true,
-    );
-
-    setRejectError(
-      "",
-    );
-
-    setReviewError(
-      "",
-    );
-
-    try {
-      await rejectManagedQuestion(
-        token,
-        question.question_id,
-        note,
-      );
-
-      await refreshQuestion();
-
-      setShowRejectModal(
-        false,
-      );
-
-      setRejectNote(
-        "",
-      );
-
-    } catch (
-      error: unknown
-    ) {
-      if (
-        error instanceof
-          ApiError &&
-        error.status ===
-          401
-      ) {
-        handleError(
-          error,
-        );
-
-        return;
-      }
-
-      if (
-        error instanceof
-          ApiError &&
-        error.status ===
-          403
-      ) {
-        setRejectError(
-          "Only Administrators can reject questions.",
-        );
-
-      } else if (
-        error instanceof
-          ApiError &&
-        error.status ===
-          409
-      ) {
-        setRejectError(
-          "This question cannot be rejected in its current state.",
-        );
-
-      } else if (
-        error instanceof
-          ApiError &&
-        error.status ===
-          422
-      ) {
-        setRejectError(
-          "Enter a valid review reason before rejecting.",
-        );
-
-      } else {
-        setRejectError(
-          "Unable to reject this question. Please try again.",
-        );
-      }
-
-    } finally {
-      setRejecting(
-        false,
-      );
-    }
-  }
-
-
-  async function confirmRetirement() {
-    if (
-      !isAdministrator ||
-      !token ||
-      !question ||
-      retiring
-    ) {
-      return;
-    }
-
-    setRetiring(
-      true,
-    );
-
-    setRetireError(
-      "",
-    );
-
-    try {
-      await retireManagedQuestion(
-        token,
-        question.question_id,
-      );
-
-      await refreshQuestion();
-
-      setShowRetireModal(
-        false,
-      );
-
-    } catch (
-      error: unknown
-    ) {
-      if (
-        error instanceof
-          ApiError &&
-        error.status ===
-          401
-      ) {
-        handleError(
-          error,
-        );
-
-        return;
-      }
-
-      if (
-        error instanceof
-          ApiError &&
-        error.status ===
-          403
-      ) {
-        setRetireError(
-          "Only Administrators can retire questions.",
-        );
-
-      } else if (
-        error instanceof
-          ApiError &&
-        error.status ===
-          409
-      ) {
-        setRetireError(
-          "This question cannot be retired in its current state.",
-        );
-
-      } else {
-        setRetireError(
-          "Unable to retire this question. Please try again.",
-        );
-      }
-
-    } finally {
-      setRetiring(
-        false,
-      );
-    }
-  }
-
-
   if (
     !ready ||
     !token
@@ -833,279 +400,28 @@ function userIdFromToken(
   }
 
 
-  const retired =
-    question
-      .publication_status ===
-    "retired";
-
-  const published =
-    question
-      .publication_status ===
-    "active";
-
-  const pendingDraft =
-    question
-      .publication_status ===
-      "draft" &&
-    question
-      .review_status ===
-      "pending";
-
-  // JHEP-119: the review-workflow states
-  const isSubmitted =
-    question.review_status === "submitted";
-  const isInReview =
-    question.review_status === "in_review";
-  const isInactive =
-    question.publication_status === "inactive";
-  const isOwnContributorDraft =
-    pendingDraft &&
-    question.created_by_id === (currentUserId ?? "");
-
-  const rejectedDraft =
-    question
-      .publication_status ===
-      "draft" &&
-    question
-      .review_status ===
-      "rejected";
-
-  const displayId =
-    shortQuestionId(
-      question.question_id,
-    );
-
-  const canEdit =
-    !retired &&
-    (
-      isAdministrator ||
-      question
-        .publication_status ===
-        "draft"
-    );
-
+  const retired = question.publication_status === "retired";
+  const readOnly = retired || question.publication_status === "inactive" || question.review_status === "rejected";
 
   return (
-    <section>
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#71777c]">
-        JHEP-159 / Question Review
-      </p>
-
-      <Link
-        href="/admin/questions"
-        className="mb-4 inline-flex items-center gap-2 text-sm text-[#3e4448] hover:underline"
-      >
-        <ArrowLeft
-          aria-hidden="true"
-          className="size-4"
-        />
-
+    <section className="min-w-0">
+      <Link href="/admin/questions" className="mb-4 inline-flex min-h-11 items-center gap-2 text-sm font-medium text-[#3e4448] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2">
+        <ArrowLeft aria-hidden="true" className="size-4 shrink-0" />
         Back to Question Bank
       </Link>
+      <QuestionReviewActions
+        key={`${question.question_id}:${currentUserId ?? "unknown"}:${role ?? "unknown"}`}
+        question={question}
+        role={role}
+        userId={currentUserId}
+        token={token}
+        onUpdated={setQuestion}
+        onUnauthorized={handleError}
+        onReload={() => { setLoadStatus("loading"); setReloadKey((value) => value + 1); }}
+      />
 
-
-      <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-          Question Details —{" "}
-          {displayId}
-        </h1>
-
-        {!retired && (
-          <div className="flex flex-wrap gap-2">
-            {canEdit && (
-              <Link
-                href={`/admin/questions/${encodeURIComponent(
-                  question.question_id,
-                )}/edit`}
-                className="rounded-md border border-[#cfd2d5] bg-white px-5 py-2.5 text-sm font-medium hover:bg-[#f4f4f4]"
-              >
-                Edit
-              </Link>
-            )}
-
-            {isOwnContributorDraft && (
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={() => {
-                  setReviewError("");
-                  void submitQuestion();
-                }}
-                className="rounded-md bg-[#3d4145] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#292d30] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {submitting ? "Submitting..." : "Submit for Review"}
-              </button>
-            )}
-
-            {isAdministrator &&
-              isSubmitted && (
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={() => {
-                    setReviewError("");
-                    void startReview();
-                  }}
-                  className="rounded-md bg-[#3d4145] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#292d30] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {submitting ? "Starting..." : "Start Review"}
-                </button>
-              )}
-
-            {isAdministrator &&
-              pendingDraft && (
-                <>
-                  <button
-                    type="button"
-                    disabled={
-                      publishing ||
-                      rejecting
-                    }
-                    onClick={() => {
-                      setReviewError(
-                        "",
-                      );
-
-                      void publishQuestion();
-                    }}
-                    className="rounded-md bg-[#3d4145] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#292d30] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {publishing
-                      ? "Publishing..."
-                      : "Approve & Publish"}
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={
-                      publishing ||
-                      rejecting
-                    }
-                    onClick={() => {
-                      setRejectError(
-                        "",
-                      );
-
-                      setReviewError(
-                        "",
-                      );
-
-                      setShowRejectModal(
-                        true,
-                      );
-                    }}
-                    className="rounded-md border border-[#cfd2d5] bg-white px-5 py-2.5 text-sm font-semibold hover:bg-[#f4f4f4] disabled:opacity-50"
-                  >
-                    Reject
-                  </button>
-                </>
-              )}
-
-            {isAdministrator &&
-              published && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRetireError(
-                      "",
-                    );
-
-                    setShowRetireModal(
-                      true,
-                    );
-                  }}
-                  className="rounded-md border border-[#cfd2d5] bg-white px-5 py-2.5 text-sm font-medium hover:bg-[#f4f4f4]"
-                >
-                  Retire
-                </button>
-              )}
-          </div>
-        )}
-      </div>
-
-
-      {reviewError && (
-        <div
-          role="alert"
-          className="mb-5 flex gap-2 rounded-md bg-red-50 p-4 text-sm text-red-700"
-        >
-          <CircleAlert
-            aria-hidden="true"
-            className="mt-0.5 size-4 shrink-0"
-          />
-
-          {reviewError}
-        </div>
-      )}
-
-
-      {pendingDraft && (
-        <div className="mb-5 flex items-center gap-2 rounded-md bg-[#f1f1f1] px-4 py-4 text-sm font-semibold">
-          <CircleAlert
-            aria-hidden="true"
-            className="size-4"
-          />
-
-          {isAdministrator
-            ? (
-                "PENDING REVIEW — approve and publish, or reject with feedback."
-              )
-            : (
-                "PENDING REVIEW — awaiting Administrator review."
-              )}
-        </div>
-      )}
-
-
-      {rejectedDraft && (
-        <div className="mb-5 flex items-start gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-4 text-sm">
-          <X
-            aria-hidden="true"
-            className="mt-0.5 size-4 shrink-0 text-red-700"
-          />
-
-          <div className="min-w-0">
-            <p className="font-semibold text-red-900">
-              REJECTED — edit this
-              question to return it
-              to pending review.
-            </p>
-
-            {question.review_note && (
-              <div className="mt-3 rounded-md border border-red-200 bg-white p-3 text-[#4f565b]">
-                <p className="text-xs font-semibold uppercase tracking-wide text-red-800">
-                  Administrator feedback
-                </p>
-
-                <p className="mt-1 whitespace-pre-wrap leading-6">
-                  {
-                    question.review_note
-                  }
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-
-      {retired && (
-        <div className="mb-5 flex items-center gap-2 rounded-md bg-[#f1f1f1] px-4 py-4 text-sm font-semibold">
-          <Check
-            aria-hidden="true"
-            className="size-4"
-          />
-
-          RETIRED — inactive
-          record; excluded from
-          all future generated
-          practice exams.
-        </div>
-      )}
-
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.8fr)_minmax(260px,0.9fr)]">
-        <article className="rounded-md border border-[#cfd2d5] bg-white p-5 sm:p-6">
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(0,0.9fr)]">
+        <article className="min-w-0 rounded-md border border-[#cfd2d5] bg-white p-4 [overflow-wrap:anywhere] sm:p-6">
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide">
             {retired
               ? "Status: Retired / Inactive"
@@ -1255,17 +571,50 @@ function userIdFromToken(
           )}
 
 
-          {question.question_type ===
-            "short_answer" && (
+          {question.question_type !==
+            "multiple_choice" && (
             <div className="mt-6">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide">
-                Expected Answer
+                Model answer &amp; scoring rubric
               </p>
 
               <div className="rounded-md border border-[#d4d7da] bg-[#f6f6f6] p-4 text-sm leading-6">
                 {question.expected_answer ??
                   "No expected answer stored."}
               </div>
+
+              {(question.rubric?.length ??
+                0) > 0 && (
+                <ul className="mt-3 space-y-1.5">
+                  {(question.rubric ?? []).map(
+                    (criterion) => (
+                      <li
+                        key={
+                          criterion.position
+                        }
+                        className="flex items-center justify-between gap-3 rounded-md border border-[#d4d7da] bg-white px-3 py-2 text-sm"
+                      >
+                        <span>
+                          {
+                            criterion.position
+                          }
+                          .{" "}
+                          {
+                            criterion.name
+                          }
+                        </span>
+
+                        <span className="shrink-0 rounded bg-[#eef0f2] px-2 py-0.5 text-xs font-medium">
+                          +
+                          {
+                            criterion.points
+                          }
+                        </span>
+                      </li>
+                    ),
+                  )}
+                </ul>
+              )}
             </div>
           )}
 
@@ -1297,7 +646,7 @@ function userIdFromToken(
           )}
 
 
-          {retired && (
+          {readOnly && (
             <p className="mt-5 text-sm text-[#6b7277]">
               Inactive records are
               read-only. There is
@@ -1308,7 +657,7 @@ function userIdFromToken(
         </article>
 
 
-        <aside className="rounded-md border border-[#cfd2d5] bg-white p-5 sm:p-6">
+        <aside className="min-w-0 rounded-md border border-[#cfd2d5] bg-white p-4 [overflow-wrap:anywhere] sm:p-6">
           <h2 className="text-lg font-bold">
             Record history
           </h2>
@@ -1337,7 +686,7 @@ function userIdFromToken(
 
               <p className="mt-1 text-xs capitalize leading-5 text-[#6e7479]">
                 {
-                  question.review_status
+                  question.review_status.replace(/_/g, " ")
                 }
               </p>
             </div>
@@ -1350,10 +699,10 @@ function userIdFromToken(
               <p className="mt-1 text-xs leading-5 text-[#6e7479]">
                 {isAdministrator
                   ? (
-                      "Administrators may edit, approve, reject, publish, or retire this record."
+                      "Administrator actions depend on the current review and publication state."
                     )
                   : (
-                      "Contributors may edit their permitted draft questions. Approval, rejection, publication, and retirement are Administrator-only."
+                      "Contributors can edit and submit their own drafts. Review decisions and publication are Administrator-only."
                     )}
               </p>
             </div>
@@ -1379,271 +728,6 @@ function userIdFromToken(
       </div>
 
 
-      {isAdministrator &&
-        showRejectModal && (
-        <div
-          role="presentation"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
-          onMouseDown={(
-            event,
-          ) => {
-            if (
-              event.target ===
-                event.currentTarget &&
-              !rejecting
-            ) {
-              setShowRejectModal(
-                false,
-              );
-            }
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="reject-title"
-            className="w-full max-w-xl rounded-md border border-[#cfd2d5] bg-white p-6 shadow-xl"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2
-                  id="reject-title"
-                  className="text-2xl font-bold"
-                >
-                  Reject Question
-                </h2>
-
-                <p className="mt-2 text-sm text-[#687178]">
-                  {displayId}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                disabled={
-                  rejecting
-                }
-                aria-label="Close rejection dialog"
-                onClick={() =>
-                  setShowRejectModal(
-                    false,
-                  )
-                }
-                className="rounded p-1 hover:bg-[#f1f1f1]"
-              >
-                <X
-                  aria-hidden="true"
-                  className="size-5"
-                />
-              </button>
-            </div>
-
-            <label className="mt-5 block text-sm font-semibold">
-              Review feedback *
-
-              <textarea
-                rows={5}
-                value={
-                  rejectNote
-                }
-                onChange={(
-                  event,
-                ) => {
-                  setRejectNote(
-                    event.target
-                      .value,
-                  );
-
-                  setRejectError(
-                    "",
-                  );
-                }}
-                placeholder="Explain what needs to be corrected before this question can be approved..."
-                className="mt-2 w-full resize-y rounded-md border border-[#cfd2d5] px-3 py-3 font-normal"
-              />
-            </label>
-
-            {rejectError && (
-              <div
-                role="alert"
-                className="mt-4 flex gap-2 rounded-md bg-red-50 p-3 text-sm text-red-700"
-              >
-                <CircleAlert
-                  aria-hidden="true"
-                  className="mt-0.5 size-4 shrink-0"
-                />
-
-                {rejectError}
-              </div>
-            )}
-
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                disabled={
-                  rejecting
-                }
-                onClick={() =>
-                  setShowRejectModal(
-                    false,
-                  )
-                }
-                className="rounded-md border border-[#cfd2d5] bg-white px-6 py-2.5 text-sm font-medium hover:bg-[#f5f5f5]"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                disabled={
-                  rejecting
-                }
-                onClick={() =>
-                  void confirmRejection()
-                }
-                className="rounded-md bg-[#3d4145] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#292d30] disabled:opacity-50"
-              >
-                {rejecting
-                  ? "Rejecting..."
-                  : "Reject Question"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-
-      {isAdministrator &&
-        showRetireModal && (
-        <div
-          role="presentation"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
-          onMouseDown={(
-            event,
-          ) => {
-            if (
-              event.target ===
-                event.currentTarget &&
-              !retiring
-            ) {
-              setShowRetireModal(
-                false,
-              );
-            }
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="retire-title"
-            className="w-full max-w-xl rounded-md border border-[#cfd2d5] bg-white p-6 shadow-xl"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2
-                  id="retire-title"
-                  className="text-2xl font-bold"
-                >
-                  Retire Question?
-                </h2>
-
-                <p className="mt-3 text-sm font-semibold">
-                  {displayId} —{" "}
-                  {
-                    question.question_text
-                  }
-                </p>
-              </div>
-
-              <button
-                type="button"
-                aria-label="Close retirement confirmation"
-                disabled={
-                  retiring
-                }
-                onClick={() =>
-                  setShowRetireModal(
-                    false,
-                  )
-                }
-                className="rounded p-1 hover:bg-[#f1f1f1]"
-              >
-                <X
-                  aria-hidden="true"
-                  className="size-5"
-                />
-              </button>
-            </div>
-
-            <div className="mt-5 space-y-4 text-sm leading-6 text-[#4f565b]">
-              <p>
-                Retiring this
-                question marks it
-                inactive and excludes
-                it from new generated
-                exams. The record is
-                not permanently
-                deleted.
-              </p>
-
-              <p>
-                Previously completed
-                attempts retain the
-                original question
-                version, answer
-                history, and existing
-                media references.
-              </p>
-            </div>
-
-            {retireError && (
-              <div
-                role="alert"
-                className="mt-5 flex gap-2 rounded-md bg-red-50 p-3 text-sm text-red-700"
-              >
-                <CircleAlert
-                  aria-hidden="true"
-                  className="mt-0.5 size-4 shrink-0"
-                />
-
-                {retireError}
-              </div>
-            )}
-
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                disabled={
-                  retiring
-                }
-                onClick={() =>
-                  setShowRetireModal(
-                    false,
-                  )
-                }
-                className="rounded-md border border-[#cfd2d5] bg-white px-6 py-2.5 text-sm font-medium hover:bg-[#f5f5f5]"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                disabled={
-                  retiring
-                }
-                onClick={() =>
-                  void confirmRetirement()
-                }
-                className="rounded-md bg-[#3d4145] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#292d30] disabled:opacity-50"
-              >
-                {retiring
-                  ? "Retiring..."
-                  : "Retire Question"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </section>
   );
 }

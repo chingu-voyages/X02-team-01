@@ -9,9 +9,8 @@ from sqlalchemy import insert, text
 from sqlmodel import Session, SQLModel
 
 from app import models  # noqa: F401
-from app.api.v1.endpoints.questions import get_question_repository
 from app.core.security import create_access_token
-from app.db.session import engine
+from app.db.session import engine, get_session
 from app.main import app
 from app.repositories.sqlmodel_repository import SQLModelQuestionRepository
 
@@ -311,18 +310,22 @@ def test_empty_bank_returns_empty_list(db):
 
 
 def test_endpoint_serves_database_rows_without_answer_keys(db, bank):
-    def _repository() -> SQLModelQuestionRepository:
-        return SQLModelQuestionRepository(Session(bind=db))
+    def override_session() -> Iterator[Session]:
+        with Session(
+            bind=db,
+            join_transaction_mode="create_savepoint",
+        ) as session:
+            yield session
 
-    app.dependency_overrides[get_question_repository] = _repository
+    app.dependency_overrides[get_session] = override_session
 
     try:
         with TestClient(app) as client:
+            token = create_access_token(str(bank["user_id"]))
+
             response = client.get(
                 QUESTIONS_URL,
-                headers={
-                    "Authorization": f"Bearer {create_access_token('test-learner')}"
-                },
+                headers={"Authorization": f"Bearer {token}"},
             )
 
         assert response.status_code == 200

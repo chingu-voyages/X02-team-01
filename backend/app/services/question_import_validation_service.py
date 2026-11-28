@@ -484,12 +484,12 @@ def _validate_row_candidate(
                 issues.append(
                     _issue(
                         row=row_number,
-                        field=("category_name"),
-                        severity=("error"),
-                        code=("AMBIGUOUS_CATALOG_REFERENCE"),
-                        message=("Category name matches more than one category."),
+                        field="category_name",
+                        severity="error",
+                        code="AMBIGUOUS_CATALOG_REFERENCE",
+                        message="Category name matches more than one category.",
+                        value_preview=str(category_name),
                     ),
-                    value_preview=str(category_name),
                 )
 
             else:

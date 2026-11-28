@@ -1,6 +1,7 @@
 """Persistence services for administrator/contributor question management."""
 
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from app.models.certification import Certification
 from app.models.question import Question
 from app.models.question_image import QuestionImage
 from app.models.question_version import QuestionVersion
+from app.models.rubric_criterion import RubricCriterion
 from app.models.text_answer_key import TextAnswerKey
 from app.models.user import User
 from app.schemas.admin_question import (
@@ -53,6 +55,107 @@ class QuestionDraftNotPublishableError(ValueError):
 
 class QuestionDraftNotRejectableError(ValueError):
     """Latest version cannot be rejected."""
+
+
+class QuestionRubricTotalMismatchError(QuestionDraftScopeError):
+    """JHEP-121 AC2: the rubric total does not match the criterion sum."""
+
+
+# The permitted default for short-answer drafts that omit an explicit
+# rubric: one criterion at one point, matching the implicit per-question
+# value the rest of the grading pipeline already assumes.
+DEFAULT_SHORT_ANSWER_RUBRIC: tuple[tuple[str, int], ...] = (("Correct response", 1),)
+
+
+def _resolved_rubric(
+    payload: QuestionDraftCreate | QuestionDraftEdit,
+    *,
+    existing_criteria: list[RubricCriterion] | None = None,
+) -> tuple[list[tuple[str, int]], int, str | None]:
+    """Validate and resolve a written question's rubric.
+
+    Returns (criteria, max_points, criteria_markdown). The version's total
+    is the criterion sum; an explicit max_points must match it (AC2).
+    Editing without a new rubric keeps the existing criteria (AC6: never
+    silently erase authored criteria).
+    """
+    if payload.rubric is not None:
+        criteria = [(criterion.name, criterion.points) for criterion in payload.rubric]
+        markdown = payload.criteria_markdown
+    elif existing_criteria:
+        criteria = [
+            (criterion.name, criterion.points) for criterion in existing_criteria
+        ]
+        markdown = payload.criteria_markdown
+    else:
+        criteria = list(DEFAULT_SHORT_ANSWER_RUBRIC)
+        markdown = payload.criteria_markdown
+
+    total = sum(points for _, points in criteria)
+
+    if payload.max_points is not None and payload.max_points != total:
+        raise QuestionRubricTotalMismatchError(
+            f"max_points ({payload.max_points}) must equal the sum of the "
+            f"criterion points ({total})"
+        )
+
+    return criteria, total, markdown
+
+
+def _persist_written_answer_key(
+    session: Session,
+    version_id: UUID,
+    expected_answer: str,
+    criteria: list[tuple[str, int]],
+    max_points: int,
+    criteria_markdown: str | None,
+) -> None:
+    """Store the model answer, the rubric criteria and the total."""
+    session.add(
+        TextAnswerKey(
+            question_version_id=version_id,
+            expected_answer=expected_answer,
+            max_points=max_points,
+            criteria_markdown=criteria_markdown,
+        )
+    )
+
+    for position, (name, points) in enumerate(criteria, start=1):
+        session.add(
+            RubricCriterion(
+                question_version_id=version_id,
+                position=position,
+                name=name,
+                points=points,
+            )
+        )
+
+    session.flush()
+
+
+def _load_rubric_criteria(
+    session: Session,
+    version_id: UUID,
+) -> list[RubricCriterion]:
+    return list(
+        session.exec(
+            select(RubricCriterion)
+            .where(RubricCriterion.question_version_id == version_id)
+            .order_by(RubricCriterion.position)
+        )
+    )
+
+
+def _delete_written_key(session: Session, version_id: UUID) -> None:
+    """Remove the version's key and rubric rows (draft replace/retype)."""
+    existing_key = session.exec(
+        select(TextAnswerKey).where(TextAnswerKey.question_version_id == version_id)
+    ).first()
+    if existing_key is not None:
+        session.delete(existing_key)
+
+    for criterion in _load_rubric_criteria(session, version_id):
+        session.delete(criterion)
 
 
 @dataclass(frozen=True)
@@ -104,6 +207,13 @@ class QuestionBankImage:
 
 
 @dataclass(frozen=True)
+class QuestionBankCriterion:
+    position: int
+    name: str
+    points: int
+
+
+@dataclass(frozen=True)
 class QuestionBankDetails:
     question_id: UUID
     question_version_id: UUID
@@ -126,7 +236,10 @@ class QuestionBankDetails:
     last_updated: datetime
     options: list[QuestionBankOption]
     expected_answer: str | None
-    images: list[QuestionBankImage]
+    max_points: int | None = None
+    criteria_markdown: str | None = None
+    rubric: list[QuestionBankCriterion] = dataclass_field(default_factory=list)
+    images: list[QuestionBankImage] = dataclass_field(default_factory=list)
 
 
 def add_question_draft(
@@ -185,11 +298,15 @@ def add_question_draft(
     else:
         assert payload.expected_answer is not None
 
-        session.add(
-            TextAnswerKey(
-                question_version_id=(version.id),
-                expected_answer=(payload.expected_answer),
-            )
+        criteria, max_points, criteria_markdown = _resolved_rubric(payload)
+
+        _persist_written_answer_key(
+            session,
+            version.id,
+            payload.expected_answer,
+            criteria,
+            max_points,
+            criteria_markdown,
         )
 
     # Surface child-record constraints while remaining transaction-neutral.
@@ -311,6 +428,13 @@ def edit_question_draft(
         if existing_key is not None:
             session.delete(existing_key)
 
+        # JHEP-121 AC6: a written-type edit that omits the rubric keeps the
+        # previously authored criteria instead of silently erasing them.
+        existing_criteria = _load_rubric_criteria(session, version.id)
+
+        for criterion in existing_criteria:
+            session.delete(criterion)
+
         session.flush()
 
         if payload.question_type == "multiple_choice":
@@ -330,11 +454,20 @@ def edit_question_draft(
         else:
             assert payload.expected_answer is not None
 
-            session.add(
-                TextAnswerKey(
-                    question_version_id=(version.id),
-                    expected_answer=(payload.expected_answer),
-                )
+            carried_criteria = None if payload.rubric is not None else existing_criteria
+
+            criteria, max_points, criteria_markdown = _resolved_rubric(
+                payload,
+                existing_criteria=carried_criteria,
+            )
+
+            _persist_written_answer_key(
+                session,
+                version.id,
+                payload.expected_answer,
+                criteria,
+                max_points,
+                criteria_markdown,
             )
 
         session.commit()
@@ -402,11 +535,24 @@ def _create_published_revision(
         else:
             assert payload.expected_answer is not None
 
-            session.add(
-                TextAnswerKey(
-                    question_version_id=(revision.id),
-                    expected_answer=(payload.expected_answer),
-                )
+            carried_criteria = (
+                None
+                if payload.rubric is not None
+                else (_load_rubric_criteria(session, active_version.id))
+            )
+
+            criteria, max_points, criteria_markdown = _resolved_rubric(
+                payload,
+                existing_criteria=carried_criteria,
+            )
+
+            _persist_written_answer_key(
+                session,
+                revision.id,
+                payload.expected_answer,
+                criteria,
+                max_points,
+                criteria_markdown,
             )
 
         images = session.exec(
@@ -758,6 +904,9 @@ def get_question_bank_details(
     options: list[QuestionBankOption] = []
 
     expected_answer: str | None = None
+    max_points: int | None = None
+    criteria_markdown: str | None = None
+    rubric: list[QuestionBankCriterion] = []
 
     if version.question_type == "multiple_choice":
         option_rows = session.exec(
@@ -782,6 +931,16 @@ def get_question_bank_details(
 
         if answer_key is not None:
             expected_answer = answer_key.expected_answer
+            max_points = answer_key.max_points
+            criteria_markdown = answer_key.criteria_markdown
+            rubric = [
+                QuestionBankCriterion(
+                    position=criterion.position,
+                    name=criterion.name,
+                    points=criterion.points,
+                )
+                for criterion in _load_rubric_criteria(session, version.id)
+            ]
 
     image_rows = session.exec(
         select(QuestionImage)
@@ -829,6 +988,9 @@ def get_question_bank_details(
         last_updated=(version.submitted_at),
         options=options,
         expected_answer=(expected_answer),
+        max_points=max_points,
+        criteria_markdown=criteria_markdown,
+        rubric=rubric,
         images=images,
     )
 

@@ -5,10 +5,10 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from learner_auth_fixtures import STUB_LEARNER_ID, issue_learner_token
 from sqlalchemy.exc import OperationalError
 
 from app.api.v1.endpoints.categories import get_category_repository
-from app.core.security import create_access_token
 from app.main import app
 from app.repositories.category_repository import AvailableCategory
 
@@ -34,8 +34,8 @@ class StubCategoryRepository:
         return self.categories
 
 
-def auth_header(subject: str = "test-learner") -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token(subject)}"}
+def auth_header(subject: str = STUB_LEARNER_ID) -> dict[str, str]:
+    return {"Authorization": f"Bearer {issue_learner_token(subject)}"}
 
 
 @pytest.fixture
@@ -52,6 +52,7 @@ def available_category() -> AvailableCategory:
 @pytest.fixture
 def category_api(
     available_category: AvailableCategory,
+    stub_learner_database,
 ) -> Iterator[tuple[TestClient, StubCategoryRepository, AvailableCategory]]:
     repository = StubCategoryRepository([available_category])
     app.dependency_overrides[get_category_repository] = lambda: repository

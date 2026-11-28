@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 import sqlalchemy as sa
+from admin_auth_fixtures import domain_access_token, make_domain_user
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -13,7 +14,6 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from app.api.v1.endpoints import admin
 from app.core.config import settings
 from app.core.roles import UserRole
-from app.core.security import create_access_token
 from app.db.session import get_session
 from app.models.answer_option import AnswerOption
 from app.models.category import Category
@@ -147,7 +147,7 @@ def create_user(
     session: Session,
     role: UserRole,
 ) -> User:
-    user = User(
+    user = make_domain_user(
         email=(f"{uuid4()}@example.test"),
         role=role,
     )
@@ -162,7 +162,7 @@ def create_user(
 def auth_header(
     user: User,
 ) -> dict[str, str]:
-    return {"Authorization": (f"Bearer {create_access_token(str(user.id))}")}
+    return {"Authorization": (f"Bearer {domain_access_token(user)}")}
 
 
 def seed_scope(

@@ -33,9 +33,10 @@ class QuestionVersion(SQLModel, table=True):
             "version_number > 0",
             name="ck_question_versions_positive_version",
         ),
-        # Supported MVP question formats
+        # Supported question formats (JHEP-121: essays are authorable;
+        # JHEP-120 owns the learner-facing essay response entry)
         CheckConstraint(
-            "question_type IN ('multiple_choice', 'short_answer')",
+            "question_type IN ('multiple_choice', 'short_answer', 'essay')",
             name="ck_question_versions_type",
         ),
         # Multi-select applies only to multiple-choice

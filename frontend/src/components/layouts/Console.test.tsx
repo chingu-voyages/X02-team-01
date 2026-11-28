@@ -6,13 +6,15 @@ import type { ReactNode } from "react";
 import Console from "./Console";
 import { useAuth, type UserRole } from "@/features/auth/AuthProvider";
 
-const { mockUsePathname, mockLogout } = vi.hoisted(() => ({
+const { mockUsePathname, mockLogout, mockReplace } = vi.hoisted(() => ({
   mockUsePathname: vi.fn(),
   mockLogout: vi.fn(),
+  mockReplace: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => mockUsePathname(),
+  useRouter: () => ({ replace: mockReplace }),
 }));
 
 vi.mock("next/link", () => ({
@@ -298,5 +300,29 @@ describe("Console layout shell", () => {
         .getByRole("button", { name: "Open navigation menu" })
         .getAttribute("aria-expanded"),
     ).toBe("false");
+  });
+});
+
+
+describe("Enrollment-only navigation", () => {
+  afterEach(cleanup);
+
+  it("hides administrator navigation and redirects a protected route", () => {
+    mockUsePathname.mockReturnValue("/admin/users");
+    const claims = btoa(JSON.stringify({ role: "administrator", mfa: "enrollment" }));
+    setAuthState("administrator", `header.${claims}.signature`);
+    render(<Console><div>Privileged content</div></Console>);
+    expect(screen.queryByText("Privileged content")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Users & Access" })).toBeNull();
+    expect(mockReplace).toHaveBeenCalledWith("/account/security");
+  });
+
+  it("allows the enrollment screen without an administrator sidebar", () => {
+    mockUsePathname.mockReturnValue("/account/security");
+    const claims = btoa(JSON.stringify({ role: "administrator", mfa: "enrollment" }));
+    setAuthState("administrator", `header.${claims}.signature`);
+    render(<Console><div>Enrollment content</div></Console>);
+    expect(screen.getByText("Enrollment content")).toBeTruthy();
+    expect(screen.queryByRole("navigation", { name: "Main navigation" })).toBeNull();
   });
 });

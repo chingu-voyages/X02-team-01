@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type {
@@ -24,6 +25,11 @@ import {
 } from "lucide-react";
 
 import PageHeader from "@/components/layouts/PageHeader";
+import ImportCatalogResolution from "@/features/questions/ImportCatalogResolution";
+import {
+  confirmImportCatalog,
+  type ImportCatalogConfirmation,
+} from "@/lib/question-import-catalog-api";
 import { useDemoSession } from "@/features/auth/AuthProvider";
 import { ApiError } from "@/lib/api-client";
 import {
@@ -721,6 +727,15 @@ export default function QuestionImportPage() {
     handleError,
   ]);
 
+  const catalogNoticeRef = useRef<HTMLDivElement>(null);
+  const catalogFocusRef = useRef(false);
+  useEffect(() => {
+    if (notice && catalogFocusRef.current) {
+      catalogFocusRef.current = false;
+      catalogNoticeRef.current?.focus();
+    }
+  }, [notice]);
+
   const pageCount =
     Math.max(
       1,
@@ -992,6 +1007,7 @@ export default function QuestionImportPage() {
     if (
       !token ||
       !batch ||
+      busy ||
       files.length === 0
     ) {
       return;
@@ -1025,15 +1041,14 @@ export default function QuestionImportPage() {
           latestBatch.id,
         );
 
-      setBatch(
-        refreshed,
-      );
+      setBatch({ ...refreshed, can_import: false });
 
       await loadPreview(
         refreshed,
         rowFilter,
         1,
       );
+      setBatch(refreshed);
 
       setNotice(
         "Images uploaded and validation refreshed.",
@@ -1081,15 +1096,14 @@ export default function QuestionImportPage() {
           batch.id,
         );
 
-      setBatch(
-        refreshed,
-      );
+      setBatch({ ...refreshed, can_import: false });
 
       await loadPreview(
         refreshed,
         rowFilter,
         1,
       );
+      setBatch(refreshed);
 
       setNotice(
         refreshed.can_import
@@ -1125,11 +1139,48 @@ export default function QuestionImportPage() {
     }
   }
 
+  // JHEP-207: explicitly confirm missing catalog records before importing.
+  async function confirmCatalogRecords(payload: ImportCatalogConfirmation) {
+    if (!token || !batch || busy || role !== "administrator" || batch.status !== "invalid") {
+      throw new ApiError(409, "The import is not available for catalog confirmation.");
+    }
+    setBusy(true);
+    clearMessages();
+    try {
+      const result = await confirmImportCatalog(token, batch.id, payload);
+      if (result.batch.id !== batch.id) throw new Error("Unexpected catalog confirmation response");
+
+      // The server has committed the catalog changes. Do not report a failed
+      // creation if only the subsequent preview refresh fails.
+      setBatch({ ...result.batch, can_import: false });
+      setRows([]);
+      setRowsTotal(0);
+      setMissingImages([]);
+      setIssueGroups([]);
+      setHistoryReloadKey((value) => value + 1);
+      const created = result.created_certification_ids.length + result.created_category_ids.length;
+      const receipt = `Catalog records created: ${created}. All new records are unpublished.`;
+      try {
+        await loadPreview(result.batch, "all", 1);
+        setBatch(result.batch);
+        catalogFocusRef.current = true;
+        setNotice(`${receipt} ${result.batch.can_import ? "Review the validated rows before importing questions." : "Resolve the remaining validation issues before importing questions."}`);
+      } catch (caught: unknown) {
+        setNotice(receipt);
+        if (caught instanceof ApiError && caught.status === 401) handleError(caught);
+        else setError("Catalog records were created, but the validation preview could not be refreshed. Revalidate before importing questions.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function confirmImport() {
     if (
       !token ||
       !batch ||
-      !batch.can_import
+      !batch.can_import ||
+      busy
     ) {
       return;
     }
@@ -1325,6 +1376,7 @@ export default function QuestionImportPage() {
   function handleCorrectedWorkbookInput(
     event: ChangeEvent<HTMLInputElement>,
   ) {
+    if (busy) return;
     const file =
       event.target.files?.[0] ??
       null;
@@ -1580,10 +1632,10 @@ export default function QuestionImportPage() {
   }
 
   return (
-    <section>
-      <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <section className="min-w-0 wrap-anywhere">
+      <div className="mb-5 min-w-0 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <PageHeader
-          stepLabel="JHEP-118 / Bulk Import"
+          stepLabel="Question Bank / Bulk Import"
           title="Import Questions"
           subtitle="Upload the approved Excel template, resolve any issues, then create the questions as pending Drafts."
         />
@@ -1607,8 +1659,10 @@ export default function QuestionImportPage() {
 
       {notice && (
         <div
+          ref={catalogNoticeRef}
+          tabIndex={-1}
           role="status"
-          className="mb-5 rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800"
+          className="mb-5 scroll-mt-24 rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800 focus-visible:outline-2 focus-visible:outline-offset-2"
         >
           {notice}
         </div>
@@ -1617,8 +1671,8 @@ export default function QuestionImportPage() {
       {step ===
         "select" && (
         <>
-          <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
-            <div className="rounded-md border border-[#d8dbde] bg-white p-6">
+          <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="min-w-0 rounded-md border border-[#d8dbde] bg-white p-4 sm:p-6">
               <h2 className="text-lg font-semibold text-[#303438]">
                 Upload question bank
               </h2>
@@ -1630,7 +1684,7 @@ export default function QuestionImportPage() {
                 questions are created.
               </p>
 
-              <label className="mt-6 flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed border-[#c7cbce] bg-[#fafafa] px-6 text-center hover:bg-[#f5f6f7]">
+              <label className="mt-5 flex min-h-40 min-w-0 cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed border-[#c7cbce] bg-[#fafafa] px-3 text-center hover:bg-[#f5f6f7] focus-within:outline-2 focus-within:outline-offset-2 sm:px-6">
                 <FileSpreadsheet
                   aria-hidden="true"
                   className="mb-3 size-8 text-[#62686d]"
@@ -1647,6 +1701,7 @@ export default function QuestionImportPage() {
 
                 <input
                   aria-label="Question bank workbook"
+                  disabled={busy}
                   type="file"
                   accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                   className="sr-only"
@@ -1657,8 +1712,8 @@ export default function QuestionImportPage() {
               </label>
 
               {workbookFile && (
-                <div className="mt-4 flex items-center justify-between gap-4 rounded-md border border-[#d8dbde] bg-[#f7f8f8] p-4">
-                  <div>
+                <div className="mt-4 flex min-w-0 items-center justify-between gap-3 rounded-md border border-[#d8dbde] bg-[#f7f8f8] p-3 sm:p-4">
+                  <div className="min-w-0">
                     <p className="font-medium">
                       {
                         workbookFile.name
@@ -1676,7 +1731,7 @@ export default function QuestionImportPage() {
 
                   <CheckCircle2
                     aria-label="Workbook selected"
-                    className="size-5 text-green-700"
+                    className="size-5 shrink-0 text-green-700"
                   />
                 </div>
               )}
@@ -1690,7 +1745,7 @@ export default function QuestionImportPage() {
                   !workbookFile ||
                   busy
                 }
-                className="mt-5 inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[#3d4145] px-6 text-sm font-semibold text-white hover:bg-[#292d30] disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-[#3d4145] px-4 text-sm font-semibold text-white hover:bg-[#292d30] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:px-6"
               >
                 {busy ? (
                   <Loader2
@@ -1723,7 +1778,7 @@ export default function QuestionImportPage() {
               <a
                 href="/templates/question-bank-import-template-v2.xlsx"
                 download
-                className="mt-4 inline-flex min-h-10 items-center justify-center rounded-md border border-[#bfc4c7] bg-white px-4 text-sm font-medium hover:bg-[#f1f2f3]"
+                className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-md border border-[#bfc4c7] bg-white px-4 py-2 text-center text-sm font-medium hover:bg-[#f1f2f3] sm:w-auto"
               >
                 Download Excel Template
               </a>
@@ -1738,7 +1793,7 @@ export default function QuestionImportPage() {
                     1. Validate every row.
                   </li>
                   <li>
-                    2. Add referenced images.
+                    2. Resolve catalog references and add images.
                   </li>
                   <li>
                     3. Review grouped issues.
@@ -1781,7 +1836,7 @@ export default function QuestionImportPage() {
         "preview" &&
         batch && (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid min-w-0 grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
             <SummaryCard
               label="Total"
               value={
@@ -1841,6 +1896,20 @@ export default function QuestionImportPage() {
             </div>
           )}
 
+          {batch.status === "invalid" && issueGroups.some((group) =>
+            ["CERTIFICATION_NOT_FOUND", "CATEGORY_NOT_FOUND", "AMBIGUOUS_CATALOG_REFERENCE", "CATEGORY_CERTIFICATION_MISMATCH"].includes(group.code),
+          ) && (
+            <ImportCatalogResolution
+              key={`${batch.id}:${batch.validated_at}:${role}`}
+              batchId={batch.id}
+              token={token}
+              role={role}
+              busy={busy}
+              onConfirm={confirmCatalogRecords}
+              onUnauthorized={handleError}
+            />
+          )}
+
           {issueGroups.length >
             0 && (
             <IssueSummary
@@ -1858,7 +1927,7 @@ export default function QuestionImportPage() {
               <div className="flex items-start gap-3">
                 <ImagePlus
                   aria-hidden="true"
-                  className="mt-0.5 size-5 text-amber-800"
+                  className="mt-0.5 size-5 shrink-0 text-amber-800"
                 />
 
                 <div className="min-w-0 flex-1">
@@ -1889,7 +1958,7 @@ export default function QuestionImportPage() {
                           key={
                             filename
                           }
-                          className="rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-medium"
+                          className="max-w-full wrap-anywhere rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-medium"
                         >
                           {
                             filename
@@ -1921,11 +1990,12 @@ export default function QuestionImportPage() {
                       automatically.
                     </p>
 
-                    <label className="mt-3 inline-flex cursor-pointer rounded-md border border-[#c7cbce] px-4 py-2 text-sm font-medium hover:bg-[#f6f7f7]">
+                    <label className="mt-3 inline-flex min-h-11 w-full cursor-pointer items-center justify-center rounded-md border border-[#c7cbce] px-4 py-2 text-sm font-medium hover:bg-[#f6f7f7] focus-within:outline-2 focus-within:outline-offset-2 sm:w-auto">
                       Browse Images
 
                       <input
                         aria-label="Import images"
+                        disabled={busy}
                         type="file"
                         multiple
                         accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
@@ -2135,8 +2205,7 @@ export default function QuestionImportPage() {
             )
           ) : (
             <div className="mt-5 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-              The questions were submitted
-              for Administrator review.
+              This import created drafts. Open the Question Bank to submit any remaining drafts for administrator review.
             </div>
           )}
 
@@ -2284,7 +2353,7 @@ function RecentImports({
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate font-medium">
+                    <p className="min-w-0 wrap-anywhere font-medium">
                       {
                         item.original_filename
                       }
@@ -2351,7 +2420,7 @@ function RecentImports({
                   disabled={
                     busy
                   }
-                  className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-md border border-[#cfd2d5] bg-white px-4 text-sm font-semibold text-[#3f4549] hover:bg-[#f5f6f7] disabled:opacity-50"
+                  className="inline-flex min-h-11 w-full shrink-0 items-center justify-center rounded-md border border-[#cfd2d5] bg-white px-4 text-sm font-semibold text-[#3f4549] hover:bg-[#f5f6f7] disabled:opacity-50 sm:w-auto"
                 >
                   {importActionLabel(
                     item.status,
@@ -2489,8 +2558,8 @@ function ValidationPreview({
   ) => Promise<void>;
 }) {
   return (
-    <div className="mt-5 rounded-md border border-[#d8dbde] bg-white">
-      <div className="flex flex-col gap-3 border-b border-[#d8dbde] p-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mt-5 min-w-0 rounded-md border border-[#d8dbde] bg-white">
+      <div className="flex min-w-0 flex-col gap-3 border-b border-[#d8dbde] p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-semibold">
             Validation Preview
@@ -2532,7 +2601,8 @@ function ValidationPreview({
                 disabled={
                   busy
                 }
-                className={`rounded-md px-3 py-2 text-sm font-medium ${
+                aria-pressed={rowFilter === filter}
+                className={`min-h-11 rounded-md px-3 py-2 text-sm font-medium ${
                   rowFilter ===
                   filter
                     ? "bg-[#3d4145] text-white"
@@ -2552,35 +2622,35 @@ function ValidationPreview({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[920px] border-collapse text-left text-sm">
-          <thead className="bg-[#f3f4f5] text-xs font-semibold uppercase tracking-wide text-[#656c72]">
-            <tr>
-              <th className="px-4 py-3">
+      <div className="min-w-0">
+        <table role="table" aria-label="Validation rows" className="block w-full min-w-0 border-collapse text-left text-sm xl:table xl:table-fixed">
+          <thead role="rowgroup" className="sr-only bg-[#f3f4f5] text-xs font-semibold uppercase tracking-wide text-[#656c72] xl:not-sr-only xl:table-header-group">
+            <tr role="row">
+              <th role="columnheader" scope="col" className="w-[7%] px-2 py-3">
                 Row
               </th>
-              <th className="px-4 py-3">
+              <th role="columnheader" scope="col" className="w-[29%] px-3 py-3">
                 Question
               </th>
-              <th className="px-4 py-3">
+              <th role="columnheader" scope="col" className="px-3 py-3">
                 Certification
               </th>
-              <th className="px-4 py-3">
+              <th role="columnheader" scope="col" className="px-3 py-3">
                 Category
               </th>
-              <th className="px-4 py-3">
+              <th role="columnheader" scope="col" className="px-3 py-3">
                 Type
               </th>
-              <th className="px-4 py-3">
+              <th role="columnheader" scope="col" className="px-3 py-3">
                 Image
               </th>
-              <th className="px-4 py-3">
+              <th role="columnheader" scope="col" className="px-3 py-3">
                 Status
               </th>
             </tr>
           </thead>
 
-          <tbody>
+          <tbody role="rowgroup" className="block xl:table-row-group">
             {rows.map(
               (row) => (
                 <ImportRow
@@ -2634,7 +2704,7 @@ function ValidationPreview({
                 ),
               )
             }
-            className="rounded border border-[#cfd2d5] px-3 py-1.5 disabled:opacity-40"
+            className="min-h-11 min-w-11 rounded border border-[#cfd2d5] px-3 py-1.5 disabled:opacity-40"
           >
             ‹
           </button>
@@ -2660,7 +2730,7 @@ function ValidationPreview({
                 ),
               )
             }
-            className="rounded border border-[#cfd2d5] px-3 py-1.5 disabled:opacity-40"
+            className="min-h-11 min-w-11 rounded border border-[#cfd2d5] px-3 py-1.5 disabled:opacity-40"
           >
             ›
           </button>
@@ -2757,8 +2827,7 @@ function ImportActions({
           {role ===
             "contributor" && (
             <p className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-              The questions were submitted
-              for Administrator review.
+              This import created drafts. Open the Question Bank to submit any remaining drafts for administrator review.
             </p>
           )}
 
@@ -2861,13 +2930,13 @@ function ImportActions({
             <h2 className="font-semibold">
               {batch.can_import
                 ? "Ready to import"
-                : "Import blocked"}
+                : batch.status === "ready" ? "Preview unavailable" : "Import blocked"}
             </h2>
 
             <p className="mt-1 text-sm text-[#646b70]">
               {batch.can_import
                 ? `All ${batch.valid_rows} questions will be created as pending, unpublished Drafts.`
-                : `Fix all ${batch.error_rows} row${batch.error_rows === 1 ? "" : "s"} with errors before importing. No questions have been created.`}
+                : batch.status === "ready" ? "Refresh validation before importing questions." : `Fix all ${batch.error_rows} row${batch.error_rows === 1 ? "" : "s"} with errors before importing. No questions have been created.`}
             </p>
           </div>
         </div>
@@ -3006,7 +3075,7 @@ function PublishConfirmationDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="publish-import-title"
-        className="w-full max-w-lg rounded-md border border-[#d8dbde] bg-white p-6 shadow-xl"
+        className="max-h-[calc(100dvh-2rem)] w-full min-w-0 max-w-lg overflow-y-auto overscroll-contain rounded-md border border-[#d8dbde] bg-white p-4 shadow-xl sm:p-6"
       >
         <h2
           id="publish-import-title"
@@ -3118,7 +3187,7 @@ function ConfirmationDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="import-confirmation-title"
-        className="w-full max-w-lg rounded-md border border-[#d8dbde] bg-white p-6 shadow-xl"
+        className="max-h-[calc(100dvh-2rem)] w-full min-w-0 max-w-lg overflow-y-auto overscroll-contain rounded-md border border-[#d8dbde] bg-white p-4 shadow-xl sm:p-6"
       >
         <h2
           id="import-confirmation-title"
@@ -3216,7 +3285,7 @@ function SummaryCard({
 
   return (
     <div
-      className={`rounded-md border p-4 ${classes}`}
+      className={`min-w-0 rounded-md border p-3 sm:p-4 ${classes}`}
     >
       <p className="text-xs font-semibold uppercase tracking-wide text-[#737a80]">
         {label}
@@ -3237,38 +3306,38 @@ function ImportRow({
 }) {
   return (
     <>
-      <tr className="border-t border-[#e1e3e5] align-top">
-        <td className="px-4 py-4 font-medium">
+      <tr role="row" className="grid min-w-0 gap-1 border-t border-[#e1e3e5] px-3 py-3 align-top xl:table-row xl:p-0">
+        <td role="cell" data-label="Row" className="grid min-w-0 grid-cols-[minmax(0,6rem)_minmax(0,1fr)] gap-2 py-1 text-left wrap-anywhere before:text-xs before:font-semibold before:text-[#62696e] before:content-[attr(data-label)] xl:table-cell xl:px-3 xl:py-4 xl:before:content-none font-medium">
           {row.row_number}
         </td>
 
-        <td className="max-w-[320px] px-4 py-4">
+        <td role="cell" data-label="Question" className="grid min-w-0 grid-cols-[minmax(0,6rem)_minmax(0,1fr)] gap-2 py-1 text-left wrap-anywhere before:text-xs before:font-semibold before:text-[#62696e] before:content-[attr(data-label)] xl:table-cell xl:px-3 xl:py-4 xl:before:content-none">
           {row.question_text ??
             "—"}
         </td>
 
-        <td className="px-4 py-4">
+        <td role="cell" data-label="Certification" className="grid min-w-0 grid-cols-[minmax(0,6rem)_minmax(0,1fr)] gap-2 py-1 text-left wrap-anywhere before:text-xs before:font-semibold before:text-[#62696e] before:content-[attr(data-label)] xl:table-cell xl:px-3 xl:py-4 xl:before:content-none">
           {row.certification_code ??
             "—"}
         </td>
 
-        <td className="px-4 py-4">
+        <td role="cell" data-label="Category" className="grid min-w-0 grid-cols-[minmax(0,6rem)_minmax(0,1fr)] gap-2 py-1 text-left wrap-anywhere before:text-xs before:font-semibold before:text-[#62696e] before:content-[attr(data-label)] xl:table-cell xl:px-3 xl:py-4 xl:before:content-none">
           {row.category_name ??
             "Uncategorized"}
         </td>
 
-        <td className="px-4 py-4">
+        <td role="cell" data-label="Type" className="grid min-w-0 grid-cols-[minmax(0,6rem)_minmax(0,1fr)] gap-2 py-1 text-left wrap-anywhere before:text-xs before:font-semibold before:text-[#62696e] before:content-[attr(data-label)] xl:table-cell xl:px-3 xl:py-4 xl:before:content-none">
           {typeLabel(
             row.question_type,
           )}
         </td>
 
-        <td className="px-4 py-4">
+        <td role="cell" data-label="Image" className="grid min-w-0 grid-cols-[minmax(0,6rem)_minmax(0,1fr)] gap-2 py-1 text-left wrap-anywhere before:text-xs before:font-semibold before:text-[#62696e] before:content-[attr(data-label)] xl:table-cell xl:px-3 xl:py-4 xl:before:content-none">
           {row.image_filename ??
             "—"}
         </td>
 
-        <td className="px-4 py-4">
+        <td role="cell" data-label="Status" className="grid min-w-0 grid-cols-[minmax(0,6rem)_minmax(0,1fr)] gap-2 py-1 text-left wrap-anywhere before:text-xs before:font-semibold before:text-[#62696e] before:content-[attr(data-label)] xl:table-cell xl:px-3 xl:py-4 xl:before:content-none">
           <span
             className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${rowStatusClasses(
               row.status,
@@ -3283,10 +3352,11 @@ function ImportRow({
 
       {row.issues.length >
         0 && (
-        <tr className="border-t border-[#eceeef] bg-[#fafafa]">
+        <tr role="row" className="block min-w-0 border-t border-[#eceeef] bg-[#fafafa] xl:table-row">
           <td
+            role="cell"
             colSpan={7}
-            className="px-4 py-3"
+            className="block min-w-0 px-3 py-3 xl:table-cell xl:px-4"
           >
             <div className="space-y-2">
               {row.issues.map(

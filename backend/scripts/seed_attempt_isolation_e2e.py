@@ -1,7 +1,7 @@
 """Local-only fixtures for the JHEP-203 practice-exam isolation regression.
 
 Two published exams share one certification, category, and question bank.
-Catalog fixtures are reused; each run creates a fresh verified learner.
+Each run creates fresh catalog records, a fixture author and a verified learner.
 Existing users, questions, attempts, and results are never modified or deleted.
 """
 
@@ -33,16 +33,17 @@ QUESTION_COUNT = 3
 EXAM_NAMES = ("JHEP-203 Data", "JHEP-203 Programming")
 
 
-def fixture_id(name: str) -> UUID:
-    return demo_uuid(f"jhep-203/attempt-isolation-e2e/v1/{name}")
-
-
 def seed_attempt_isolation_fixture() -> dict:
     require_safe_local_database()
     if engine.url.get_backend_name() != "postgresql":
         raise RuntimeError("JHEP-203 requires local PostgreSQL")
     if settings.max_exam_questions < QUESTION_COUNT:
         raise RuntimeError("JHEP-203 requires MAX_EXAM_QUESTIONS >= 3")
+
+    run_id = uuid4().hex[:12]
+
+    def fixture_id(name: str) -> UUID:
+        return demo_uuid(f"jhep-203/attempt-isolation-e2e/v2/{run_id}/{name}")
 
     author_id = fixture_id("author")
     certification_id = fixture_id("certification")
@@ -57,7 +58,7 @@ def seed_attempt_isolation_fixture() -> dict:
             session,
             User(
                 id=author_id,
-                email="jhep203-fixture-author@example.test",
+                email=f"jhep203-fixture-{run_id}@example.test",
                 full_name="JHEP-203 Fixture Author",
                 role="learner",
                 is_verified=False,
@@ -68,8 +69,8 @@ def seed_attempt_isolation_fixture() -> dict:
             session,
             Certification(
                 id=certification_id,
-                name="JHEP-203 E2E Computer Science",
-                code="JHEP203-E2E",
+                name=f"JHEP-203 E2E Computer Science {run_id}",
+                code=f"JHEP203-E2E-{run_id.upper()}",
                 passing_threshold_pct=65,
                 feedback_mode="immediate",
                 is_published=True,
@@ -145,7 +146,8 @@ def seed_attempt_isolation_fixture() -> dict:
                     ("question_version_id", "position", "option_text", "is_correct"),
                 )
 
-        for name in EXAM_NAMES:
+        for label in EXAM_NAMES:
+            name = f"{label} {run_id}"
             exam_id = fixture_id(f"exam/{name}")
             ensure_row(
                 session,

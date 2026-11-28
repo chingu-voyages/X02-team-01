@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 import sqlalchemy as sa
+from admin_auth_fixtures import domain_access_token, make_domain_user
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
@@ -11,7 +12,6 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.api.v1.endpoints import admin
 from app.core.roles import UserRole
-from app.core.security import create_access_token
 from app.db.session import get_session
 from app.models.answer_option import AnswerOption
 from app.models.category import Category
@@ -19,6 +19,7 @@ from app.models.certification import Certification
 from app.models.question import Question
 from app.models.question_image import QuestionImage
 from app.models.question_version import QuestionVersion
+from app.models.rubric_criterion import RubricCriterion
 from app.models.text_answer_key import TextAnswerKey
 from app.models.user import User
 from app.schemas.admin_question import QuestionDraftCreate
@@ -52,6 +53,7 @@ def engine():
             QuestionVersion.__table__,
             AnswerOption.__table__,
             TextAnswerKey.__table__,
+            RubricCriterion.__table__,
             QuestionImage.__table__,
         ],
     )
@@ -82,7 +84,7 @@ def client(session: Session) -> Iterator[TestClient]:
 
 
 def create_user(session: Session, role: UserRole) -> User:
-    user = User(email=f"{uuid4()}@example.test", role=role)
+    user = make_domain_user(email=f"{uuid4()}@example.test", role=role)
     session.add(user)
     session.commit()
     session.refresh(user)
@@ -90,7 +92,7 @@ def create_user(session: Session, role: UserRole) -> User:
 
 
 def auth_header(user: User) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token(str(user.id))}"}
+    return {"Authorization": f"Bearer {domain_access_token(user)}"}
 
 
 def seed_scope(session: Session) -> tuple[Certification, Category]:

@@ -22,7 +22,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 
-from app.api.deps import get_current_subject
+from app.api.deps import get_authenticated_subject
 from app.db.session import get_session
 from app.schemas.exam import (
     ExamCreatedOut,
@@ -142,7 +142,7 @@ def _owned_attempt(
 )
 def create_exam(
     payload: ExamCreateRequest,
-    subject: Annotated[str, Depends(get_current_subject)],
+    subject: Annotated[str, Depends(get_authenticated_subject)],
     service: Annotated[ExamService, Depends(get_exam_service)],
 ) -> ExamCreatedOut:
     """Generate, persist and deliver a new exam for the JWT-authenticated user."""
@@ -258,7 +258,7 @@ def create_exam(
 )
 def get_exam_attempt(
     attempt_id: UUID,
-    subject: Annotated[str, Depends(get_current_subject)],
+    subject: Annotated[str, Depends(get_authenticated_subject)],
     service: Annotated[ExamService, Depends(get_exam_service)],
     attempt_service: Annotated[ExamAttemptService, Depends(get_exam_attempt_service)],
 ) -> ExamResumedOut:
@@ -303,7 +303,7 @@ def set_question_flag(
     attempt_id: UUID,
     question_id: UUID,
     payload: QuestionFlagUpdateRequest,
-    subject: Annotated[str, Depends(get_current_subject)],
+    subject: Annotated[str, Depends(get_authenticated_subject)],
     service: Annotated[ExamService, Depends(get_exam_service)],
     attempt_service: Annotated[ExamAttemptService, Depends(get_exam_attempt_service)],
 ) -> QuestionFlagSavedOut:
@@ -339,7 +339,7 @@ def set_question_flag(
 def update_progress(
     attempt_id: UUID,
     payload: ProgressUpdateRequest,
-    subject: Annotated[str, Depends(get_current_subject)],
+    subject: Annotated[str, Depends(get_authenticated_subject)],
     service: Annotated[ExamService, Depends(get_exam_service)],
     attempt_service: Annotated[ExamAttemptService, Depends(get_exam_attempt_service)],
 ) -> ProgressSavedOut:
@@ -380,7 +380,7 @@ def save_response(
     attempt_id: UUID,
     question_id: UUID,
     payload: ResponseSaveRequest,
-    subject: Annotated[str, Depends(get_current_subject)],
+    subject: Annotated[str, Depends(get_authenticated_subject)],
     service: Annotated[ExamService, Depends(get_exam_service)],
     attempt_service: Annotated[ExamAttemptService, Depends(get_exam_attempt_service)],
 ) -> ResponseSavedOut:
@@ -460,7 +460,7 @@ def submit_question(
     attempt_id: UUID,
     question_id: UUID,
     payload: ResponseSaveRequest,
-    subject: Annotated[str, Depends(get_current_subject)],
+    subject: Annotated[str, Depends(get_authenticated_subject)],
     service: Annotated[ExamService, Depends(get_exam_service)],
     attempt_service: Annotated[ExamAttemptService, Depends(get_exam_attempt_service)],
 ) -> QuestionFeedbackOut:
@@ -513,7 +513,7 @@ def submit_question(
 @router.post("/{attempt_id}/submit", response_model=FinalSubmitOut)
 def submit_exam(
     attempt_id: UUID,
-    subject: Annotated[str, Depends(get_current_subject)],
+    subject: Annotated[str, Depends(get_authenticated_subject)],
     service: Annotated[ExamService, Depends(get_exam_service)],
     attempt_service: Annotated[ExamAttemptService, Depends(get_exam_attempt_service)],
 ) -> FinalSubmitOut:
@@ -553,7 +553,7 @@ def submit_exam(
 @router.get("/{attempt_id}/results", response_model=ResultsOut)
 def get_results(
     attempt_id: UUID,
-    subject: Annotated[str, Depends(get_current_subject)],
+    subject: Annotated[str, Depends(get_authenticated_subject)],
     service: Annotated[ExamService, Depends(get_exam_service)],
     attempt_service: Annotated[ExamAttemptService, Depends(get_exam_attempt_service)],
 ) -> ResultsOut:
