@@ -32,6 +32,9 @@ async function createDraft(page: Page, data: Fixture, questionText: string) {
     certification_id: data.certification_id, category_id: data.category_id, difficulty: "easy",
     question_text: questionText, question_type: "multiple_choice", allows_multiple_answers: false,
     explanation: "The first answer is correct.", options: [{ option_text: "Correct", is_correct: true }, { option_text: "Incorrect", is_correct: false }], expected_answer: null,
+  rubric: null,
+  max_points: null,
+  criteria_markdown: null,
   };
   const response = await page.request.post(api, { headers: await headers(page), data: payload });
   expect(response.status()).toBe(201);

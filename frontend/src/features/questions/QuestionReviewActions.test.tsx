@@ -18,7 +18,10 @@ const draft: AdminQuestionDetail = {
   difficulty: "easy", question_text: "Which option is correct?", question_type: "multiple_choice",
   allows_multiple_answers: false, explanation: "Option A is correct.", review_status: "pending", publication_status: "draft",
   review_note: null, is_flagged: false, created_by_id: "owner", submitted_by_id: "owner", last_updated: "2026-11-27T12:00:00Z",
-  options: [{ position: 1, option_text: "A", is_correct: true }, { position: 2, option_text: "B", is_correct: false }], expected_answer: null, images: [],
+  options: [{ position: 1, option_text: "A", is_correct: true }, { position: 2, option_text: "B", is_correct: false }], expected_answer: null,
+  max_points: null,
+  criteria_markdown: null,
+  rubric: [], images: [],
 };
 const submitted: AdminQuestionDetail = { ...draft, review_status: "submitted" };
 const reviewing: AdminQuestionDetail = { ...draft, review_status: "in_review" };
