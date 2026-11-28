@@ -46,6 +46,9 @@ describe("Admin question write API", () => {
         { option_text: "Incorrect", is_correct: false },
       ],
       expected_answer: null,
+      rubric: null,
+      max_points: null,
+      criteria_markdown: null,
     };
 
     const created = {
@@ -81,6 +84,9 @@ describe("Admin question write API", () => {
       explanation: "Updated explanation",
       options: [],
       expected_answer: "Expected response",
+      rubric: null,
+      max_points: null,
+      criteria_markdown: null,
     };
 
     const mockFetch = mockResponse(200, {

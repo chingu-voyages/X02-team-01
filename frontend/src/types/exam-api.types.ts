@@ -121,6 +121,12 @@ export type ManualGradeHistoryResponse = {
   count: number;
 };
 
+export type RubricCriterion = {
+  position: number;
+  name: string;
+  points: number;
+};
+
 export type WrittenResponseDetail = {
   attempt_id: string;
   question_version_id: string;
@@ -129,6 +135,8 @@ export type WrittenResponseDetail = {
   learner_response: string;
   expected_answer: string | null;
   max_points: number;
+  criteria_markdown: string | null;
+  rubric: RubricCriterion[];
   current_grade: {
     outcome: string | null;
     points_earned: number | null;

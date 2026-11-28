@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JHEP Study Guide</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============================= PAGE 1: COVER ============================= -->
+<section class="page cover">
+  <div class="cover-inner">
+    <div class="kicker">X02-team-01 &middot; Chingu Voyages</div>
+    <h1>The JHEP Project,<br><span>end to end</span></h1>
+    <p class="subtitle">
+      A child-simple story, a professional flow, and the backend code that makes it real.
+      Read it once for the shape. Read it again for the details.
+    </p>
+
+    <div class="lede">
+      <b>One sentence:</b> we built the pantry (PostgreSQL), the kitchen (FastAPI), and the
+      menu (API) that serves only approved questions without answers. The dining room
+      (Next.js) exists, but it is still eating pretend food from a mock JSON file.
+    </div>
+
+    <div class="legend">
+      <div class="item story"><b>Story</b>A everyday analogy. No jargon.</div>
+      <div class="item pro"><b>Pro track</b>Function names, SQL, and contracts.</div>
+      <div class="item deep"><b>Deep dive</b>Why the design is shaped this way.</div>
+      <div class="item gotcha"><b>Gotcha</b>What is missing or easy to break.</div>
+    </div>
+
+    <div class="meta">
+      <div class="meta-grid">
+        <div class="meta-item"><strong>Repository</strong>chingu-voyages/X02-team-01</div>
+        <div class="meta-item"><strong>Integration branch</strong>dev &middot; a40f33b</div>
+        <div class="meta-item"><strong>Production branch</strong>main &middot; 8a62ad7</div>
+      </div>
+      <div class="meta-grid">
+        <div class="meta-item"><strong>Backend</strong>FastAPI &middot; SQLModel &middot; PostgreSQL 17</div>
+        <div class="meta-item"><strong>Frontend</strong>Next.js 16 &middot; React 19 &middot; Tailwind</div>
+        <div class="meta-item"><strong>Current state</strong>No open PRs &middot; #13 merged with known issues</div>
+      </div>
+      <span class="stamp">Study edition &middot; 12 pages</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= PAGE 2: BIG PICTURE ============================= -->
+<section class="page">
+  <h2><span class="num">01</span>The whole machine in one picture</h2>
+
+  <div class="box child">
+    <span class="label">Story</span>
+    A restaurant. You sit in the <b>dining room</b> (frontend), tell the <b>waiter</b> what you want,
+    the <b>kitchen</b> (backend) checks your <b>wristband</b> (JWT), gets ingredients from the
+    <b>pantry</b> (database), and sends back a plate. The pantry also keeps the answer key locked
+    in a drawer the waiter is not allowed to open.
+  </div>
+
+  <div class="flow">
+    <div class="node blue">
+      <div class="title">Browser / user</div>
+      <div class="sub">Clicks, reads, answers</div>
+    </div>
+    <div class="arrow"><span class="tag">HTTP</span></div>
+    <div class="node">
+      <div class="title">Next.js frontend</div>
+      <div class="sub">Dining room &middot; <b>currently reads mock JSON</b></div>
+    </div>
+    <div class="arrow missing"><span class="tag">not wired yet</span></div>
+    <div class="node green">
+      <div class="title">FastAPI backend</div>
+      <div class="sub">Kitchen &middot; <code>GET /api/v1/questions</code></div>
+    </div>
+    <div class="arrow"><span class="tag">SQL</span></div>
+    <div class="node amber">
+      <div class="title">PostgreSQL</div>
+      <div class="sub">Pantry &middot; 7 tables &middot; one migration</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="box pro">
+      <span class="label">Pro track</span>
+      The backend is the only component that talks to PostgreSQL. It exposes a JSON contract:
+      <code>{"items": [...], "count": N}</code>. The frontend is supposed to consume that contract,
+      but today <code>frontend/src/features/exams/ExamCard.tsx</code> imports
+      <code>practiceQuestions.json</code> directly. The pipe is built from the database to the API;
+      the last link is still a mock.
+    </div>
+    <div class="box deep">
+      <span class="label">Deep dive</span>
+      This separation is deliberate. The API can be tested without a browser. The repository can be
+      tested without HTTP. The database rules hold even if two services disagree. Each layer has one
+      job, so a bug has a small place to hide.
+    </div>
+  </div>
+
+  <h3>What runs where</h3>
+  <table class="compact">
+    <tr><th>Piece</th><th>Technology</th><th>Job</th><th>Talks to</th></tr>
+    <tr><td>Frontend</td><td>Next.js 16, React 19, Tailwind, shadcn-style UI</td><td>Render questions and capture choices</td><td>Mock JSON today; API later</td></tr>
+    <tr><td>Backend</td><td>FastAPI, Pydantic, SQLModel</td><td>Authenticate, filter, map, serialize</td><td>PostgreSQL</td></tr>
+    <tr><td>Database</td><td>PostgreSQL 17</td><td>Store questions, versions, options, keys</td><td>&mdash;</td></tr>
+    <tr><td>CI/CD</td><td>GitHub Actions</td><td>Lint, test, build, publish images</td><td>GitHub, GHCR</td></tr>
+    <tr><td>Containers</td><td>Docker</td><td>Reproducible backend and frontend images</td><td>Runtime env</td></tr>
+  </table>
+
+  <div class="statusbar">
+    <div class="stat"><div class="k">Integration</div><div class="v">dev &middot; a40f33b</div></div>
+    <div class="stat"><div class="k">Production</div><div class="v red">main &middot; 8a62ad7</div></div>
+    <div class="stat"><div class="k">Open PRs</div><div class="v green">0</div></div>
+    <div class="stat"><div class="k">Frontend data</div><div class="v red">mock JSON</div></div>
+  </div>
+
+  <div class="box gotcha">
+    <span class="label">Gotcha</span>
+    <b>Production is behind.</b> <code>main</code> only contains PRs #1&ndash;#7. The schema,
+    retrieval endpoint, and exam UI (#8&ndash;#13) live on <code>dev</code>. A release PR from
+    <code>dev</code> to <code>main</code> has not been opened yet.
+  </div>
+
+  <div class="pagefoot"><span class="left">JHEP &middot; X02-team-01 &middot; study guide</span><span class="right">2 / 12</span></div>
+</section>
+
+<!-- ============================= PAGE 3: DATA MODEL ============================= -->
+<section class="page">
+  <h2><span class="num">02</span>The pantry: how questions are stored</h2>
+
+  <div class="box child">
+    <span class="label">Story</span>
+    A question is a <b>folder</b>. Each rewrite is a <b>page</b> inside the folder. Only one page may
+    be marked <b>live</b> at a time. The folder remembers the certification, category, and difficulty;
+    the page remembers the wording, the options, the review result, and whether it is published.
+    The answer key sits in a separate locked drawer.
+  </div>
+
+  <svg class="er" viewBox="0 0 900 545" role="img" aria-label="Entity relationship diagram of the question bank">
+    <defs>
+      <marker id="ah" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+        <path d="M0,0 L9,4.5 L0,9 Z" fill="#64748b"/>
+      </marker>
+      <marker id="ahred" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+        <path d="M0,0 L9,4.5 L0,9 Z" fill="#dc2626"/>
+      </marker>
+    </defs>
+
+    <!-- certifications -->
+    <rect x="20" y="20" width="220" height="105" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+    <rect x="20" y="20" width="220" height="30" rx="10" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>
+    <text x="32" y="41" font-size="14" font-weight="700" fill="#1e3a8a">certifications</text>
+    <text x="32" y="67" font-size="11.5" fill="#334155">id &nbsp; UUID &nbsp; PK</text>
+    <text x="32" y="85" font-size="11.5" fill="#334155">name &nbsp; varchar(255)</text>
+    <text x="32" y="103" font-size="11.5" fill="#334155">code &nbsp; varchar(50) UNIQUE</text>
+
+    <!-- users -->
+    <rect x="660" y="20" width="220" height="105" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+    <rect x="660" y="20" width="220" height="30" rx="10" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>
+    <text x="672" y="41" font-size="14" font-weight="700" fill="#1e3a8a">users</text>
+    <text x="672" y="67" font-size="11.5" fill="#334155">id &nbsp; UUID &nbsp; PK</text>
+    <text x="672" y="85" font-size="11.5" fill="#334155">email &nbsp; varchar(255) UNIQUE</text>
+    <text x="672" y="103" font-size="11.5" fill="#334155">created_at &nbsp; timestamptz</text>
+
+    <!-- categories -->
+    <rect x="20" y="190" width="240" height="125" rx="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+    <rect x="20" y="190" width="240" height="30" rx="10" fill="#e2e8f0" stroke="#cbd5e1" stroke-width="1.5"/>
+    <text x="32" y="211" font-size="14" font-weight="700" fill="#0f1b2d">categories</text>
+    <text x="32" y="240" font-size="11.5" fill="#334155">id &nbsp; UUID &nbsp; PK</text>
+    <text x="32" y="258" font-size="11.5" fill="#334155">certification_id &nbsp; UUID &nbsp; FK</text>
+    <text x="32" y="276" font-size="11.5" fill="#334155">name &nbsp; varchar(255)</text>
+    <text x="32" y="300" font-size="10.5" fill="#64748b">UNIQUE (certification_id, name)</text>
+    <text x="32" y="313" font-size="10.5" fill="#64748b">UNIQUE (certification_id, id)</text>
+
+    <!-- questions -->
+    <rect x="320" y="180" width="280" height="160" rx="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+    <rect x="320" y="180" width="280" height="30" rx="10" fill="#e2e8f0" stroke="#cbd5e1" stroke-width="1.5"/>
+    <text x="332" y="201" font-size="14" font-weight="700" fill="#0f1b2d">questions</text>
+    <text x="332" y="230" font-size="11.5" fill="#334155">id &nbsp; UUID &nbsp; PK</text>
+    <text x="332" y="248" font-size="11.5" fill="#334155">certification_id &nbsp; UUID &nbsp; FK</text>
+    <text x="332" y="266" font-size="11.5" fill="#334155">category_id &nbsp; UUID &nbsp; FK, NULL</text>
+    <text x="332" y="284" font-size="11.5" fill="#334155">difficulty &nbsp; easy | medium | hard</text>
+    <text x="332" y="302" font-size="11.5" fill="#334155">created_by_id &nbsp; UUID &nbsp; FK</text>
+    <text x="332" y="320" font-size="11.5" fill="#334155">created_at &nbsp; timestamptz</text>
+
+    <!-- question_versions -->
+    <rect x="320" y="390" width="330" height="145" rx="10" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+    <rect x="320" y="390" width="330" height="30" rx="10" fill="#d1fae5" stroke="#6ee7b7" stroke-width="1.5"/>
+    <text x="332" y="411" font-size="14" font-weight="700" fill="#065f46">question_versions</text>
+    <text x="332" y="440" font-size="11.5" fill="#334155">id &nbsp; UUID &nbsp; PK</text>
+    <text x="332" y="458" font-size="11.5" fill="#334155">question_id &nbsp; UUID &nbsp; FK</text>
+    <text x="332" y="476" font-size="11.5" fill="#334155">version_number &nbsp; int &nbsp; &gt; 0</text>
+    <text x="332" y="494" font-size="11.5" fill="#334155">question_text &nbsp; text (non-blank)</text>
+    <text x="332" y="512" font-size="11.5" fill="#334155">question_type / allows_multiple_answers</text>
+    <text x="332" y="530" font-size="11.5" fill="#334155">review_status / publication_status / is_flagged</text>
+
+    <!-- answer_options -->
+    <rect x="20" y="405" width="240" height="115" rx="10" fill="#fff8e8" stroke="#f6d58a" stroke-width="1.5"/>
+    <rect x="20" y="405" width="240" height="30" rx="10" fill="#fef3c7" stroke="#f6d58a" stroke-width="1.5"/>
+    <text x="32" y="426" font-size="14" font-weight="700" fill="#92400e">answer_options</text>
+    <text x="32" y="455" font-size="11.5" fill="#334155">id &nbsp; UUID &nbsp; PK</text>
+    <text x="32" y="473" font-size="11.5" fill="#334155">question_version_id &nbsp; FK</text>
+    <text x="32" y="491" font-size="11.5" fill="#334155">position &nbsp; int &nbsp; &gt; 0</text>
+    <text x="32" y="509" font-size="11.5" fill="#334155">option_text &nbsp; text &nbsp; / &nbsp; is_correct</text>
+
+    <!-- text_answer_keys -->
+    <rect x="680" y="405" width="200" height="90" rx="10" fill="#fff8e8" stroke="#f6d58a" stroke-width="1.5"/>
+    <rect x="680" y="405" width="200" height="30" rx="10" fill="#fef3c7" stroke="#f6d58a" stroke-width="1.5"/>
+    <text x="692" y="426" font-size="14" font-weight="700" fill="#92400e">text_answer_keys</text>
+    <text x="692" y="455" font-size="11.5" fill="#334155">id &nbsp; UUID &nbsp; PK</text>
+    <text x="692" y="473" font-size="11.5" fill="#334155">question_version_id &nbsp; FK</text>
+    <text x="692" y="491" font-size="11.5" fill="#334155">expected_answer &nbsp; text</text>
+
+    <!-- relationships -->
+    <line x1="130" y1="125" x2="140" y2="188" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+    <text x="145" y="160" font-size="10.5" fill="#64748b">1 : N</text>
+
+    <line x1="240" y1="75" x2="398" y2="178" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ahred)"/>
+    <text x="258" y="118" font-size="10" fill="#b91c1c">certification_id FK</text>
+
+    <line x1="260" y1="250" x2="318" y2="250" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+    <text x="276" y="242" font-size="10.5" fill="#64748b">1 : N</text>
+
+    <line x1="770" y1="125" x2="582" y2="178" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ahred)"/>
+    <text x="650" y="150" font-size="10" fill="#b91c1c">created_by</text>
+
+    <line x1="460" y1="340" x2="480" y2="388" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+    <text x="470" y="368" font-size="10.5" fill="#64748b">1 : N</text>
+
+    <line x1="318" y1="455" x2="262" y2="455" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+    <text x="276" y="447" font-size="10.5" fill="#64748b">1 : N</text>
+
+    <line x1="650" y1="450" x2="678" y2="450" stroke="#64748b" stroke-width="2" marker-end="url(#ah)"/>
+    <text x="654" y="442" font-size="10.5" fill="#64748b">1 : 1</text>
+
+    <rect x="675" y="325" width="205" height="52" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
+    <text x="686" y="343" font-size="10.5" fill="#64748b">users also own</text>
+    <text x="686" y="358" font-size="10.5" fill="#334155">submitted_by_id</text>
+    <text x="686" y="371" font-size="10.5" fill="#334155">reviewed_by_id</text>
+  </svg>
+
+  <div class="grid2">
+    <div class="box pro">
+      <span class="label">Pro track</span>
+      Seven tables. <code>questions</code> holds stable identity; <code>question_versions</code> holds
+      editable content. The composite FK
+      <code>(certification_id, category_id) &rarr; categories(certification_id, id)</code>
+      makes it impossible to attach a category from a different certification.
+    </div>
+    <div class="box deep">
+      <span class="label">Deep dive</span>
+      Versioning lets an editor fix a typo without destroying exam history. A partial unique index
+      enforces <b>at most one active version per question</b>; a CHECK enforces
+      <b>active &rArr; approved</b>. Answer keys live in child tables, so they can be omitted from
+      the learner-facing query by construction.
+    </div>
+  </div>
+
+  <div class="grid3">
+    <div class="box gotcha" style="margin:0">
+      <span class="label">DB-enforced</span>
+      <div class="small">One active version per question &middot; active requires approved &middot;
+      composite category/certification FK &middot; non-blank text &middot; one correct-option
+      position per version &middot; no cascading deletes.</div>
+    </div>
+    <div class="box gotcha" style="margin:0">
+      <span class="label">Service-enforced</span>
+      <div class="small">A multiple-choice version needs &ge; 2 options and &ge; 1 correct option.
+      Single-select needs exactly 1 correct. Short-answer needs exactly 1 key row. These span rows,
+      so a database CHECK cannot express them.</div>
+    </div>
+    <div class="box gotcha" style="margin:0">
+      <span class="label">Never in GET</span>
+      <div class="small"><code>answer_options.is_correct</code> and
+      <code>text_answer_keys.expected_answer</code> are never in the pre-submission response.
+      Review details, publication state, and <code>is_flagged</code> are also omitted.</div>
+    </div>
+  </div>
+
+  <div class="pagefoot"><span class="left">JHEP &middot; X02-team-01 &middot; study guide</span><span class="right">3 / 12</span></div>
+</section>
+
+<!-- ============================= PAGE 4: VERSIONING ============================= -->
+<section class="page">
+  <h2><span class="num">03</span>The version story: safe edits without losing history</h2>
+
+  <div class="box child">
+    <span class="label">Story</span>
+    Imagine a question folder. You write page 1. It gets checked and becomes the live page.
+    Later you want clearer wording, so you write page 2. Page 1 stays in the folder as history.
+    Only one page can wear the green <b>LIVE</b> badge. When page 2 is approved, it takes the badge;
+    page 1 becomes historical. Nothing is silently overwritten.
+  </div>
+
+  <div class="flow">
+    <div class="node">
+      <div class="title">Question identity</div>
+      <div class="sub">certification, category, difficulty, author</div>
+    </div>
+    <div class="arrow"><span class="tag">has</span></div>
+    <div class="node amber">
+      <div class="title">Version 1</div>
+      <div class="sub">draft &rarr; pending &rarr; approved &rarr; active</div>
+    </div>
+    <div class="arrow"><span class="tag">edit</span></div>
+    <div class="node blue">
+      <div class="title">Version 2</div>
+      <div class="sub">draft / pending / approved</div>
+    </div>
+    <div class="arrow"><span class="tag">publish</span></div>
+    <div class="node green">
+      <div class="title">One live version</div>
+      <div class="sub">approved + active + unflagged</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <h3>Two independent switches</h3>
+      <table class="compact">
+        <tr><th>Switch</th><th>Values</th><th>Meaning</th></tr>
+        <tr><td><code>review_status</code></td><td>pending, approved, rejected</td><td>Has an editor checked it?</td></tr>
+        <tr><td><code>publication_status</code></td><td>draft, active, retired</td><td>Is it visible to learners?</td></tr>
+        <tr><td><code>is_flagged</code></td><td>true / false</td><td>Emergency brake for bad content.</td></tr>
+      </table>
+      <div class="box pro">
+        <span class="label">Pro track</span>
+        Eligibility is the <b>AND</b> of three conditions:
+        <code>review_status = 'approved'</code>,
+        <code>publication_status = 'active'</code>,
+        <code>is_flagged = false</code>.
+        Pending, rejected, draft, retired, and flagged versions are excluded at the repository.
+      </div>
+    </div>
+    <div>
+      <h3>What the database guarantees</h3>
+      <ul class="tight small">
+        <li><code>UNIQUE (question_id, version_number)</code></li>
+        <li><code>UNIQUE (question_id) WHERE publication_status = 'active'</code></li>
+        <li><code>publication_status != 'active' OR review_status = 'approved'</code></li>
+        <li><code>review_status = 'pending' OR (reviewed_by_id IS NOT NULL AND reviewed_at IS NOT NULL)</code></li>
+        <li><code>version_number &gt; 0</code> and non-blank text</li>
+        <li>All foreign keys are <code>NO ACTION</code>; no <code>CASCADE</code></li>
+      </ul>
+      <div class="box gotcha">
+        <span class="label">Gotcha</span>
+        The unique active-version index is <b>partial</b>: it only applies to rows where
+        <code>publication_status = 'active'</code>. Drafts and retired versions can coexist freely.
+      </div>
+    </div>
+  </div>
+
+  <h3>If you change X, update Y</h3>
+  <table class="compact">
+    <tr><th>Change</th><th>Must also update</th><th>Why</th></tr>
+    <tr><td>A model / table</td><td>New Alembic migration, schema tests, DB tests, docs</td><td>The database only changes when a migration runs.</td></tr>
+    <tr><td>Repository domain object</td><td>Protocol, in-memory double, SQLModel repo, service, tests</td><td>All implementations must produce the same shape.</td></tr>
+    <tr><td>API response schema</td><td>Service mapping, frontend types/fetch, contract docs</td><td>The JSON boundary is a promise to clients.</td></tr>
+    <tr><td>Environment variable</td><td><code>.env.example</code>, <code>config.py</code>, compose, docs, CI</td><td>Missing required config must fail loudly.</td></tr>
+    <tr><td>Required check name</td><td>Branch protection settings</td><td>Protection matches checks by exact name.</td></tr>
+  </table>
+
+  <div class="box deep">
+    <span class="label">Deep dive</span>
+    Review and publication are separate because an editor's approval and a release decision are
+    different jobs. A question can be approved but still draft (not released), and it can be retired
+    without deleting its history. The flag is the emergency brake: it hides a version without
+    changing its review or publication record.
+  </div>
+
+  <div class="pagefoot"><span class="left">JHEP &middot; X02-team-01 &middot; study guide</span><span class="right">4 / 12</span></div>
+</section>
+
+<!-- ============================= PAGE 5: BACKEND STACK ============================= -->
+<section class="page">
+  <h2><span class="num">04</span>The backend: a layered machine</h2>
+
+  <div class="box child">
+    <span class="label">Story</span>
+    A kitchen has a chain of command. The <b>settings</b> decide which pantry to use. The
+    <b>session</b> opens the pantry door. The <b>models</b> describe the shelves. The
+    <b>migration</b> builds them. The <b>repository</b> fetches ingredients. The <b>service</b>
+    plates the food and removes the secret sauce. The <b>schema</b> is the menu description.
+    The <b>endpoint</b> is the waiter who checks your wristband and hands you the plate.
+  </div>
+
+  <div class="split-6040">
+    <div>
+      <div class="stack">
+        <div class="layer"><div class="n">1</div><div><div class="name">Settings</div><div class="file">app/core/config.py</div></div><div class="job">reads .env, builds DB URL</div></div>
+        <div class="connect"></div>
+        <div class="layer"><div class="n">2</div><div><div class="name">Session</div><div class="file">app/db/session.py</div></div><div class="job">engine + get_session</div></div>
+        <div class="connect"></div>
+        <div class="layer"><div class="n">3</div><div><div class="name">Models</div><div class="file">app/models/*.py</div></div><div class="job">Python shape of 7 tables</div></div>
+        <div class="connect"></div>
+        <div class="layer"><div class="n">4</div><div><div class="name">Migration</div><div class="file">alembic/versions/41306bd9dedd...</div></div><div class="job">builds the real shelves</div></div>
+        <div class="connect"></div>
+        <div class="layer"><div class="n">5</div><div><div class="name">Repository</div><div class="file">app/repositories/*.py</div></div><div class="job">fetch eligible rows</div></div>
+        <div class="connect"></div>
+        <div class="layer"><div class="n">6</div><div><div class="name">Service</div><div class="file">app/services/question_service.py</div></div><div class="job">strip answer keys</div></div>
+        <div class="connect"></div>
+        <div class="layer"><div class="n">7</div><div><div class="name">Schema</div><div class="file">app/schemas/question.py</div></div><div class="job">JSON contract</div></div>
+        <div class="connect"></div>
+        <div class="layer"><div class="n">8</div><div><div class="name">Endpoint</div><div class="file">app/api/v1/endpoints/questions.py</div></div><div class="job">JWT + response</div></div>
+      </div>
+      <div class="small" style="margin-top:1.5mm">Dependencies point upward: a layer may import the ones above it. The endpoint imports the service, schema, repository, and session; it does not reach into SQLAlchemy directly.</div>
+    </div>
+
+    <div>
+      <div class="box pro" style="margin-top:0">
+        <span class="label">Pro track: auth side-branch</span>
+        <div class="flow vertical" style="margin:1.5mm 0">
+          <div class="node blue"><div class="title">security.py</div><div class="sub">create / decode JWT</div></div>
+          <div class="arrow"><span class="tag">verify</span></div>
+          <div class="node blue"><div class="title">deps.py</div><div class="sub">get_current_subject</div></div>
+          <div class="arrow"><span class="tag">subject</span></div>
+          <div class="node green"><div class="title">endpoint</div><div class="sub">requires a valid bearer token</div></div>
+        </div>
+        <div class="small">JWT = a signed wristband. The server does not store sessions; it checks the signature and expiry on every request.</div>
+      </div>
+
+      <div class="box deep">
+        <span class="label">Deep dive: two repositories</span>
+        <div class="flow" style="margin:1mm 0">
+          <div class="node"><div class="title">Protocol</div><div class="sub">job description</div></div>
+          <div class="arrow"></div>
+          <div class="node amber"><div class="title">InMemory</div><div class="sub">rehearsal / tests</div></div>
+          <div class="node green"><div class="title">SQLModel</div><div class="sub">real pantry</div></div>
+        </div>
+        <div class="small">The endpoint depends on the Protocol, not on a concrete class. Tests can inject the in-memory double without a database.</div>
+      </div>
+
+      <div class="box gotcha">
+        <span class="label">Gotcha</span>
+        <code>config.py</code> loads the repo-root <code>.env</code> via
+        <code>parents[3]</code>, not <code>backend/.env</code>. Required settings have no defaults,
+        so a missing value fails at import.
+      </div>
+    </div>
+  </div>
+
+  <div class="box deep">
+    <span class="label">The dependency rule in one line</span>
+    <b>config &rarr; session &rarr; models &rarr; migration &rarr; repository &rarr; service &rarr; schema &rarr; endpoint.</b>
+    If you change a table, change the model, then the migration, then the repository query, then the
+    service mapping, then the response schema, then the frontend type. Skipping a step is how drift
+    starts.
+  </div>
+
+  <div class="pagefoot"><span class="left">JHEP &middot; X02-team-01 &middot; study guide</span><span class="right">5 / 12</span></div>
+</section>
+
+<!-- ============================= PAGE 6: REQUEST FLOW ============================= -->
+<section class="page">
+  <h2><span class="num">05</span>One request, step by step</h2>
+
+  <div class="box child">
+    <span class="label">Story</span>
+    You show your wristband at the door. The waiter checks it, walks to the pantry, asks only for
+    food that is approved, live, and not recalled, plates it, and removes the secret answer sauce.
+    If the wristband is missing or fake, the door stays closed with a 401.
+  </div>
+
+  <div class="flow" style="margin:2mm 0">
+    <div class="node"><div class="title">curl / browser</div><div class="sub">Authorization: Bearer &lt;jwt&gt;</div></div>
+    <div class="arrow"></div>
+    <div class="node green"><div class="title">FastAPI</div><div class="sub">route + dependencies</div></div>
+    <div class="arrow"></div>
+    <div class="node blue"><div class="title">auth</div><div class="sub">decode + subject</div></div>
+    <div class="arrow"></div>
+    <div class="node amber"><div class="title">repository</div><div class="sub">eligibility query</div></div>
+    <div class="arrow"></div>
+    <div class="node"><div class="title">PostgreSQL</div><div class="sub">rows + options + keys</div></div>
+  </div>
+
+  <div class="split-6040">
+    <div>
+      <ol class="steps">
+        <li><b>Request arrives.</b> The client calls <code>GET /api/v1/questions</code> with an
+          <code>Authorization: Bearer &lt;token&gt;</code> header.</li>
+        <li><b>Extract the credential.</b> <code>HTTPBearer(auto_error=False)</code> returns
+          <code>None</code> if the header is missing, so the dependency can produce a clean 401
+          instead of a framework default.</li>
+        <li><b>Verify the wristband.</b> <code>decode_access_token</code> checks the HS256
+          signature and the required <code>sub</code>, <code>iat</code>, and <code>exp</code>
+          claims. Invalid or expired tokens raise 401 with <code>WWW-Authenticate: Bearer</code>.</li>
+        <li><b>Build the repository.</b> <code>get_question_repository</code> receives a
+          <code>Session</code> from <code>get_session</code> and returns
+          <code>SQLModelQuestionRepository(session)</code>.</li>
+        <li><b>Filter in SQL.</b> The repository selects only versions where review is
+          <code>approved</code>, publication is <code>active</code>, and
+          <code>is_flagged</code> is false.</li>
+        <li><b>Load the pieces.</b> It loads each parent question's difficulty, the options ordered
+          by <code>position</code>, and the short-answer key. It maps rows to frozen domain objects.</li>
+        <li><b>Remove the answer key.</b> The service maps each domain object to
+          <code>QuestionOut</code> / <code>QuestionOptionOut</code>. Those models have no
+          <code>is_correct</code> or <code>expected_answer</code> field, so the secret cannot leak
+          even if a future developer adds it to the domain object.</li>
+        <li><b>Serialize.</b> FastAPI returns <code>{"items": [...], "count": N}</code>. An empty
+          bank is a successful <code>200</code>, not an error.</li>
+      </ol>
+    </div>
+
+    <div>
+      <div class="codecard">
+        <div class="file">the eligibility filter (SQL idea)</div>
+        <pre class="code">WHERE review_status = 'approved'
+  AND publication_status = 'active'
+  AND is_flagged = false</pre>
+      </div>
+
+      <div class="codecard">
+        <div class="file">the response contract</div>
+        <pre class="code">{
+  "items": [
+    {
+      "id": "v-1004",
+      "question_text": "Which Scrum event is 15 minutes?",
+      "question_type": "multiple_choice",
+      "allows_multiple_answers": false,
+      "difficulty": "easy",
+      "options": [
+        {"position": 1, "option_text": "Daily Scrum"},
+        {"position": 2, "option_text": "Sprint Review"}
+      ]
+    }
+  ],
+  "count": 1
+}</pre>
+      </div>
+
+      <div class="box gotcha" style="margin-bottom:0">
+        <span class="label">Gotcha</span>
+        The repository <b>does</b> load <code>is_correct</code> and <code>expected_answer</code> so a
+        future grading endpoint can use them. The service is the firewall. Never return the domain
+        object directly.
+      </div>
+    </div>
+  </div>
+
+  <div class="grid3" style="margin-top:2mm">
+    <div class="box pro" style="margin:0">
+      <span class="label">200</span>
+      <div class="small">Eligible questions, or an empty list. The count is the list length.</div>
+    </div>
+    <div class="box gotcha" style="margin:0">
+      <span class="label">401</span>
+      <div class="small"><code>Authentication required</code> when the header is absent;
+      <code>Invalid or expired authentication token</code> when verification fails.</div>
+    </div>
+    <div class="box deep" style="margin:0">
+      <span class="label">422</span>
+      <div class="small">FastAPI validation error for a malformed request. The GET has no body, so
+      this is mostly a safety net.</div>
+    </div>
+  </div>
+
+  <div class="pagefoot"><span class="left">JHEP &middot; X02-team-01 &middot; study guide</span><span class="right">6 / 12</span></div>
+</section>
+
+<!-- ============================= PAGE 7: CODE ATLAS 1 ============================= -->
+<section class="page">
+  <h2><span class="num">06</span>Code atlas 1: settings, session, tables</h2>
+
+  <div class="box pro">
+    <span class="label">How to read the code atlas</span>
+    Each card shows the file, why it exists, and the part that matters. Ellipses mark omitted lines.
+    The real files are in the repository; the guide deliberately keeps the essential shape, not every
+    blank line.
+  </div>
+
+  <div class="codecard">
+    <div class="file">backend/app/core/config.py &middot; excerpt</div>
+    <div class="why">One Settings object reads the environment and produces a SQLAlchemy URL. Required fields have no default, so a missing secret fails loudly.</div>
+    <pre class="code">class Settings(BaseSettings):
+    postgres_db: str
+    postgres_user: str
+    postgres_password: str
+    postgres_host: str = "127.0.0.1"
+    postgres_port: int = 5432
+
+    jwt_secret_key: str
+    jwt_algorithm: Literal["HS256"] = "HS256"
+    access_token_expire_minutes: int = 30
+
+    model_config = SettingsConfigDict(
+        env_file=ROOT_DIR / ".env", extra="ignore"
+    )
+
+    @property
+    def database_url(self) -> URL:
+        return URL.create(
+            drivername="postgresql+psycopg",
+            username=self.postgres_user,
+            password=self.postgres_password,
+            host=self.postgres_host,
+            port=self.postgres_port,
+            database=self.postgres_db,
+        )
+
+settings = Settings()</pre>
+  </div>
+
+  <div class="grid2">
+    <div class="codecard">
+      <div class="file">backend/app/db/session.py &middot; full</div>
+      <div class="why">One engine per process; one session per request, closed automatically.</div>
+      <pre class="code">from collections.abc import Generator
+
+from sqlmodel import Session, create_engine
+
+from app.core.config import settings
+
+engine = create_engine(
+    settings.database_url,
+    pool_pre_ping=True,
+)
+
+def get_session() -> Generator[Session, None, None]:
+    with Session(engine) as session:
+        yield session</pre>
+    </div>
+
+    <div class="codecard">
+      <div class="file">backend/app/models/question_version.py &middot; excerpt</div>
+      <div class="why">The table that carries editable content and the review/publication state.</div>
+      <pre class="code">class QuestionVersion(SQLModel, table=True):
+    __tablename__ = "question_versions"
+    __table_args__ = (
+        UniqueConstraint("question_id", "version_number", ...),
+        CheckConstraint(
+            "publication_status != 'active'"
+            " OR review_status = 'approved'", ...),
+        Index(
+            "uq_question_versions_active_question",
+            "question_id", unique=True,
+            postgresql_where=text(
+                "publication_status = 'active'")),
+    )
+    id: UUID = Field(default_factory=uuid4,
+                     primary_key=True)
+    question_id: UUID = Field(
+        foreign_key="questions.id", nullable=False)
+    version_number: int
+    question_text: str
+    review_status: str = "pending"
+    publication_status: str = "draft"
+    is_flagged: bool = False</pre>
+    </div>
+  </div>
+
+  <div class="codecard">
+    <div class="file">backend/alembic/versions/41306bd9dedd_create_question_bank_schema.py &middot; excerpt</div>
+    <div class="why">The migration is the only thing that changes a real database. Models describe; Alembic builds.</div>
+    <pre class="code">op.create_table(
+    "question_versions",
+    sa.Column("id", sa.Uuid(), nullable=False),
+    sa.Column("question_id", sa.Uuid(), nullable=False),
+    sa.Column("version_number", sa.Integer(), nullable=False),
+    sa.Column("question_text", sa.Text(), nullable=False),
+    # ... type, flags, review/publication, timestamps ...
+    sa.ForeignKeyConstraint(["question_id"], ["questions.id"]),
+    sa.CheckConstraint(
+        "publication_status != 'active' OR review_status = 'approved'",
+        name="ck_question_versions_publication",
+    ),
+)
+op.create_index(
+    "uq_question_versions_active_question", "question_versions",
+    ["question_id"], unique=True,
+    postgresql_where=sa.text("publication_status = 'active'"),
+)</pre>
+  </div>
+
+  <div class="box deep">
+    <span class="label">Order matters</span>
+    Settings before session. Session before models. Models before migration. Migration before the
+    repository can find anything. If the database is empty or behind, the API may still start, but
+    the query fails at runtime.
+  </div>
+
+  <div class="pagefoot"><span class="left">JHEP &middot; X02-team-01 &middot; study guide</span><span class="right">7 / 12</span></div>
+</section>
+
+<!-- ============================= PAGE 8: CODE ATLAS 2 ============================= -->
+<section class="page">
+  <h2><span class="num">07</span>Code atlas 2: the repository</h2>
+
+  <div class="box child">
+    <span class="label">Story</span>
+    The repository is the pantry worker. It has one job: bring back only the food that is approved,
+    live, and not recalled. There are two workers: a <b>rehearsal worker</b> with a fixed sample tray
+    (tests) and a <b>real worker</b> who walks into PostgreSQL. Both follow the same job description.
+  </div>
+
+  <div class="codecard">
+    <div class="file">backend/app/repositories/question_repository.py &middot; excerpt</div>
+    <div class="why">The domain objects are plain and frozen. The Protocol is the job description: any class with a matching <code>list_eligible</code> qualifies structurally.</div>
+    <pre class="code">@dataclass(frozen=True)
+class QuestionOption:
+    position: int
+    option_text: str
+    is_correct: bool
+
+@dataclass(frozen=True)
+class Question:
+    id: str
+    question_id: str
+    question_text: str
+    question_type: str
+    difficulty: str
+    review_status: str
+    publication_status: str
+    is_flagged: bool
+    allows_multiple_answers: bool = False
+    options: list[QuestionOption] = field(default_factory=list)
+    expected_answer: str | None = None
+
+class QuestionRepository(Protocol):
+    def list_eligible(self) -> list[Question]:
+        ...</pre>
+  </div>
+
+  <div class="codecard">
+    <div class="file">backend/app/repositories/sqlmodel_repository.py &middot; excerpt</div>
+    <div class="why">The real worker. It filters in SQL, then loads parents, options, and text keys in three follow-up queries to avoid a row explosion.</div>
+    <pre class="code">def list_eligible(self) -> list[Question]:
+    versions = self._session.exec(
+        select(QuestionVersion)
+        .where(
+            QuestionVersion.review_status == "approved",
+            QuestionVersion.publication_status == "active",
+            QuestionVersion.is_flagged.is_(False),
+        )
+        .order_by(QuestionVersion.question_id,
+                  QuestionVersion.version_number)
+    ).all()
+    if not versions:
+        return []
+
+    version_ids = [v.id for v in versions]
+    question_ids = {v.question_id for v in versions}
+
+    questions = {
+        q.id: q for q in self._session.exec(
+            select(QuestionModel).where(
+                QuestionModel.id.in_(question_ids))
+        ).all()
+    }
+
+    options: dict[UUID, list[QuestionOption]] = defaultdict(list)
+    for option in self._session.exec(
+        select(AnswerOption)
+        .where(AnswerOption.question_version_id.in_(version_ids))
+        .order_by(AnswerOption.question_version_id,
+                  AnswerOption.position)
+    ).all():
+        options[option.question_version_id].append(
+            QuestionOption(option.position, option.option_text,
+                           option.is_correct))
+
+    expected_answers = {
+        key.question_version_id: key.expected_answer
+        for key in self._session.exec(
+            select(TextAnswerKey).where(
+                TextAnswerKey.question_version_id.in_(version_ids))
+        ).all()
+    }
+
+    return [Question(...) for version in versions]</pre>
+  </div>
+
+  <div class="grid2">
+    <div class="codecard">
+      <div class="file">backend/app/repositories/in_memory.py &middot; excerpt</div>
+      <div class="why">The rehearsal worker. The same predicate, no database.</div>
+      <pre class="code">def _is_eligible(question: Question) -> bool:
+    return (
+        question.review_status == "approved"
+        and question.publication_status == "active"
+        and not question.is_flagged
+    )</pre>
+    </div>
+    <div class="box gotcha" style="margin:0">
+      <span class="label">Gotcha</span>
+      The domain object <b>intentionally</b> carries <code>is_correct</code> and
+      <code>expected_answer</code>. That is safe only because the service maps to response models
+      that omit them. If someone changes the endpoint to <code>response_model=Question</code>, the
+      answer key leaks.
+    </div>
+  </div>
+
+  <div class="box deep">
+    <span class="label">Why three queries, not one join?</span>
+    A join across versions and options multiplies rows: three options turn one version into three
+    rows, and nested keys make it worse. Loading versions, then options, then keys keeps the shape
+    predictable and avoids duplicate-question bugs.
+  </div>
+
+  <div class="pagefoot"><span class="left">JHEP &middot; X02-team-01 &middot; study guide</span><span class="right">8 / 12</span></div>
+</section>
+
+<!-- ============================= PAGE 9: CODE ATLAS 3 ============================= -->
+<section class="page">
+  <h2><span class="num">08</span>Code atlas 3: service, contract, endpoint, auth</h2>
+
+  <div class="box pro">
+    <span class="label">The firewall</span>
+    The service is where the secret sauce is removed. The response schema is the second lock: even
+    if a field survives the mapping, Pydantic drops anything not declared on the model.
+  </div>
+
+  <div class="codecard">
+    <div class="file">backend/app/services/question_service.py &middot; excerpt</div>
+    <div class="why">Map domain to contract. The response model has no answer fields, so this is a structural guarantee, not a manual delete.</div>
+    <pre class="code">def get_eligible_questions(repo: QuestionRepository) -> QuestionList:
+    items = [_to_out(q) for q in repo.list_eligible()]
+    return QuestionList(items=items, count=len(items))
+
+def _to_out(question: Question) -> QuestionOut:
+    return QuestionOut(
+        id=question.id,
+        question_text=question.question_text,
+        question_type=question.question_type,
+        allows_multiple_answers=question.allows_multiple_answers,
+        difficulty=question.difficulty,
+        options=[_option_to_out(o) for o in question.options],
+    )
+
+def _option_to_out(option: QuestionOption) -> QuestionOptionOut:
+    return QuestionOptionOut(
+        position=option.position,
+        option_text=option.option_text,
+    )</pre>
+  </div>
+
+  <div class="codecard">
+    <div class="file">backend/app/schemas/question.py &middot; excerpt</div>
+    <div class="why">The contract the frontend should consume. Literal types make invalid values fail validation.</div>
+    <pre class="code">class QuestionOptionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    position: int
+    option_text: str
+
+class QuestionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    question_text: str
+    question_type: Literal["multiple_choice", "short_answer"]
+    allows_multiple_answers: bool = False
+    difficulty: Literal["easy", "medium", "hard"]
+    options: list[QuestionOptionOut]
+
+class QuestionList(BaseModel):
+    items: list[QuestionOut]
+    count: int</pre>
+  </div>
+
+  <div class="codecard">
+    <div class="file">backend/app/api/v1/endpoints/questions.py &middot; full</div>
+    <div class="why">The waiter. It requires a valid subject, builds the real repository, and delegates to the service.</div>
+    <pre class="code">router = APIRouter()
+
+def get_question_repository(
+    session: Annotated[Session, Depends(get_session)],
+) -> QuestionRepository:
+    return SQLModelQuestionRepository(session)
+
+@router.get("", response_model=QuestionList)
+def list_questions(
+    _subject: Annotated[str, Depends(get_current_subject)],
+    repository: Annotated[QuestionRepository,
+                          Depends(get_question_repository)],
+) -> QuestionList:
+    return get_eligible_questions(repository)</pre>
+  </div>
+
+  <div class="codecard">
+    <div class="file">backend/app/api/deps.py &middot; excerpt</div>
+    <div class="why">The wristband check. Missing credentials and invalid tokens both become a clean 401.</div>
+    <pre class="code">bearer_scheme = HTTPBearer(auto_error=False)
+
+def get_current_subject(credentials: Annotated[
+    HTTPAuthorizationCredentials | None,
+    Depends(bearer_scheme),
+]) -> str:
+    if credentials is None:
+        raise HTTPException(401, "Authentication required",
+                            headers={"WWW-Authenticate": "Bearer"})
+    try:
+        subject = decode_access_token(credentials.credentials)
+        if not subject:
+            raise jwt.InvalidTokenError("Missing subject")
+        return subject
+    except jwt.InvalidTokenError as exc:
+        raise HTTPException(401, "Invalid or expired token",
+                            headers={"WWW-Authenticate": "Bearer"}) from exc</pre>
+  </div>
+
+  <div class="box gotcha">
+    <span class="label">Gotcha</span>
+    There is <b>no login endpoint yet</b>. <code>auth.py</code> is empty. Tokens are created by
+    <code>create_access_token</code> in tests and local scripts. The protected endpoint works, but a
+    real user cannot obtain a token through the API.
+  </div>
+
+  <div class="pagefoot"><span class="left">JHEP &middot; X02-team-01 &middot; study guide</span><span class="right">9 / 12</span></div>
+</section>
+
+<!-- ============================= PAGE 10: REBUILD ============================= -->
+<section class="page">
+  <h2><span class="num">09</span>Build the backend from scratch</h2>
+
+  <div class="box child">
+    <span class="label">Story</span>
+    Build the pantry first, then the recipe, then the translator, then the waiter. If you build the
+    waiter first, he has nothing to serve. The order below is the dependency order, not a random list.
+  </div>
+
+  <div class="flow" style="margin:2mm 0">
+    <div class="node"><div class="title">1. Settings</div><div class="sub">.env &rarr; URL</div></div>
+    <div class="arrow"></div>
+    <div class="node"><div class="title">2. Models</div><div class="sub">tables in Python</div></div>
+    <div class="arrow"></div>
+    <div class="node"><div class="title">3. Migration</div><div class="sub">real tables</div></div>
+    <div class="arrow"></div>
+    <div class="node"><div class="title">4. Repository</div><div class="sub">fetch rows</div></div>
+    <div class="arrow"></div>
+    <div class="node"><div class="title">5. Service</div><div class="sub">strip keys</div></div>
+    <div class="arrow"></div>
+    <div class="node"><div class="title">6. Endpoint</div><div class="sub">JWT + JSON</div></div>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <h3>Run it locally</h3>
+      <div class="codecard">
+        <div class="file">terminal &middot; from the repo root</div>
+        <pre class="code">cp .env.example .env
+# fill POSTGRES_* and JWT_SECRET_KEY
+
+cd backend
+python -m pip install -r requirements.txt
+alembic upgrade head
+uvicorn app.main:app --reload</pre>
+      </div>
+      <div class="codecard">
+        <div class="file">terminal &middot; create a local token and call the API</div>
+        <pre class="code">TOKEN=$(python -c "from app.core.security import \
+create_access_token; print(create_access_token('me'))")
+
+curl -s -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:8000/api/v1/questions | python -m json.tool</pre>
+      </div>
+    </div>
+
+    <div>
+      <h3>Verify it honestly</h3>
+      <div class="codecard">
+        <div class="file">terminal &middot; from backend/</div>
+        <pre class="code"># unit + contract tests; DB tests skip
+pytest -q
+# 26 passed, 12 skipped
+
+# real PostgreSQL checks (needs a DB)
+RUN_DB_INTEGRATION=1 pytest -q
+# 38 passed
+
+# models vs real database: no drift
+alembic check
+
+# migration round-trip
+alembic downgrade base
+alembic upgrade head</pre>
+      </div>
+      <div class="box gotcha">
+        <span class="label">Gotcha</span>
+        <code>uv.lock</code> is currently empty (0 bytes). Use
+        <code>uv run --no-project --with-requirements requirements.txt ...</code> or plain
+        <code>pip</code>. Port <code>127.0.0.1:5432</code> may already be occupied; override
+        <code>POSTGRES_PORT</code> for a throwaway database.
+      </div>
+    </div>
+  </div>
+
+  <h3>What each test family protects</h3>
+  <table class="compact">
+    <tr><th>Family</th><th>Runs without DB?</th><th>Protects</th></tr>
+    <tr><td><code>test_questions.py</code></td><td>Yes</td><td>Endpoint contract, auth, filtering, answer-key absence, empty state, multi-select flag</td></tr>
+    <tr><td><code>test_question_schema.py</code></td><td>Yes</td><td>Pydantic contract and controlled vocabularies</td></tr>
+    <tr><td><code>test_auth.py</code></td><td>Yes</td><td>JWT creation, expiry, malformed/missing tokens</td></tr>
+    <tr><td><code>test_question_db_constraints.py</code></td><td>No (opt-in)</td><td>Real PostgreSQL CHECKs, uniques, FKs, active-version rule</td></tr>
+    <tr><td><code>test_question_repository_db.py</code></td><td>No (opt-in)</td><td>Eligibility SQL, option order, text keys, multi-select, empty bank</td></tr>
+  </table>
+
+  <div class="box deep">
+    <span class="label">The rebuild rule</span>
+    Never write the endpoint before the repository contract exists. The endpoint should read like a
+    sentence: <i>require a subject, get a repository, return the service result</i>. If it contains
+    SQL or answer-key logic, the layering has leaked.
+  </div>
+
+  <div class="pagefoot"><span class="left">JHEP &middot; X02-team-01 &middot; study guide</span><span class="right">10 / 12</span></div>
+</section>
+
+<!-- ============================= PAGE 11: WORKFLOW ============================= -->
+<section class="page">
+  <h2><span class="num">10</span>How work moves &mdash; and where it is now</h2>
+
+  <div class="box child">
+    <span class="label">Story</span>
+    Feature work goes into a <b>practice notebook</b> (<code>dev</code>). Robot inspectors check it.
+    When the team is happy, a <b>release note</b> carries it to the <b>show notebook</b>
+    (<code>main</code>). Only the show notebook publishes the final images.
+  </div>
+
+  <div class="flow" style="margin:2mm 0">
+    <div class="node"><div class="title">feature/*</div><div class="sub">branch from dev</div></div>
+    <div class="arrow"></div>
+    <div class="node"><div class="title">PR &rarr; dev</div><div class="sub">0 approvals</div></div>
+    <div class="arrow"></div>
+    <div class="node amber"><div class="title">4 required checks</div><div class="sub">strict + up to date</div></div>
+    <div class="arrow"></div>
+    <div class="node blue"><div class="title">dev</div><div class="sub">integration</div></div>
+    <div class="arrow"></div>
+    <div class="node green"><div class="title">release PR &rarr; main</div><div class="sub">1 approval + last push</div></div>
+    <div class="arrow"></div>
+    <div class="node dark"><div class="title">main &rarr; CD</div><div class="sub">GHCR images</div></div>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <h3>Required checks (exact names)</h3>
+      <table class="compact">
+        <tr><th>Check</th><th>What it proves</th></tr>
+        <tr><td><code>Lint &amp; test</code></td><td>Ruff lint/format + pytest (DB tests skip)</td></tr>
+        <tr><td><code>Compose config &amp; Postgres healthcheck</code></td><td>Compose file is valid and Postgres starts</td></tr>
+        <tr><td><code>Lint, typecheck, test &amp; build</code></td><td>ESLint, Next typegen, tsc, Vitest, next build</td></tr>
+        <tr><td><code>Build images (no push)</code></td><td>Both Dockerfiles build</td></tr>
+      </table>
+      <div class="box deep">
+        <span class="label">Protection</span>
+        <div class="small"><b>dev:</b> 0 approvals, strict up-to-date, conversation resolution, no force-push, no delete, admins enforced.<br>
+        <b>main:</b> same plus 1 approval and last-push approval; stale approvals dismissed.</div>
+      </div>
+    </div>
+
+    <div>
+      <h3>PR timeline</h3>
+      <div class="timeline" style="grid-template-columns:1fr; gap:2mm; margin-top:1mm">
+        <div class="lane main-lane">
+          <h4>main &middot; production &middot; 8a62ad7</h4>
+          <div class="event"><span class="n">#1&ndash;#7</span><span>Scaffold, frontend tests, lint, DB, CI/CD, auth, config <span class="d">Oct 14&ndash;21</span></span></div>
+          <div class="stop">STOPS HERE. No schema, no retrieval, no exam UI in production.</div>
+        </div>
+        <div class="lane dev-lane">
+          <h4>dev &middot; integration &middot; a40f33b</h4>
+          <div class="event"><span class="n">#8</span><span>Question-bank schema + migration <span class="d">Oct 22</span></span></div>
+          <div class="event"><span class="n">#9&ndash;#10</span><span>CI on dev, always-run checks, branch docs <span class="d">Oct 22</span></span></div>
+          <div class="event"><span class="n">#11</span><span>PostgreSQL repository + authenticated endpoint <span class="d">Oct 22</span></span></div>
+          <div class="event"><span class="n">#12</span><span>Schema docs aligned <span class="d">Oct 22</span></span></div>
+          <div class="event"><span class="n">#13</span><span>Exam UI + mock data <span class="d">Oct 23</span></span></div>
+          <div class="go">LATEST. No open PRs. Release PR to main not opened.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="box gotcha">
+    <span class="label">Known issues now on dev (from #13)</span>
+    <div class="small">
+      Submit stays clickable after submission and the last question clamps instead of completing;
+      multi-select checkboxes are uncontrolled and lose their visual state on navigation;
+      <code>submissionsFeedback.json</code> contains correct answers in the frontend source;
+      mock shapes (<code>question_version_id</code>, <code>option.id</code>, <code>category</code>)
+      do not match the API; <code>short_answer</code> is unhandled; the badge hardcodes
+      &ldquo;multiple choice&rdquo;; there are no frontend tests and CI uses
+      <code>--passWithNoTests</code>.
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <div class="stat"><div class="k">dev</div><div class="v">a40f33b</div></div>
+    <div class="stat"><div class="k">main</div><div class="v red">8a62ad7</div></div>
+    <div class="stat"><div class="k">Open PRs</div><div class="v green">0</div></div>
+    <div class="stat"><div class="k">DB tests in CI</div><div class="v red">not yet</div></div>
+  </div>
+
+  <div class="pagefoot"><span class="left">JHEP &middot; X02-team-01 &middot; study guide</span><span class="right">11 / 12</span></div>
+</section>
+
+<!-- ============================= PAGE 12: ONE-PAGER ============================= -->
+<section class="page onepager">
+  <h2><span class="num">11</span>The one-page map</h2>
+  <p class="small" style="margin-bottom:1mm">If you remember only one page, remember this one. The pipe is built; the last link is a mock.</p>
+
+  <div class="quad">
+    <div class="q">
+      <h3>1. The machine</h3>
+      <div class="mini-flow">
+        <div class="mnode">Browser</div>
+        <div class="marrow"></div>
+        <div class="mnode">Next.js<br>mock JSON</div>
+        <div class="marrow missing"></div>
+        <div class="mnode">FastAPI<br>real endpoint</div>
+        <div class="marrow"></div>
+        <div class="mnode">Postgres<br>7 tables</div>
+      </div>
+      <div class="mini">
+        <b>Built:</b> database &rarr; models &rarr; migration &rarr; repository &rarr; service &rarr; API.<br>
+        <b>Missing:</b> frontend fetch. It imports <code>practiceQuestions.json</code> instead of calling
+        <code>GET /api/v1/questions</code>. There is also no login endpoint yet.
+      </div>
+    </div>
+
+    <div class="q">
+      <h3>2. The data</h3>
+      <div class="mini">
+        <b>certifications</b> &rarr; <b>categories</b> &rarr; <b>questions</b> &rarr;
+        <b>question_versions</b> &rarr; <b>answer_options</b> / <b>text_answer_keys</b>.<br>
+        A question is permanent identity. A version is editable content. Only one version may be
+        <code>active</code>, and active must be <code>approved</code>. The composite FK keeps a
+        category inside its certification. Answer keys live in child tables and never appear in the
+        pre-submission response.
+      </div>
+    </div>
+
+    <div class="q">
+      <h3>3. The request</h3>
+      <div class="mini">
+        <b>1</b> Bearer token &rarr; <b>2</b> decode/verify &rarr; <b>3</b> build repository &rarr;
+        <b>4</b> SQL filter approved + active + unflagged &rarr; <b>5</b> load options/keys &rarr;
+        <b>6</b> service strips answers &rarr; <b>7</b> JSON
+        <code>{"items": [...], "count": N}</code>.
+        Empty bank is <code>200</code>, bad token is <code>401</code>.
+      </div>
+    </div>
+
+    <div class="q">
+      <h3>4. The workflow</h3>
+      <div class="mini">
+        <code>feature/*</code> &rarr; PR to <b>dev</b> &rarr; 4 required checks &rarr; squash merge.
+        Release: <b>dev</b> &rarr; PR to <b>main</b> &rarr; 1 approval + last-push approval &rarr;
+        CD publishes images. <b>dev</b> requires 0 approvals but strict up-to-date and resolved
+        conversations. <b>main</b> is production. <b>No open PRs right now.</b>
+      </div>
+    </div>
+  </div>
+
+  <div class="strip">
+    <div class="box gotcha">
+      <span class="label">Current state</span>
+      <ul class="tight">
+        <li><b>dev</b> <code>a40f33b</code> has #8&ndash;#13; <b>main</b> <code>8a62ad7</code> stops at #7.</li>
+        <li>Backend retrieval is real and tested: 26 pass / 12 skip; 38 pass with a DB.</li>
+        <li>Frontend exam UI exists but is mock-driven and has known #13 bugs.</li>
+        <li>No login endpoint; only <code>/questions</code> is wired; admin/auth/categories/exams are empty.</li>
+        <li>DB integration tests are not in CI; no frontend tests; compose starts only Postgres.</li>
+      </ul>
+    </div>
+
+    <div class="box deep">
+      <span class="label">The sentence to keep</span>
+      <div style="font-size:8.4pt; line-height:1.45; margin-top:1mm">
+        <b>We built the pantry, the kitchen, and the menu that serves only approved questions without
+        answers; the dining room still eats pretend food.</b>
+      </div>
+      <div class="tiny" style="margin-top:2mm">
+        Child version: pantry &rarr; kitchen &rarr; menu &rarr; dining room. Pro version:
+        PostgreSQL &rarr; SQLModel repository &rarr; service/schema &rarr; FastAPI &rarr; Next.js.
+        The dependency arrow always points the same way.
+      </div>
+    </div>
+  </div>
+
+  <div class="box pro" style="margin-top:3mm">
+    <span class="label">Next three moves</span>
+    <div class="grid3" style="margin-top:1mm">
+      <div class="small"><b>1. Fix #13.</b> Lock submit, add completion, control checkboxes, remove the answer-key fixture, add tests.</div>
+      <div class="small"><b>2. Connect the last link.</b> Replace the mock import with a typed API client and align the response shape.</div>
+      <div class="small"><b>3. Release.</b> Add Postgres/Alembic CI, then open the <code>dev &rarr; main</code> release PR.</div>
+    </div>
+  </div>
+
+  <div class="pagefoot"><span class="left">JHEP &middot; X02-team-01 &middot; study guide</span><span class="right">12 / 12</span></div>
+</section>
+
+</body>
+</html>

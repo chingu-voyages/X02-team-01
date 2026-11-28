@@ -13,9 +13,13 @@ import {
 
 import {
   CircleAlert,
+  Eye,
+  EyeOff,
   Plus,
   X,
 } from "lucide-react";
+
+import MarkdownPreview from "@/components/MarkdownPreview";
 
 import AdminQuestionImageField from "@/features/questions/AdminQuestionImageField";
 
@@ -60,12 +64,54 @@ type OptionState = {
 };
 
 
+type CriterionState = {
+  id: string;
+  name: string;
+  points: string;
+};
+
+
+function initialRubric(
+  question?: AdminQuestionDetail,
+): CriterionState[] {
+  if (
+    question &&
+    question.question_type !==
+      "multiple_choice" &&
+    (question.rubric?.length ??
+      0) > 0
+  ) {
+    return (question.rubric ?? []).map(
+      (
+        criterion,
+        index,
+      ) => ({
+        id: `criterion-${index + 1}`,
+        name: criterion.name,
+        points: String(
+          criterion.points,
+        ),
+      }),
+    );
+  }
+
+  return [
+    {
+      id: "criterion-1",
+      name: "Correct response",
+      points: "1",
+    },
+  ];
+}
+
+
 type FormErrors = {
   category?: string;
   questionText?: string;
   options?: string;
   explanation?: string;
   expectedAnswer?: string;
+  rubric?: string;
   image?: string;
 };
 
@@ -355,6 +401,37 @@ export default function AdminQuestionForm(
       "",
   );
 
+  // JHEP-121: model answer + scoring rubric for written questions.
+  const [
+    rubric,
+    setRubric,
+  ] =
+    useState<CriterionState[]>(
+      () =>
+        initialRubric(
+          initialQuestion,
+        ),
+    );
+
+  const [
+    criteriaMarkdown,
+    setCriteriaMarkdown,
+  ] = useState(
+    initialQuestion
+      ?.criteria_markdown ??
+      "",
+  );
+
+  const [
+    showModelAnswerPreview,
+    setShowModelAnswerPreview,
+  ] = useState(false);
+
+  const [
+    showCriteriaPreview,
+    setShowCriteriaPreview,
+  ] = useState(false);
+
   const [
     explanation,
     setExplanation,
@@ -572,6 +649,57 @@ export default function AdminQuestionForm(
   }
 
 
+  function addCriterion() {
+    setRubric(
+      (current) => [
+        ...current,
+
+        {
+          id: `criterion-${current.length + 1}`,
+
+          name: "",
+
+          points: "1",
+        },
+      ],
+    );
+  }
+
+
+  function updateCriterion(
+    id: string,
+    patch: Partial<
+      Omit<CriterionState, "id">
+    >,
+  ) {
+    setRubric(
+      (current) =>
+        current.map(
+          (criterion) =>
+            criterion.id === id
+              ? {
+                  ...criterion,
+                  ...patch,
+                }
+              : criterion,
+        ),
+    );
+  }
+
+
+  function removeCriterion(
+    id: string,
+  ) {
+    setRubric(
+      (current) =>
+        current.filter(
+          (criterion) =>
+            criterion.id !== id,
+        ),
+    );
+  }
+
+
   function addOption() {
     setOptions(
       (current) => [
@@ -729,11 +857,43 @@ export default function AdminQuestionForm(
         nextErrors.options =
           "Single-select questions require exactly one correct answer.";
       }
-    } else if (
-      !expectedAnswer.trim()
-    ) {
-      nextErrors.expectedAnswer =
-        "Expected answer is required for short-answer questions.";
+    } else {
+      if (
+        !expectedAnswer.trim()
+      ) {
+        nextErrors.expectedAnswer =
+          "Expected answer is required for written questions.";
+      }
+
+      // JHEP-121 AC2: at least one criterion, names non-empty, positive
+      // whole-number points.
+      const filledCriteria =
+        rubric.filter(
+          (criterion) =>
+            criterion.name.trim(),
+        );
+
+      if (
+        filledCriteria.length ===
+        0
+      ) {
+        nextErrors.rubric =
+          "Add at least one scoring criterion.";
+      } else if (
+        filledCriteria.some(
+          (criterion) =>
+            !Number.isInteger(
+              Number(
+                criterion.points,
+              ),
+            ) ||
+            Number(criterion.points) <
+              1,
+        )
+      ) {
+        nextErrors.rubric =
+          "Criterion points must be whole positive numbers.";
+      }
     }
 
     const finalImageExists =
@@ -893,9 +1053,54 @@ export default function AdminQuestionForm(
 
       expected_answer:
         questionType ===
-        "short_answer"
-          ? expectedAnswer.trim()
-          : null,
+        "multiple_choice"
+          ? null
+          : expectedAnswer.trim(),
+
+      // JHEP-121: the rubric total is the sum of its criterion points.
+      max_points:
+        questionType ===
+        "multiple_choice"
+          ? null
+          : rubric
+              .filter(
+                (criterion) =>
+                  criterion.name.trim(),
+              )
+              .reduce(
+                (total, criterion) =>
+                  total +
+                  Number(
+                    criterion.points,
+                  ),
+                0,
+              ),
+
+      rubric:
+        questionType ===
+        "multiple_choice"
+          ? null
+          : rubric
+              .filter(
+                (criterion) =>
+                  criterion.name.trim(),
+              )
+              .map(
+                (criterion) => ({
+                  name: criterion.name.trim(),
+                  points:
+                    Number(
+                      criterion.points,
+                    ),
+                }),
+              ),
+
+      criteria_markdown:
+        questionType ===
+        "multiple_choice"
+          ? null
+          : criteriaMarkdown.trim() ||
+            null,
     } satisfies AdminQuestionDraftEditRequest;
 
 
@@ -1100,11 +1305,23 @@ export default function AdminQuestionForm(
 
                     if (
                       value ===
-                      "short_answer"
+                        "short_answer" ||
+                      value === "essay"
                     ) {
                       setAllowsMultipleAnswers(
                         false,
                       );
+
+                      if (
+                        !rubric.some(
+                          (criterion) =>
+                            criterion.name.trim(),
+                        )
+                      ) {
+                        setRubric(
+                          initialRubric(),
+                        );
+                      }
                     }
                   }}
                   className="mt-2 w-full rounded-md border border-[#cfd2d5] bg-white px-3 py-3 font-normal disabled:bg-[#f1f1f1]"
@@ -1116,6 +1333,10 @@ export default function AdminQuestionForm(
 
                   <option value="short_answer">
                     Short Answer
+                  </option>
+
+                  <option value="essay">
+                    Essay
                   </option>
                 </select>
               </label>
@@ -1476,39 +1697,325 @@ export default function AdminQuestionForm(
                 )}
               </div>
             ) : (
-              <label className="mt-5 block text-sm font-semibold">
-                Expected answer *
+              <>
+                <div className="mt-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="block text-sm font-semibold">
+                      Model answer *
+                    </label>
 
-                <textarea
-                  value={
-                    expectedAnswer
-                  }
-                  disabled={
-                    Boolean(
-                      savedCreateQuestionId,
-                    )
-                  }
-                  onChange={(
-                    event,
-                  ) =>
-                    setExpectedAnswer(
-                      event.target
-                        .value,
-                    )
-                  }
-                  placeholder="Enter the expected short answer..."
-                  rows={3}
-                  className="mt-2 w-full resize-y rounded-md border border-[#cfd2d5] px-3 py-3 font-normal disabled:bg-[#f1f1f1]"
-                />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowModelAnswerPreview(
+                          (current) =>
+                            !current,
+                        )
+                      }
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[#cfd2d5] px-3 py-1.5 text-xs font-medium hover:bg-[#f5f5f5]"
+                    >
+                      {showModelAnswerPreview ? (
+                        <EyeOff
+                          aria-hidden="true"
+                          className="size-3.5"
+                        />
+                      ) : (
+                        <Eye
+                          aria-hidden="true"
+                          className="size-3.5"
+                        />
+                      )}
 
-                {errors.expectedAnswer && (
-                  <span className="mt-2 block text-xs text-red-700">
-                    {
-                      errors.expectedAnswer
+                      {showModelAnswerPreview
+                        ? "Edit Markdown"
+                        : "Preview Markdown"}
+                    </button>
+                  </div>
+
+                  <textarea
+                    value={
+                      expectedAnswer
                     }
-                  </span>
-                )}
-              </label>
+                    disabled={
+                      Boolean(
+                        savedCreateQuestionId,
+                      )
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setExpectedAnswer(
+                        event.target
+                          .value,
+                      )
+                    }
+                    placeholder="Enter the model answer (Markdown supported)..."
+                    rows={3}
+                    className="mt-2 w-full resize-y rounded-md border border-[#cfd2d5] px-3 py-3 font-normal disabled:bg-[#f1f1f1]"
+                  />
+
+                  {showModelAnswerPreview &&
+                    expectedAnswer.trim() && (
+                      <div className="mt-2">
+                        <MarkdownPreview
+                          content={
+                            expectedAnswer
+                          }
+                        />
+                      </div>
+                    )}
+
+                  {errors.expectedAnswer && (
+                    <span className="mt-2 block text-xs text-red-700">
+                      {
+                        errors.expectedAnswer
+                      }
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold">
+                      Scoring criteria *
+                    </p>
+
+                    <p className="text-xs text-[#5f666b]">
+                      Total:{" "}
+                      <span className="font-semibold">
+                        {
+                          rubric
+                            .filter(
+                              (
+                                criterion,
+                              ) =>
+                                criterion.name.trim(),
+                            )
+                            .reduce(
+                              (
+                                total,
+                                criterion,
+                              ) =>
+                                total +
+                                Number(
+                                  criterion.points ||
+                                    0,
+                                ),
+                              0,
+                            )
+                        }{" "}
+                        points
+                      </span>
+                    </p>
+                  </div>
+
+                  <p className="mt-1 text-xs text-[#777e83]">
+                    Each criterion awards a positive number of points; the
+                    total is the maximum score a reviewer can award.
+                  </p>
+
+                  <div className="mt-3 space-y-2.5">
+                    {rubric.map(
+                      (
+                        criterion,
+                        index,
+                      ) => (
+                        <div
+                          key={
+                            criterion.id
+                          }
+                          className="flex items-center gap-3"
+                        >
+                          <input
+                            value={
+                              criterion.name
+                            }
+                            disabled={
+                              Boolean(
+                                savedCreateQuestionId,
+                              )
+                            }
+                            onChange={(
+                              event,
+                            ) =>
+                              updateCriterion(
+                                criterion.id,
+                                {
+                                  name: event
+                                    .target
+                                    .value,
+                                },
+                              )
+                            }
+                            placeholder={`Criterion ${index + 1} (e.g. Identifies both concepts)`}
+                            aria-label={`Criterion ${index + 1} name`}
+                            className="flex-1 rounded-md border border-[#cfd2d5] px-3 py-2.5 font-normal disabled:bg-[#f1f1f1]"
+                          />
+
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={
+                              criterion.points
+                            }
+                            disabled={
+                              Boolean(
+                                savedCreateQuestionId,
+                              )
+                            }
+                            onChange={(
+                              event,
+                            ) =>
+                              updateCriterion(
+                                criterion.id,
+                                {
+                                  points:
+                                    event
+                                      .target
+                                      .value,
+                                },
+                              )
+                            }
+                            aria-label={`Criterion ${index + 1} points`}
+                            className="w-20 rounded-md border border-[#cfd2d5] px-3 py-2.5 font-normal disabled:bg-[#f1f1f1]"
+                          />
+
+                          {rubric.length >
+                            1 && (
+                            <button
+                              type="button"
+                              disabled={
+                                Boolean(
+                                  savedCreateQuestionId,
+                                )
+                              }
+                              onClick={() =>
+                                removeCriterion(
+                                  criterion.id,
+                                )
+                              }
+                              aria-label={`Remove criterion ${index + 1}`}
+                              className="rounded-md p-2 text-[#5f666b] hover:bg-[#f5f5f5] disabled:opacity-40"
+                            >
+                              <X
+                                aria-hidden="true"
+                                className="size-4"
+                              />
+                            </button>
+                          )}
+                        </div>
+                      ),
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={
+                      Boolean(
+                        savedCreateQuestionId,
+                      ) ||
+                      rubric.length >=
+                        20
+                    }
+                    onClick={
+                      addCriterion
+                    }
+                    className="mt-4 inline-flex items-center gap-2 rounded-md border border-[#cfd2d5] px-4 py-2 text-sm font-medium hover:bg-[#f5f5f5] disabled:opacity-40"
+                  >
+                    <Plus
+                      aria-hidden="true"
+                      className="size-4"
+                    />
+
+                    Add criterion
+                  </button>
+
+                  {errors.rubric && (
+                    <p className="mt-3 text-xs text-red-700">
+                      {errors.rubric}
+                    </p>
+                  )}
+                </div>
+
+                <div className="mt-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="block text-sm font-semibold">
+                      Scoring criteria details (Markdown, optional)
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowCriteriaPreview(
+                          (current) =>
+                            !current,
+                        )
+                      }
+                      className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[#cfd2d5] px-3 py-1.5 text-xs font-medium hover:bg-[#f5f5f5]"
+                    >
+                      {showCriteriaPreview ? (
+                        <EyeOff
+                          aria-hidden="true"
+                          className="size-3.5"
+                        />
+                      ) : (
+                        <Eye
+                          aria-hidden="true"
+                          className="size-3.5"
+                        />
+                      )}
+
+                      {showCriteriaPreview
+                        ? "Edit Markdown"
+                        : "Preview Markdown"}
+                    </button>
+                  </div>
+
+                  <textarea
+                    value={
+                      criteriaMarkdown
+                    }
+                    disabled={
+                      Boolean(
+                        savedCreateQuestionId,
+                      )
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setCriteriaMarkdown(
+                        event.target
+                          .value,
+                      )
+                    }
+                    placeholder={
+                      questionType ===
+                      "essay"
+                        ? "Write the full scoring rubric in Markdown (recommended for essays)..."
+                        : "Optional longer criteria guidance in Markdown..."
+                    }
+                    rows={
+                      questionType ===
+                      "essay"
+                        ? 6
+                        : 3
+                    }
+                    className="mt-2 w-full resize-y rounded-md border border-[#cfd2d5] px-3 py-3 font-normal disabled:bg-[#f1f1f1]"
+                  />
+
+                  {showCriteriaPreview &&
+                    criteriaMarkdown.trim() && (
+                      <div className="mt-2">
+                        <MarkdownPreview
+                          content={
+                            criteriaMarkdown
+                          }
+                        />
+                      </div>
+                    )}
+                </div>
+              </>
             )}
 
             <label className="mt-5 block text-sm font-semibold">

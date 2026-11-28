@@ -26,6 +26,7 @@ from app.models.question_import_asset import QuestionImportAsset
 from app.models.question_import_batch import QuestionImportBatch
 from app.models.question_import_row import QuestionImportRow
 from app.models.question_version import QuestionVersion
+from app.models.rubric_criterion import RubricCriterion
 from app.models.text_answer_key import TextAnswerKey
 from app.models.user import User
 from app.services.question_import_validation_service import (
@@ -72,6 +73,7 @@ def engine():
             QuestionVersion.__table__,
             AnswerOption.__table__,
             TextAnswerKey.__table__,
+            RubricCriterion.__table__,
             QuestionImage.__table__,
             QuestionImportBatch.__table__,
             QuestionImportAsset.__table__,

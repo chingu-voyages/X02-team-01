@@ -50,6 +50,9 @@ const rejectedQuestion: AdminQuestionDetail = {
     { position: 2, option_text: "Object storage", is_correct: false },
   ],
   expected_answer: null,
+  max_points: null,
+  criteria_markdown: null,
+  rubric: [],
   images: [],
 };
 
