@@ -7,6 +7,7 @@ import PracticeExamsScreen from "./PracticeExamsScreen";
 import BrowseExamCard from "./BrowseExamCard";
 import { getExamAvailabilityIssue, isValidExamCount } from "./examAvailability";
 import { ApiError } from "@/lib/api-client";
+import { getUnfinishedExamAttempts } from "@/lib/unfinished-exams-api";
 import { getPublishedPracticeExams, startPublishedPracticeExam } from "@/lib/practice-exam-api";
 import type { PublishedPracticeExam } from "@/types/practice-exam-api.types";
 
@@ -19,6 +20,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mockPush }) }));
 vi.mock("@/features/auth/AuthProvider", () => ({
   useDemoSession: () => ({ token: "learner-token", ready: true, handleError: mockHandleError }),
 }));
+vi.mock("@/lib/unfinished-exams-api", () => ({ getUnfinishedExamAttempts: vi.fn() }));
 vi.mock("@/lib/practice-exam-api", () => ({
   getPublishedPracticeExams: vi.fn(),
   startPublishedPracticeExam: vi.fn(),
@@ -60,6 +62,7 @@ async function openCatalog() {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(getUnfinishedExamAttempts).mockResolvedValue([]);
   mockCatalog.mockResolvedValue([exam]);
   mockStart.mockResolvedValue({
     attempt_id: attemptId,

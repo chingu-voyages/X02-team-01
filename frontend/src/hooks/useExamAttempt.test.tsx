@@ -19,6 +19,11 @@ vi.mock("@/features/auth/AuthProvider", () => ({
   useDemoSession: () => ({ ready: true, token: "test-token", handleError }),
 }));
 
+vi.mock("@/lib/exam-recovery-api", () => ({
+  saveExamDraft: () => Promise.resolve(undefined),
+  saveExamPosition: () => Promise.resolve(undefined),
+}));
+
 vi.mock("@/lib/exam-api", () => ({
   getExam: vi.fn(),
   submitAnswer: vi.fn(),
@@ -196,6 +201,7 @@ describe("useExamAttempt direct question navigation", () => {
     act(() => expect(result.current.goToQuestion(2)).toBe(false));
     expect(result.current.currentQuestionIndex).toBe(0);
 
+    await waitFor(() => expect(submitAnswer).toHaveBeenCalledTimes(1));
     await act(async () => resolveAnswer({
       question_version_id: "question-1",
       is_submitted: true,

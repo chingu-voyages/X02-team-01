@@ -192,6 +192,7 @@ Bulk-imported questions begin as `pending / draft`, so they are not learner-visi
 | GET | `/api/v1/categories?certification_id={certification_id}` | CURRENT | Bearer |
 | GET | `/api/v1/questions` | CURRENT | Bearer |
 | GET | `/api/v1/exams/catalog` | CURRENT (JHEP-126/107) | Bearer |
+| GET | `/api/v1/exams/unfinished` | CURRENT (JHEP-89) | Bearer |
 | POST | `/api/v1/exams` | CURRENT | Bearer |
 | GET | `/api/v1/exams/{attempt_id}` | CURRENT | Bearer |
 | PATCH | `/api/v1/exams/{attempt_id}/progress` | CURRENT | Bearer |
@@ -623,6 +624,7 @@ Invalid request bodies are rejected with `422`.
 ## 6.2 Resume/progress/answers
 
 ```http
+GET   /api/v1/exams/unfinished
 GET   /api/v1/exams/{attempt_id}
 PATCH /api/v1/exams/{attempt_id}/progress
 PUT   /api/v1/exams/{attempt_id}/questions/{question_id}/flag
@@ -633,6 +635,8 @@ POST  /api/v1/exams/{attempt_id}/responses/{question_id}/submit
 Submitted questions are locked. Attempt ownership is checked before retrieving saved
 questions and answers. Existing question count, pinned versions, order, answers and flags
 are independent of the current practice-exam configuration.
+
+JHEP-89 adds authenticated unfinished-attempt discovery and a `recovery_revision` on resume. The current frontend sends `expected_revision` with draft, position, question submission and final submission writes. A stale revision returns `409` with `detail.code = RECOVERY_REVISION_CONFLICT`. Confirmed writes return the updated revision. Older clients may omit the precondition; locked answers remain protected. See [exam-recovery.md](exam-recovery.md#api-contract) for the complete recovery contract, device storage limitations and acceptance tests.
 
 ## 6.3 Complete/results
 

@@ -16,6 +16,11 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
 vi.mock("@/features/auth/AuthProvider", () => ({
   useDemoSession: () => ({ ready: true, token: "test-token", handleError }),
 }));
+vi.mock("@/lib/exam-recovery-api", () => ({
+  saveExamDraft: () => Promise.resolve(undefined),
+  saveExamPosition: () => Promise.resolve(undefined),
+}));
+
 vi.mock("@/lib/exam-api", () => ({ getExam: vi.fn(), setQuestionFlag: vi.fn(), submitAnswer: vi.fn() }));
 vi.mock("@/lib/exam-submission", () => ({ submitExam: vi.fn() }));
 

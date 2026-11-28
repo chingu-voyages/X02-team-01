@@ -425,11 +425,18 @@ test.describe("JHEP-106 question state indicators", () => {
 
     await expect(incorrectOption).toBeChecked();
 
+    await expect.poll(async () => {
+      const saved = await readAttempt();
+      return saved.questions[0].response;
+    }).toMatchObject({
+      question_version_id: attempt.questions[0].id,
+      selected_option_ids: [attempt.questions[0].options[1].id],
+      is_submitted: false,
+    });
+
     const draft = await readAttempt();
 
-    expect(
-      draft.questions[0].response ?? null,
-    ).toBeNull();
+    expect(draft.questions[0].response?.is_correct).toBeUndefined();
 
     expect(
       draft.questions[0].flagged_for_review,
@@ -616,7 +623,16 @@ test.describe("JHEP-106 question state indicators", () => {
     await expect(page.getByRole("alert").filter({ hasText: "Unable to submit answer" })).toBeVisible();
     await expect(submitButton(page)).toBeEnabled();
     const failed = await readAttempt();
-    expect(failed.questions[0].response ?? null).toBeNull();
+
+    expect(failed.questions[0].response).toMatchObject({
+      question_version_id: attempt.questions[0].id,
+      selected_option_ids: [attempt.questions[0].options[0].id],
+      is_submitted: false,
+    });
+
+    expect(failed.questions[0].response?.is_correct).toBeUndefined();
+    await expect(firstOption(page)).toBeChecked();
+    await expect(firstOption(page)).toBeEnabled();
     await nav.open();
     await expect(questionButton(page, 1, true)).toHaveAccessibleDescription("Selected but unsubmitted");
     await expectProgress(page, 0, 40);

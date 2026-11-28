@@ -5,6 +5,9 @@ import QuestionControls from "../questions/QuestionControls";
 import QuestionRenderer from "./QuestionRenderer";
 import { Button } from "@/components/ui/button";
 import ExamSidebar from "./ExamSidebar";
+import ExamSaveStatus from "./ExamSaveStatus";
+import ExamRecoveryReview from "./ExamRecoveryReview";
+import { useEffect, useRef } from "react";
 import { useExamAttempt } from "@/hooks/useExamAttempt";
 
 interface ExamCardProps {
@@ -44,7 +47,37 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     handleTextChange,
     handleSubmit,
     handleFinish,
+    saveState,
+    canRetrySave,
+    saveErrorMessage,
+    retrySave,
+    isAttemptSubmitted,
+    viewResults,
+    isLeaving,
+    canSaveAndLeave,
+    handleSaveAndLeave,
+    leaveError,
+    backToPracticeExams,
+    recoveryCopies,
+    recoveryError,
+    deviceCopySaved,
+    restoreRecoveryCopy,
+    discardRecoveryCopy,
+    continueWithSavedProgress,
+    reloadRecovery,
+    canReviewDeviceCopy,
+    reviewDeviceCopy,
   } = useExamAttempt(attemptId);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const wasReviewing = useRef(false);
+  useEffect(() => {
+    if (loadStatus !== "ready") return;
+    if (recoveryCopies.length) wasReviewing.current = true;
+    else if (wasReviewing.current) {
+      wasReviewing.current = false;
+      contentRef.current?.querySelector("h1")?.focus();
+    }
+  }, [loadStatus, recoveryCopies.length]);
 
   if (!ready || !token) {
     return (
@@ -75,8 +108,28 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
             >
               Retry
             </Button>
+            <Button type="button" variant="outline" onClick={backToPracticeExams} className="mt-2 min-h-11 w-full sm:mt-0 sm:ml-2 sm:w-auto">Back to practice exams</Button>
           </>
         )}
+      </section>
+    );
+  }
+
+  if (recoveryCopies.length > 0) {
+    return <ExamRecoveryReview copies={recoveryCopies} questions={questions}
+      error={recoveryError} onRestore={restoreRecoveryCopy} onDiscard={discardRecoveryCopy}
+      onContinue={continueWithSavedProgress} onReload={reloadRecovery} />;
+  }
+
+  if (isAttemptSubmitted && saveState.pendingCount === 0) {
+    return (
+      <section className="space-y-3 rounded-xl border border-brand-border bg-white p-4 text-brand-text sm:p-6">
+        <h1 className="text-xl font-bold">This exam is already submitted</h1>
+        <p className="text-sm">Your submitted answers are locked. You can view the results of this attempt.</p>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button type="button" onClick={viewResults} className="min-h-11 w-full sm:w-auto">View results</Button>
+          <Button type="button" variant="outline" onClick={backToPracticeExams} className="min-h-11 w-full sm:w-auto">Back to practice exams</Button>
+        </div>
       </section>
     );
   }
@@ -104,7 +157,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     : currentSelected.length;
 
   return (
-    <div className="w-full space-y-6">
+    <div ref={contentRef} className="w-full space-y-6">
       <ExamHeader
         questionIndex={currentQuestionIndex}
         totalQuestions={questions.length}
@@ -112,9 +165,24 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         isFlagged={isFlagged}
         isSavingFlag={isSavingFlag}
         canToggleFlag={canToggleFlag}
-        disabled={isSubmitting || isFinishing}
+        disabled={isSubmitting || isFinishing || isLeaving}
         flagError={flagError}
         onToggleFlag={handleToggleFlag}
+      />
+
+      <ExamSaveStatus
+        state={saveState}
+        errorMessage={saveErrorMessage}
+        canRetry={canRetrySave}
+        disabled={isSubmitting || isFinishing || isLeaving}
+        onRetry={retrySave}
+        onLeave={isAttemptSubmitted ? undefined : handleSaveAndLeave}
+        canLeave={canSaveAndLeave}
+        isLeaving={isLeaving}
+        leaveError={leaveError}
+        deviceCopySaved={deviceCopySaved}
+        recoveryError={recoveryError}
+        onReviewDeviceCopy={canReviewDeviceCopy ? reviewDeviceCopy : undefined}
       />
 
       <ExamSidebar
@@ -126,7 +194,8 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         flaggedQuestionIndices={flaggedQuestionIndices}
         isSubmitted={isSubmitted}
         isSubmitting={isSubmitting}
-        isFinishing={isFinishing}
+        isFinishing={isFinishing || isAttemptSubmitted}
+        isLeaving={isLeaving}
         isSavingFlag={isSavingFlag}
         allQuestionsSubmitted={allQuestionsSubmitted}
         finishError={finishError}
@@ -143,7 +212,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
             textValue={textValue}
             isSubmitted={isSubmitted}
             isSubmitting={isSubmitting}
-            isFinishing={isFinishing}
+            isFinishing={isFinishing || isAttemptSubmitted || isLeaving}
             submitError={submitError}
             feedback={currentFeedback}
             onSelectOption={handleSelect}
@@ -156,7 +225,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
             selectedCount={selectedCount}
             isSubmitted={isSubmitted}
             isSubmitting={isSubmitting}
-            isFinishing={isFinishing}
+            isFinishing={isFinishing || isAttemptSubmitted || isLeaving}
             isSavingFlag={isSavingFlag}
             allQuestionsSubmitted={allQuestionsSubmitted}
             firstUnsubmittedIndex={firstUnsubmittedIndex}
@@ -176,7 +245,8 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
           flaggedQuestionIndices={flaggedQuestionIndices}
           isSubmitted={isSubmitted}
           isSubmitting={isSubmitting}
-          isFinishing={isFinishing}
+          isFinishing={isFinishing || isAttemptSubmitted}
+          isLeaving={isLeaving}
           isSavingFlag={isSavingFlag}
           allQuestionsSubmitted={allQuestionsSubmitted}
           finishError={finishError}

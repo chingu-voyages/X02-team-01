@@ -13,12 +13,14 @@ import type {
 export async function submitExam(
   attemptId: string,
   token: string,
+  expectedRevision?: number,
 ): Promise<FinalExamSubmissionResponse> {
   return apiRequest<FinalExamSubmissionResponse>(
     `/exams/${encodeURIComponent(attemptId)}/submit`,
     token,
     {
       method: "POST",
+      ...(expectedRevision === undefined ? {} : { body: JSON.stringify({ expected_revision: expectedRevision }) }),
     },
   );
 }

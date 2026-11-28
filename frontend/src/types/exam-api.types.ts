@@ -175,6 +175,7 @@ export type ExamQuestionWithResponse = ExamQuestion & {
 };
 
 export type ExamAttempt = {
+  recovery_revision?: number;
   attempt_id: string; // UUID
   certification_id: string; // UUID
   status: "in_progress" | "submitted";
@@ -184,6 +185,7 @@ export type ExamAttempt = {
 };
 
 export type QuestionFeedback = {
+  recovery_revision?: number;
   question_version_id: string; // UUID
   is_submitted: true;
   question_submitted_at?: string;
@@ -194,6 +196,7 @@ export type QuestionFeedback = {
 };
 
 export type AnswerSubmission = {
+  expected_revision?: number;
   selected_option_ids?: string[] | null;
   text_response?: string | null;
 };

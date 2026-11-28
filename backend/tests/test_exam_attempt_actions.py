@@ -25,6 +25,7 @@ from app.services.exam_attempt_service import (
     InvalidResponseContentError,
     NoAnswerContentError,
     QuestionAlreadyLockedError,
+    RecoveryRevisionConflictError,
 )
 from app.services.exam_service import (
     ExamAttemptNotFoundError,
@@ -130,13 +131,13 @@ class StubAttemptService:
             "explanation": None,
         }
 
-    def apply_progress(self, attempt, current_position):
+    def apply_progress(self, attempt, current_position, **kwargs):
         if self.error is not None:
             raise self.error
         self.progress.append(current_position)
         attempt.current_position = current_position
 
-    def final_submit(self, attempt):
+    def final_submit(self, attempt, **kwargs):
         if self.error is not None:
             raise self.error
         self.submitted = True
@@ -472,3 +473,69 @@ def test_unknown_question_key_still_answers_404(api):
     )
     assert response.status_code == 404
     assert response.json()["detail"] == "Exam attempt not found"
+
+
+@pytest.mark.parametrize(
+    ("method", "suffix", "body"),
+    [
+        ("PUT", "/responses/{question_id}", {"selected_option_ids": None}),
+        ("PATCH", "/progress", {"current_position": 1}),
+        ("POST", "/responses/{question_id}/submit", {"text_response": "Answer"}),
+        ("POST", "/submit", {}),
+    ],
+)
+def test_stale_recovery_revision_has_explicit_conflict(api, method, suffix, body):
+    client, attempt_service, learner_id, attempt_id = api
+    attempt_service.error = RecoveryRevisionConflictError("Changed elsewhere")
+    response = client.request(
+        method,
+        f"{EXAM_URL}/{attempt_id}" + suffix.format(question_id=uuid4()),
+        json={**body, "expected_revision": 0},
+        headers=auth(learner_id),
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "RECOVERY_REVISION_CONFLICT"
+    assert attempt_service.saved == []
+    assert attempt_service.questions_submitted == []
+    assert attempt_service.progress == []
+    assert not attempt_service.submitted
+
+
+@pytest.mark.parametrize("revision", [-1, True, 1.5, "0"])
+def test_recovery_revision_rejects_non_integer_or_negative_values(api, revision):
+    client, attempt_service, learner_id, attempt_id = api
+    response = client.patch(
+        f"{EXAM_URL}/{attempt_id}/progress",
+        json={"current_position": 1, "expected_revision": revision},
+        headers=auth(learner_id),
+    )
+    assert response.status_code == 422
+    assert attempt_service.progress == []
+
+
+def test_recovery_revision_does_not_bypass_ownership(api):
+    client, attempt_service, learner_id, attempt_id = api
+    response = client.put(
+        version_url(attempt_id, uuid4()),
+        json={"selected_option_ids": None, "expected_revision": 0},
+        headers=auth(uuid4()),
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Exam attempt not found"
+    assert attempt_service.saved == []
+
+
+def test_versioned_draft_passes_precondition_and_returns_acknowledgement(api):
+    client, attempt_service, learner_id, attempt_id = api
+    attempt_service.last_saved_revision = 8
+    question_id = uuid4()
+    option_id = uuid4()
+    response = client.put(
+        version_url(attempt_id, question_id),
+        json={"selected_option_ids": [str(option_id)], "expected_revision": 7},
+        headers=auth(learner_id),
+    )
+    assert response.status_code == 200
+    assert response.json()["recovery_revision"] == 8
+    assert attempt_service.saved[0][2]["expected_revision"] == 7
+    assert response.json()["is_submitted"] is False
