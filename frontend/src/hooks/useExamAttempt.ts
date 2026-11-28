@@ -6,6 +6,7 @@ import { getExam, setQuestionFlag, submitAnswer } from "@/lib/exam-api";
 import { saveExamDraft, saveExamPosition } from "@/lib/exam-recovery-api";
 import { createRecoveryRevision, isRecoveryRevisionConflict, recoveryConflictMessage } from "@/lib/exam-recovery-revision";
 import { createExamSaveQueue, type ExamSaveState } from "@/lib/exam-save-queue";
+import { createRecoveryJournal, recoveryAccount, canRestoreRecoveryCopy, type RecoveryCopy } from "@/lib/exam-recovery-journal";
 import { submitExam } from "@/lib/exam-submission";
 import { deriveQuestionStates } from "@/lib/question-states";
 import type {
@@ -27,6 +28,12 @@ type LoadScope = {
 };
 type SaveQueue = ReturnType<typeof createExamSaveQueue>;
 type ScopedQueue = { id: string; token: string; reloadKey: number; queue: SaveQueue; revision: ReturnType<typeof createRecoveryRevision> };
+type RecoveryScope = {
+  attempt: ExamAttempt;
+  token: string;
+  journal: ReturnType<typeof createRecoveryJournal>;
+  copies: RecoveryCopy[];
+};
 const idleSave: ExamSaveState = { status: "idle", pendingCount: 0, error: null };
 
 export function useExamAttempt(attemptId: string) {
@@ -52,6 +59,10 @@ export function useExamAttempt(attemptId: string) {
   const submittedRef = useRef<Record<string, boolean>>({});
   const queueRef = useRef<ScopedQueue | null>(null);
   const [saveState, setSaveState] = useState<ExamSaveState>(idleSave);
+  const recoveryRef = useRef<RecoveryScope | null>(null);
+  const [recoveryCopies, setRecoveryCopies] = useState<RecoveryCopy[]>([]);
+  const [recoveryError, setRecoveryError] = useState("");
+  const [deviceCopySaved, setDeviceCopySaved] = useState<boolean | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -69,6 +80,7 @@ export function useExamAttempt(attemptId: string) {
     if (!ready || !token) return;
     let cancelled = false;
     let scopedQueue: ScopedQueue | null = null;
+    let recovery: RecoveryScope | null = null;
 
     // A best-effort flush on backgrounding is NOT a confirmed durable save.
     function flushWhenHidden() {
@@ -122,12 +134,32 @@ export function useExamAttempt(attemptId: string) {
         submittingRef.current = false;
         finishingRef.current = false;
         setSaveState(idleSave);
+        setDeviceCopySaved(null);
+        setRecoveryCopies([]);
+        setRecoveryError("");
+        // Never inspect device answers until the server has authorized this
+        // exact attempt. The JWT subject only namespaces the device copy.
+        if (data.recovery_revision !== undefined) {
+          try {
+            const account = recoveryAccount(token);
+            if (account) {
+              const journal = createRecoveryJournal(window.localStorage, account, attemptId, window.crypto.randomUUID());
+              const copies = journal.list(data);
+              recovery = { attempt: data, token, journal, copies };
+              recoveryRef.current = recovery;
+              setRecoveryCopies(copies);
+              if (journal.hasUnreadableCopies()) setRecoveryError("Some device copies could not be read. Your server-saved answers are unchanged.");
+            }
+          } catch {
+            setRecoveryError("Device recovery is unavailable. Keep this page open until your progress is saved.");
+          }
+        }
 
         // Construct the queue only AFTER the authenticated GET succeeds.
         // Hydration itself does not send any draft/position writes.
         if (data.status === "in_progress") {
           const revision = createRecoveryRevision(data.recovery_revision);
-          const queue = createExamSaveQueue(
+          const queue: SaveQueue = createExamSaveQueue(
             async (operation, signal) => {
               const expected = revision.current();
               // Only the queue's confirmed response can advance this cursor.
@@ -144,6 +176,10 @@ export function useExamAttempt(attemptId: string) {
               onStateChange: (next) => {
                 if (cancelled) return;
                 syncUnloadWarning(next.pendingCount > 0);
+                const currentRevision = revision.current();
+                const savedOnDevice = currentRevision !== undefined && recovery !== null &&
+                  recovery.journal.save(currentRevision, queue.getPendingOperations());
+                setDeviceCopySaved(next.pendingCount > 0 ? savedOnDevice : null);
                 setSaveState(next);
               },
             },
@@ -189,6 +225,7 @@ export function useExamAttempt(attemptId: string) {
       cancelled = true;
       scopedQueue?.queue.dispose();
       if (queueRef.current === scopedQueue) queueRef.current = null;
+      if (recoveryRef.current === recovery) recoveryRef.current = null;
       flagRequestRef.current = null;
       window.removeEventListener("beforeunload", warnIfPending);
       document.removeEventListener("visibilitychange", flushWhenHidden);
@@ -217,12 +254,89 @@ export function useExamAttempt(attemptId: string) {
 
   function getQueue(): SaveQueue | null {
     const scoped = queueRef.current;
-    return isActive && scoped && scoped.id === attemptId && scoped.token === token &&
+    return isActive && !recoveryRef.current?.copies.length && scoped && scoped.id === attemptId && scoped.token === token &&
       scoped.reloadKey === reloadKey ? scoped.queue : null;
   }
 
   function stillCurrent(queue: SaveQueue): boolean {
     return queueRef.current?.queue === queue;
+  }
+
+  function currentRecovery(): RecoveryScope | null {
+    const scope = recoveryRef.current;
+    return isCurrentLoad && scope?.token === token && scope.attempt.attempt_id === attemptId ? scope : null;
+  }
+
+  function reloadRecovery() {
+    // Only the review screen may reload here, never an actively edited exam.
+    if (!currentRecovery()?.copies.length) return;
+    setLoadStatus("loading");
+    setReloadKey((value) => value + 1);
+  }
+
+  function continueWithSavedProgress() {
+    const scope = currentRecovery();
+    if (!scope?.copies.length) return;
+    scope.copies = [];
+    setRecoveryCopies([]);
+    setRecoveryError("");
+  }
+
+  function discardRecoveryCopy(key: string) {
+    const scope = currentRecovery();
+    const copy = scope?.copies.find((item) => item.key === key);
+    if (!scope || !copy) return;
+    try {
+      if (!scope.journal.removeIfUnchanged(copy)) throw new Error("Changed device copy");
+      scope.copies = scope.copies.filter((item) => item.key !== key);
+      setRecoveryCopies(scope.copies);
+      setRecoveryError("");
+    } catch {
+      setRecoveryError("This device copy changed or could not be removed. Reload saved progress to review it again.");
+    }
+  }
+
+  function restoreRecoveryCopy(key: string) {
+    const scope = currentRecovery();
+    const copy = scope?.copies.find((item) => item.key === key);
+    const scoped = queueRef.current;
+    if (!scope || !copy || !scoped || scoped.id !== attemptId || scoped.token !== token ||
+        scoped.reloadKey !== reloadKey || !isActive || scoped.queue.getState().pendingCount !== 0 ||
+        scoped.revision.current() !== copy.revision || !canRestoreRecoveryCopy(copy, scope.attempt)) return;
+    try {
+      if (!scope.journal.isUnchanged(copy)) throw new Error("Changed device copy");
+    } catch {
+      setRecoveryError("This device copy changed or could not be read. Reload saved progress to review it again.");
+      return;
+    }
+    // Restore only an explicitly chosen, still-valid snapshot. Leave other
+    // tabs' copies untouched. The server revision precondition still applies
+    // even if another client changes progress after this check.
+    const selections = { ...selectionsRef.current };
+    const texts = { ...textRef.current };
+    let index = positionRef.current;
+    for (const operation of copy.operations) {
+      if (operation.kind === "position") index = operation.currentPosition - 1;
+      else {
+        selections[operation.questionVersionId] = [...(operation.answer.selected_option_ids ?? [])];
+        texts[operation.questionVersionId] = operation.answer.text_response ?? "";
+      }
+    }
+    selectionsRef.current = selections;
+    textRef.current = texts;
+    positionRef.current = index;
+    setSelectedValuesMap(selections);
+    setTextAnswersMap(texts);
+    setCurrentQuestionIndex(index);
+    scope.copies = [];
+    setRecoveryCopies([]);
+    setRecoveryError("");
+    for (const operation of copy.operations) scoped.queue.enqueue(operation);
+    // Copy-before-delete: if storage is full, keep the original snapshot.
+    if (scope.journal.save(copy.revision, scoped.queue.getPendingOperations())) {
+      try { scope.journal.removeIfUnchanged(copy); } catch { /* original is safe to retain */ }
+    }
+    void scoped.queue.flush();
   }
 
   function retryLoading() {
@@ -266,6 +380,24 @@ export function useExamAttempt(attemptId: string) {
         : saveErrorStatus === 422
           ? "A draft was rejected. Check the answer (written responses are limited to 10,000 characters) and retry."
           : "Your latest changes are still on this page. Check your connection and retry before leaving.";
+
+  const canReviewDeviceCopy = isActive && deviceCopySaved === true &&
+    activeSaveState.status === "error" && saveErrorStatus === 409 && !isSubmitting && !isFinishing && !isLeaving;
+
+  function reviewDeviceCopy() {
+    const queue = getQueue();
+    const scope = currentRecovery();
+    const revision = queueRef.current?.revision.current();
+    if (!canReviewDeviceCopy || !queue || !scope || revision === undefined ||
+        submittingRef.current || finishingRef.current || flagRequestRef.current) return;
+    if (!scope.journal.save(revision, queue.getPendingOperations())) {
+      setDeviceCopySaved(false);
+      setLeaveError("Unable to protect the device copy. Keep this page open and copy any unsaved answers.");
+      return;
+    }
+    setLoadStatus("loading");
+    setReloadKey((value) => value + 1);
+  }
 
   function retrySave() {
     const queue = getQueue();
@@ -526,5 +658,10 @@ export function useExamAttempt(attemptId: string) {
     handleTextChange, handleSubmit, handleFinish, saveState: isCurrentLoad ? saveState : idleSave,
     canRetrySave, saveErrorMessage, retrySave, isAttemptSubmitted, viewResults,
     isLeaving, canSaveAndLeave, handleSaveAndLeave, leaveError, backToPracticeExams,
+    recoveryCopies: loadStatus === "ready" ? recoveryCopies : [],
+    recoveryError: isCurrentLoad ? recoveryError : "",
+    deviceCopySaved: loadStatus === "ready" ? deviceCopySaved : null,
+    restoreRecoveryCopy, discardRecoveryCopy, continueWithSavedProgress, reloadRecovery,
+    canReviewDeviceCopy, reviewDeviceCopy,
   };
 }

@@ -463,3 +463,102 @@ describe("JHEP-89 version-aware autosave", () => {
   });
 
 });
+
+describe("JHEP-89 device recovery across mounts", () => {
+  const deviceAttempt = "11111111-1111-4111-8111-111111111111";
+  const account = "22222222-2222-4222-8222-222222222222";
+  const otherAccount = "33333333-3333-4333-8333-333333333333";
+  function accountToken(subject: string) { return `header.${btoa(JSON.stringify({ sub: subject })).replace(/=+$/, "")}.signature`; }
+  function deviceKeys() { return Object.keys(localStorage).filter((key) => key.startsWith("jhep.exam-recovery.v1:")); }
+  beforeEach(() => {
+    localStorage.clear();
+    session.token = accountToken(account);
+    persisted = { ...fixture(deviceAttempt), recovery_revision: 0, current_position: 2 };
+  });
+  afterEach(() => localStorage.clear());
+
+  it("journals text before the debounce and restores it after closing and authenticating again", async () => {
+    const hook = await load(deviceAttempt);
+    act(() => hook.result.current.handleTextChange("Unsent written answer"));
+    expect(hook.result.current.deviceCopySaved).toBe(true);
+    expect(deviceKeys()).toHaveLength(1);
+    expect(saveExamDraft).not.toHaveBeenCalled();
+    hook.unmount();
+    session.token = `${accountToken(account)}-new-session`;
+    const returned = await load(deviceAttempt);
+    expect(returned.result.current.recoveryCopies).toHaveLength(1);
+    expect(returned.result.current.recoveryCopies[0].canRestore).toBe(true);
+    expect(returned.result.current.textValue).toBe("");
+    expect(saveExamDraft).not.toHaveBeenCalled();
+    vi.mocked(saveExamDraft).mockImplementationOnce(async (id, questionId, answer) => {
+      persisted.questions[1].response = { question_version_id: questionId, selected_option_ids: null, text_response: answer.text_response, is_submitted: false, answered_at: timestamp };
+      persisted.recovery_revision = 1;
+      return { ...confirmation(questionId, null, answer.text_response), attempt_id: id, recovery_revision: 1 };
+    });
+    act(() => returned.result.current.restoreRecoveryCopy(returned.result.current.recoveryCopies[0].key));
+    await waitFor(() => expect(returned.result.current.saveState.status).toBe("saved"));
+    expect(returned.result.current.textValue).toBe("Unsent written answer");
+    expect(returned.result.current.isSubmitted).toBe(false);
+    expect(deviceKeys()).toEqual([]);
+    expect(submitAnswer).not.toHaveBeenCalled();
+  });
+
+  it("never reads or restores a device copy under another authenticated account", async () => {
+    const hook = await load(deviceAttempt);
+    act(() => hook.result.current.handleTextChange("Private unfinished answer"));
+    hook.unmount();
+    session.token = accountToken(otherAccount);
+    const returned = await load(deviceAttempt);
+    expect(returned.result.current.recoveryCopies).toEqual([]);
+    expect(returned.result.current.textValue).toBe("");
+    expect(saveExamDraft).not.toHaveBeenCalled();
+    expect(deviceKeys()).toHaveLength(1);
+  });
+
+  it("keeps newer server answers unchanged and permits non-destructive review later", async () => {
+    const hook = await load(deviceAttempt);
+    act(() => hook.result.current.handleTextChange("Old local edit"));
+    hook.unmount();
+    persisted.recovery_revision = 1;
+    persisted.questions[1].response = { question_version_id: "q2", selected_option_ids: null, text_response: "Newer server answer", is_submitted: false, answered_at: timestamp };
+    const returned = await load(deviceAttempt);
+    const copy = returned.result.current.recoveryCopies[0];
+    expect(copy.canRestore).toBe(false);
+    act(() => returned.result.current.restoreRecoveryCopy(copy.key));
+    expect(saveExamDraft).not.toHaveBeenCalled();
+    expect(returned.result.current.textValue).toBe("Newer server answer");
+    act(() => returned.result.current.continueWithSavedProgress());
+    expect(returned.result.current.recoveryCopies).toEqual([]);
+    expect(deviceKeys()).toHaveLength(1);
+  });
+
+  it("never exposes or replays a device copy after a recovery GET is rejected", async () => {
+    const hook = await load(deviceAttempt);
+    act(() => hook.result.current.handleTextChange("Private unfinished answer"));
+    hook.unmount();
+    vi.mocked(getExam).mockRejectedValueOnce(new ApiError(404, "Not found"));
+    const returned = renderHook(() => useExamAttempt(deviceAttempt));
+    await waitFor(() => expect(returned.result.current.loadStatus).toBe("error"));
+    expect(returned.result.current.recoveryCopies).toEqual([]);
+    expect(returned.result.current.questions).toEqual([]);
+    expect(saveExamDraft).not.toHaveBeenCalled();
+    expect(deviceKeys()).toHaveLength(1);
+  });
+
+  it("warns if the device copy cannot be written but allows server saving", async () => {
+    const hook = await load(deviceAttempt);
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("Quota"); });
+    try {
+      act(() => hook.result.current.handleTextChange("Keep on page"));
+      expect(hook.result.current.deviceCopySaved).toBe(false);
+      expect(hook.result.current.textValue).toBe("Keep on page");
+      vi.mocked(saveExamDraft).mockResolvedValueOnce({ ...confirmation("q2", null, "Keep on page"), attempt_id: deviceAttempt, recovery_revision: 1 });
+      flushBackground();
+      await waitFor(() => expect(hook.result.current.saveState.status).toBe("saved"));
+      expect(hook.result.current.deviceCopySaved).toBeNull();
+      expect(hook.result.current.textValue).toBe("Keep on page");
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+});

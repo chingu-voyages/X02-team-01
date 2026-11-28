@@ -6,6 +6,8 @@ import QuestionRenderer from "./QuestionRenderer";
 import { Button } from "@/components/ui/button";
 import ExamSidebar from "./ExamSidebar";
 import ExamSaveStatus from "./ExamSaveStatus";
+import ExamRecoveryReview from "./ExamRecoveryReview";
+import { useEffect, useRef } from "react";
 import { useExamAttempt } from "@/hooks/useExamAttempt";
 
 interface ExamCardProps {
@@ -56,7 +58,26 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     handleSaveAndLeave,
     leaveError,
     backToPracticeExams,
+    recoveryCopies,
+    recoveryError,
+    deviceCopySaved,
+    restoreRecoveryCopy,
+    discardRecoveryCopy,
+    continueWithSavedProgress,
+    reloadRecovery,
+    canReviewDeviceCopy,
+    reviewDeviceCopy,
   } = useExamAttempt(attemptId);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const wasReviewing = useRef(false);
+  useEffect(() => {
+    if (loadStatus !== "ready") return;
+    if (recoveryCopies.length) wasReviewing.current = true;
+    else if (wasReviewing.current) {
+      wasReviewing.current = false;
+      contentRef.current?.querySelector("h1")?.focus();
+    }
+  }, [loadStatus, recoveryCopies.length]);
 
   if (!ready || !token) {
     return (
@@ -92,6 +113,12 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         )}
       </section>
     );
+  }
+
+  if (recoveryCopies.length > 0) {
+    return <ExamRecoveryReview copies={recoveryCopies} questions={questions}
+      error={recoveryError} onRestore={restoreRecoveryCopy} onDiscard={discardRecoveryCopy}
+      onContinue={continueWithSavedProgress} onReload={reloadRecovery} />;
   }
 
   if (isAttemptSubmitted && saveState.pendingCount === 0) {
@@ -130,7 +157,7 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
     : currentSelected.length;
 
   return (
-    <div className="w-full space-y-6">
+    <div ref={contentRef} className="w-full space-y-6">
       <ExamHeader
         questionIndex={currentQuestionIndex}
         totalQuestions={questions.length}
@@ -153,6 +180,9 @@ export default function ExamCard({ attemptId }: ExamCardProps) {
         canLeave={canSaveAndLeave}
         isLeaving={isLeaving}
         leaveError={leaveError}
+        deviceCopySaved={deviceCopySaved}
+        recoveryError={recoveryError}
+        onReviewDeviceCopy={canReviewDeviceCopy ? reviewDeviceCopy : undefined}
       />
 
       <ExamSidebar

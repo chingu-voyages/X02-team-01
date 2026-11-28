@@ -472,4 +472,90 @@ test.describe("JHEP-105 numbered exam navigation", () => {
     }
   });
 
+
+  test("JHEP-89: device recovery survives a closed mobile page before the server acknowledges", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const { attempt, fixture, readAttempt } = await startAttempt(page, "immediate");
+    const context = page.context();
+    const endpoint = `/api/v1/exams/${attempt.attempt_id}/responses/${attempt.questions[0].id}`;
+    await page.route(`**${endpoint}`, async (route) => {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Offline draft save" }) });
+    });
+    await firstOption(page).click();
+    await expect(page.getByRole("alert").filter({ hasText: "Changes not saved" })).toBeVisible();
+    await expect(page.getByText("Pending changes backed up on this device.", { exact: true })).toBeVisible();
+    expect((await readAttempt()).questions[0].response ?? null).toBeNull();
+    await page.close({ runBeforeUnload: false });
+
+    // A new page in the same browser profile retains localStorage, not the
+    // closed page's sessionStorage. Authenticate normally before reading it.
+    const returned = await context.newPage();
+    try {
+      await returned.setViewportSize({ width: 390, height: 844 });
+      await returned.goto("/login");
+      await returned.getByLabel("Email address").fill(fixture.email);
+      await returned.getByLabel("Password", { exact: true }).fill(fixture.password);
+      await returned.getByRole("button", { name: "Sign in", exact: true }).click();
+      await expect(returned).toHaveURL(/\/categories\/?$/);
+      await returned.getByRole("region", { name: "Continue learning" }).getByRole("button", { name: /^Continue exam/ }).click();
+      await expect(returned.getByRole("heading", { name: "Recover unsaved progress" })).toBeVisible();
+      await expect(returned.getByRole("heading", { name: "Recover unsaved progress" })).toBeFocused();
+      await expect(returned.getByText("Ready to restore", { exact: true })).toBeVisible();
+      await expect(returned.getByText(attempt.questions[0].options[0].option_text, { exact: true })).toBeVisible();
+      expect(await returned.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      const writes: string[] = [];
+      returned.on("request", (request) => { if (request.method() === "POST" && new URL(request.url()).pathname.startsWith("/api/v1/exams")) writes.push(request.url()); });
+      const restore = returned.getByRole("button", { name: "Restore this copy" });
+      await restore.focus();
+      await restore.press("Enter");
+      await expectQuestion(returned, attempt, 1);
+      await expect(firstOption(returned)).toBeChecked();
+      await expect(firstOption(returned)).toBeEnabled();
+      await expect(returned.getByText("Progress saved", { exact: true })).toBeVisible();
+      const token = await returned.evaluate(() => sessionStorage.getItem("jhep_auth_token"));
+      const response = await returned.request.get(`/api/v1/exams/${attempt.attempt_id}`, { headers: { Authorization: `Bearer ${token}` } });
+      expect(response.ok()).toBe(true);
+      expect((await response.json() as ExamAttempt).questions[0].response).toMatchObject({ is_submitted: false, selected_option_ids: [attempt.questions[0].options[0].id] });
+      expect(writes).toEqual([]);
+      await expect.poll(() => returned.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("jhep.exam-recovery.v1:")).length)).toBe(0);
+    } finally {
+      await returned.close();
+    }
+  });
+
+  test("JHEP-89: conflicting device copy cannot replace a newer locked answer", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const { attempt, readAttempt } = await startAttempt(page, "immediate");
+    const token = await page.evaluate(() => sessionStorage.getItem("jhep_auth_token"));
+    if (!token) throw new Error("Missing authenticated session");
+    const other = await page.context().newPage();
+    try {
+      await other.setViewportSize({ width: 390, height: 844 });
+      await other.addInitScript((sessionToken) => sessionStorage.setItem("jhep_auth_token", sessionToken), token);
+      await other.goto(`/exams/${attempt.attempt_id}`);
+      await expectQuestion(other, attempt, 1);
+      await firstOption(page).click();
+      await submitCurrentAnswer(page, attempt, 1);
+      const server = await readAttempt();
+      await other.getByRole("radio").nth(1).click();
+      await expect(other.getByRole("alert").filter({ hasText: "Changes not saved" })).toBeVisible();
+      await other.getByRole("button", { name: "Review device copy" }).click();
+      await expect(other.getByRole("heading", { name: "Recover unsaved progress" })).toBeVisible();
+      await expect(other.getByText("Saved progress has changed", { exact: true })).toBeVisible();
+      await expect(other.getByText("Server saved · Submitted (locked)", { exact: true })).toBeVisible();
+      await expect(other.getByRole("button", { name: "Restore this copy" })).toHaveCount(0);
+      await other.getByRole("button", { name: "Discard device copy" }).click();
+      await other.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(other.getByRole("heading", { name: "Recover unsaved progress" })).toBeVisible();
+      await other.getByRole("button", { name: "Discard device copy" }).click();
+      await other.getByRole("button", { name: "Confirm discard" }).click();
+      await expectQuestion(other, attempt, 1);
+      await expect(firstOption(other)).toBeChecked();
+      await expect(firstOption(other)).toBeDisabled();
+      expect(await readAttempt()).toEqual(server);
+    } finally {
+      await other.close();
+    }
+  });
+
 });
